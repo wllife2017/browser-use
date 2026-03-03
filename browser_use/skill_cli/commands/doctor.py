@@ -22,13 +22,7 @@ async def handle() -> dict[str, Any]:
 	# 2. Browser availability
 	checks['browser'] = _check_browser()
 
-	# 3. API key configuration
-	checks['api_key'] = _check_api_key_config()
-
-	# 4. Cloudflared availability
-	checks['cloudflared'] = _check_cloudflared()
-
-	# 5. Network connectivity (basic check)
+	# 3. Network connectivity (basic check)
 	checks['network'] = await _check_network()
 
 	# Determine overall status
@@ -75,45 +69,6 @@ def _check_browser() -> dict[str, Any]:
 			'status': 'warning',
 			'message': f'Browser may not be available: {e}',
 			'note': 'Will be installed on first use',
-		}
-
-
-def _check_api_key_config() -> dict[str, Any]:
-	"""Check if API key is configured."""
-	from browser_use.skill_cli.api_key import check_api_key
-
-	status = check_api_key()
-	if status['available']:
-		return {
-			'status': 'ok',
-			'message': f'API key configured ({status["source"]})',
-		}
-	else:
-		return {
-			'status': 'missing',
-			'message': 'No API key configured',
-			'note': 'Required for remote browser. Get one at https://browser-use.com/new-api-key',
-		}
-
-
-def _check_cloudflared() -> dict[str, Any]:
-	"""Check if cloudflared is available."""
-	from browser_use.skill_cli.tunnel import get_tunnel_manager
-
-	tunnel_mgr = get_tunnel_manager()
-	status_info = tunnel_mgr.get_status()
-
-	if status_info['available']:
-		return {
-			'status': 'ok',
-			'message': f'Cloudflared available ({status_info["source"]})',
-			'note': status_info.get('note'),
-		}
-	else:
-		return {
-			'status': 'missing',
-			'message': 'Cloudflared not available',
-			'note': 'Will be auto-installed on first tunnel use',
 		}
 
 

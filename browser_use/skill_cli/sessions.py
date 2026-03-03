@@ -107,7 +107,6 @@ async def create_browser_session(
 	Modes:
 	- chromium: Playwright-managed Chromium (default)
 	- real: User's Chrome with profile
-	- remote: Browser-Use Cloud (requires API key)
 
 	Raises:
 		RuntimeError: If the requested mode is not available based on installation config
@@ -140,16 +139,6 @@ async def create_browser_session(
 			user_data_dir=user_data_dir,
 			profile_directory=profile_directory,
 			headless=not headed,  # Headless by default, --headed for visible
-		)
-
-	elif mode == 'remote':
-		from browser_use.skill_cli.api_key import require_api_key
-
-		require_api_key('Remote browser')
-		# Profile is used as cloud_profile_id for remote mode
-		return BrowserSession(
-			use_cloud=True,
-			cloud_profile_id=profile,
 		)
 
 	else:

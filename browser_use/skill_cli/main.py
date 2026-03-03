@@ -229,22 +229,7 @@ def ensure_server(session: str, browser: str, headed: bool, profile: str | None,
 					meta = json.loads(meta_path.read_text())
 					existing_mode = meta.get('browser_mode', 'chromium')
 					if existing_mode != browser:
-						# Only error if user explicitly requested 'remote' but session is local
-						# This prevents losing cloud features (live_url, etc.)
-						# The reverse case (requesting local but having remote) is fine -
-						# user still gets a working browser, just with more features
-						if browser == 'remote' and existing_mode != 'remote':
-							print(
-								f"Error: Session '{session}' is running with --browser {existing_mode}, "
-								f'but --browser remote was requested.\n\n'
-								f'Cloud browser features (live_url) require a remote session.\n\n'
-								f'Options:\n'
-								f'  1. Close and restart: browser-use close && browser-use --browser remote open <url>\n'
-								f'  2. Use different session: browser-use --browser remote --session other <command>\n'
-								f'  3. Use existing local browser: browser-use --browser {existing_mode} <command>',
-								file=sys.stderr,
-							)
-							sys.exit(1)
+						pass  # Mode mismatch is non-fatal for local modes
 				except (json.JSONDecodeError, OSError):
 					pass  # Metadata file corrupt, ignore
 
@@ -363,49 +348,18 @@ def build_parser() -> argparse.ArgumentParser:
 	# Import install config to get available modes and default
 	from browser_use.skill_cli.install_config import get_available_modes, get_default_mode
 
-	available_modes = get_available_modes()
+	available_modes = [m for m in get_available_modes() if m != 'remote']
 	default_mode = get_default_mode()
+	if default_mode == 'remote':
+		default_mode = 'chromium'
 
-	# Build epilog dynamically based on available modes
+	# Build epilog
 	epilog_parts = []
 
-	if 'chromium' in available_modes or 'real' in available_modes:
-		epilog_parts.append("""Local Mode (default):
+	epilog_parts.append("""Local Mode (default):
   browser-use run "Fill the form"               # Uses local browser + your API keys
   browser-use run "task" --llm gpt-4o           # Specify model (requires API key)
   browser-use open https://example.com""")
-
-	if 'remote' in available_modes:
-		if 'chromium' in available_modes:
-			# Full install - show how to switch to remote
-			epilog_parts.append("""
-Remote Mode (--browser remote):
-  browser-use -b remote run "task"              # Cloud execution (US proxy default)
-  browser-use -b remote run "task" --llm gpt-4o # Specify cloud model
-  browser-use -b remote --profile <id> run "task"  # Use cloud profile
-  browser-use -b remote run "task" --proxy-country gb     # UK proxy
-  browser-use -b remote run "task" --session-id <id>      # Reuse session
-  browser-use -b remote run "task" --wait       # Wait for completion
-
-Task Management:
-  browser-use task list                         # List recent cloud tasks
-  browser-use task status <task-id>             # Check task status
-  browser-use task stop <task-id>               # Stop running task""")
-		else:
-			# Remote-only install
-			epilog_parts.append("""
-Examples:
-  browser-use run "task"                        # Cloud execution (US proxy default)
-  browser-use run "task" --llm gpt-4o           # Specify model
-  browser-use --profile <id> run "task"         # Use cloud profile
-  browser-use run "task" --proxy-country gb     # UK proxy
-  browser-use run "task" --session-id <id>      # Reuse existing session
-  browser-use run "task" --wait                 # Wait for completion
-
-Task Management:
-  browser-use task list                         # List recent cloud tasks
-  browser-use task status <task-id>             # Check task status
-  browser-use task stop <task-id>               # Stop running task""")
 
 	epilog_parts.append("""
 Setup:
@@ -429,9 +383,9 @@ Setup:
 		help=f'Browser mode (available: {", ".join(available_modes)})',
 	)
 	parser.add_argument('--headed', action='store_true', help='Show browser window')
-	parser.add_argument('--profile', help='Browser profile (local name or cloud ID)')
+	parser.add_argument('--profile', help='Browser profile (local name)')
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
-	parser.add_argument('--api-key', help='Browser-Use API key')
+	parser.add_argument('--api-key', help='LLM API key')
 	parser.add_argument('--mcp', action='store_true', help='Run as MCP server (JSON-RPC via stdin/stdout)')
 	parser.add_argument('--template', help='Generate template file (use with --output for custom path)')
 
@@ -453,8 +407,6 @@ Setup:
 
 	# setup
 	p = subparsers.add_parser('setup', help='Configure browser-use for first-time use')
-	p.add_argument('--mode', choices=['local', 'remote', 'full'], default='local', help='Setup mode (local/remote/full)')
-	p.add_argument('--api-key', help='Browser-Use API key')
 	p.add_argument('--yes', '-y', action='store_true', help='Skip interactive prompts')
 
 	# doctor
@@ -631,122 +583,11 @@ Setup:
 	# Agent Tasks
 	# -------------------------------------------------------------------------
 
-	from browser_use.skill_cli.install_config import is_mode_available
-
-	remote_available = is_mode_available('remote')
-	local_available = is_mode_available('chromium')
-
 	p = subparsers.add_parser('run', help='Run agent task (requires API key)')
 	p.add_argument('task', help='Task description')
 	p.add_argument('--max-steps', type=int, help='Maximum steps')
-	# Model selection (works both locally and remotely)
+	# Model selection
 	p.add_argument('--llm', help='LLM model (gpt-4o, claude-sonnet-4-20250514, gemini-2.0-flash)')
-
-	# Cloud-only flags - only show if remote mode is available
-	if remote_available:
-		# Add [remote] hint only if both modes are available (--full install)
-		remote_hint = '[remote] ' if local_available else ''
-		p.add_argument('--session-id', help=f'{remote_hint}Reuse existing cloud session ID')
-		p.add_argument('--proxy-country', help=f'{remote_hint}Proxy country code')
-		p.add_argument('--stream', action='store_true', help=f'{remote_hint}Stream output in real-time')
-		p.add_argument('--wait', action='store_true', help=f'{remote_hint}Wait for task to complete (default: async)')
-		p.add_argument('--flash', action='store_true', help=f'{remote_hint}Enable flash mode')
-		p.add_argument('--keep-alive', action='store_true', help=f'{remote_hint}Keep session alive after task')
-		p.add_argument('--thinking', action='store_true', help=f'{remote_hint}Enable extended reasoning')
-		p.add_argument('--vision', action='store_true', default=None, help=f'{remote_hint}Enable vision')
-		p.add_argument('--no-vision', action='store_true', help=f'{remote_hint}Disable vision')
-		# New SDK features
-		p.add_argument('--start-url', help=f'{remote_hint}URL to start the task from')
-		p.add_argument('--metadata', action='append', metavar='KEY=VALUE', help=f'{remote_hint}Task metadata (can repeat)')
-		p.add_argument('--secret', action='append', metavar='KEY=VALUE', help=f'{remote_hint}Task secrets (can repeat)')
-		p.add_argument(
-			'--allowed-domain',
-			action='append',
-			metavar='DOMAIN',
-			help=f'{remote_hint}Restrict navigation to domains (can repeat)',
-		)
-		p.add_argument('--skill-id', action='append', metavar='ID', help=f'{remote_hint}Enable skill IDs (can repeat)')
-		p.add_argument('--structured-output', metavar='SCHEMA', help=f'{remote_hint}JSON schema for structured output')
-		p.add_argument('--judge', action='store_true', help=f'{remote_hint}Enable judge mode')
-		p.add_argument('--judge-ground-truth', metavar='TEXT', help=f'{remote_hint}Expected answer for judge evaluation')
-
-	# -------------------------------------------------------------------------
-	# Task Management (Cloud) - only available if remote mode is installed
-	# -------------------------------------------------------------------------
-
-	if remote_available:
-		task_p = subparsers.add_parser('task', help='Manage cloud tasks')
-		task_sub = task_p.add_subparsers(dest='task_command')
-
-		# task list
-		p = task_sub.add_parser('list', help='List recent tasks')
-		p.add_argument('--limit', type=int, default=10, help='Maximum number of tasks to list')
-		p.add_argument('--status', choices=['running', 'finished', 'stopped', 'failed'], help='Filter by status')
-		p.add_argument('--session', help='Filter by session ID')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# task status <task_id>
-		p = task_sub.add_parser('status', help='Get task status')
-		p.add_argument('task_id', help='Task ID')
-		p.add_argument('--compact', '-c', action='store_true', help='Show all steps with reasoning')
-		p.add_argument('--verbose', '-v', action='store_true', help='Show all steps with full details (URLs, actions)')
-		p.add_argument('--last', '-n', type=int, metavar='N', help='Show only the last N steps')
-		p.add_argument('--reverse', '-r', action='store_true', help='Show steps newest first (100, 99, 98...)')
-		p.add_argument('--step', '-s', type=int, metavar='N', help='Show specific step number')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# task stop <task_id>
-		p = task_sub.add_parser('stop', help='Stop running task')
-		p.add_argument('task_id', help='Task ID')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# task logs <task_id>
-		p = task_sub.add_parser('logs', help='Get task logs')
-		p.add_argument('task_id', help='Task ID')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-	# -------------------------------------------------------------------------
-	# Cloud Session Management - only available if remote mode is installed
-	# -------------------------------------------------------------------------
-
-	if remote_available:
-		session_p = subparsers.add_parser('session', help='Manage cloud sessions')
-		session_sub = session_p.add_subparsers(dest='session_command')
-
-		# session list
-		p = session_sub.add_parser('list', help='List cloud sessions')
-		p.add_argument('--limit', type=int, default=10, help='Maximum number of sessions to list')
-		p.add_argument('--status', choices=['active', 'stopped'], help='Filter by status')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# session get <session_id>
-		p = session_sub.add_parser('get', help='Get session details')
-		p.add_argument('session_id', help='Session ID')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# session stop <session_id> or session stop --all
-		p = session_sub.add_parser('stop', help='Stop cloud session(s)')
-		p.add_argument('session_id', nargs='?', help='Session ID (or use --all)')
-		p.add_argument('--all', action='store_true', help='Stop all active sessions')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# session create - Create session without task
-		p = session_sub.add_parser('create', help='Create a new cloud session')
-		p.add_argument('--profile', help='Cloud profile ID')
-		p.add_argument('--proxy-country', help='Proxy country code')
-		p.add_argument('--start-url', help='Initial URL to navigate to')
-		p.add_argument('--screen-size', metavar='WxH', help='Screen size (e.g., 1920x1080)')
-		p.add_argument('--keep-alive', action='store_true', default=None, help='Keep session alive')
-		p.add_argument('--no-keep-alive', dest='keep_alive', action='store_false', help='Do not keep session alive')
-		p.add_argument('--persist-memory', action='store_true', default=None, help='Persist memory between tasks')
-		p.add_argument('--no-persist-memory', dest='persist_memory', action='store_false', help='Do not persist memory')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
-
-		# session share <session_id> - Create or delete public share
-		p = session_sub.add_parser('share', help='Manage public share URL')
-		p.add_argument('session_id', help='Session ID')
-		p.add_argument('--delete', action='store_true', help='Delete the public share')
-		p.add_argument('--json', action='store_true', help='Output as JSON')
 
 	# -------------------------------------------------------------------------
 	# Tunnel Commands
@@ -784,43 +625,22 @@ Setup:
 	server_sub.add_parser('logs', help='View server logs')
 
 	# -------------------------------------------------------------------------
-	# Profile Management (mode-aware: use -b real or -b remote)
+	# Profile Management (local only, use -b real)
 	# -------------------------------------------------------------------------
 
-	profile_p = subparsers.add_parser('profile', help='Manage browser profiles (use -b real or -b remote)')
+	profile_p = subparsers.add_parser('profile', help='Manage local browser profiles (use -b real)')
 	profile_sub = profile_p.add_subparsers(dest='profile_command')
 
-	# profile list - lists local or cloud profiles based on -b flag
-	p = profile_sub.add_parser('list', help='List profiles (local with -b real, cloud with -b remote)')
-	p.add_argument('--page', type=int, default=1, help='Page number (cloud only)')
-	p.add_argument('--page-size', type=int, default=20, help='Items per page (cloud only)')
+	# profile list
+	profile_sub.add_parser('list', help='List local Chrome profiles')
 
 	# profile get <id>
 	p = profile_sub.add_parser('get', help='Get profile details')
 	p.add_argument('id', help='Profile ID or name')
 
-	# profile create (cloud only)
-	p = profile_sub.add_parser('create', help='Create profile (cloud only)')
-	p.add_argument('--name', help='Profile name')
-
-	# profile update <id> (cloud only)
-	p = profile_sub.add_parser('update', help='Update profile (cloud only)')
-	p.add_argument('id', help='Profile ID')
-	p.add_argument('--name', required=True, help='New profile name')
-
-	# profile delete <id> (cloud only)
-	p = profile_sub.add_parser('delete', help='Delete profile (cloud only)')
-	p.add_argument('id', help='Profile ID')
-
-	# profile cookies <id> - list cookies by domain (local only)
-	p = profile_sub.add_parser('cookies', help='List cookies by domain (local only, requires -b real)')
+	# profile cookies <id>
+	p = profile_sub.add_parser('cookies', help='List cookies by domain (requires -b real)')
 	p.add_argument('id', help='Profile ID or name (e.g. "Default", "Profile 1")')
-
-	# profile sync - sync local profile to cloud
-	p = profile_sub.add_parser('sync', help='Sync local Chrome profile to cloud')
-	p.add_argument('--from', dest='from_profile', help='Local profile name (e.g. "Default", "Profile 1")')
-	p.add_argument('--name', help='Cloud profile name (default: auto-generated)')
-	p.add_argument('--domain', help='Only sync cookies for this domain (e.g. "youtube.com")')
 
 	return parser
 
@@ -856,100 +676,6 @@ def handle_server_command(args: argparse.Namespace) -> int:
 		return 0
 
 	return 0
-
-
-def _parse_key_value_list(items: list[str] | None) -> dict[str, str | None] | None:
-	"""Parse a list of 'key=value' strings into a dict."""
-	if not items:
-		return None
-	result: dict[str, str | None] = {}
-	for item in items:
-		if '=' in item:
-			key, value = item.split('=', 1)
-			result[key] = value
-	return result if result else None
-
-
-def _handle_remote_run_with_wait(args: argparse.Namespace) -> int:
-	"""Handle remote run with --wait directly (prints task info immediately, then waits)."""
-	import asyncio
-
-	from browser_use.skill_cli.commands import cloud_session, cloud_task
-
-	if not args.task:
-		print('Error: No task provided', file=sys.stderr)
-		return 1
-
-	try:
-		# Handle vision flag (--vision vs --no-vision)
-		vision: bool | None = None
-		if getattr(args, 'vision', False):
-			vision = True
-		elif getattr(args, 'no_vision', False):
-			vision = False
-
-		# Parse key=value list params
-		metadata = _parse_key_value_list(getattr(args, 'metadata', None))
-		secrets = _parse_key_value_list(getattr(args, 'secret', None))
-
-		# Build session params
-		session_id = getattr(args, 'session_id', None)
-		profile_id = getattr(args, 'profile', None)
-		proxy_country = getattr(args, 'proxy_country', None)
-
-		# Create session first if profile or proxy specified and no session_id
-		if (profile_id or proxy_country) and not session_id:
-			session = cloud_session.create_session(
-				profile_id=profile_id,
-				proxy_country=proxy_country,
-				keep_alive=getattr(args, 'keep_alive', None),
-			)
-			session_id = session.id
-
-		# Create task with all cloud-only flags
-		task_response = cloud_task.create_task(
-			task=args.task,
-			llm=args.llm,
-			session_id=session_id,
-			max_steps=args.max_steps,
-			flash_mode=getattr(args, 'flash', None),
-			thinking=getattr(args, 'thinking', None),
-			vision=vision,
-			start_url=getattr(args, 'start_url', None),
-			metadata=metadata,
-			secrets=secrets,
-			allowed_domains=getattr(args, 'allowed_domain', None),
-			skill_ids=getattr(args, 'skill_id', None),
-			structured_output=getattr(args, 'structured_output', None),
-			judge=getattr(args, 'judge', None),
-			judge_ground_truth=getattr(args, 'judge_ground_truth', None),
-		)
-
-		# Print initial info immediately
-		print(f'mode: {args.browser}')
-		print(f'task_id: {task_response.id}')
-		print(f'session_id: {task_response.session_id}')
-		print('waiting...', end='', flush=True)
-
-		# Wait for completion
-		try:
-			result = asyncio.run(cloud_task.poll_until_complete(task_response.id))
-		except KeyboardInterrupt:
-			print(f'\nInterrupted. Task {task_response.id} continues remotely.')
-			return 0
-
-		# Print final result
-		print(' done.')
-		print(f'status: {result.status}')
-		print(f'output: {result.output}')
-		if result.cost:
-			print(f'cost: {result.cost}')
-
-		return 0
-
-	except Exception as e:
-		print(f'Error: {e}', file=sys.stderr)
-		return 1
 
 
 def main() -> int:
@@ -1024,9 +750,7 @@ def main() -> int:
 			setup.handle(
 				'setup',
 				{
-					'mode': args.mode,
-					'api_key': args.api_key,
-					'yes': args.yes,
+					'yes': getattr(args, 'yes', False),
 					'json': args.json,
 				},
 			)
@@ -1084,18 +808,6 @@ def main() -> int:
 			else:
 				print(f'⚠ {result.get("summary", "Some checks need attention")}')
 		return 0
-
-	# Handle task command - cloud task management
-	if args.command == 'task':
-		from browser_use.skill_cli.commands.cloud_task import handle_task_command
-
-		return handle_task_command(args)
-
-	# Handle session command - cloud session management
-	if args.command == 'session':
-		from browser_use.skill_cli.commands.cloud_session import handle_session_command
-
-		return handle_session_command(args)
 
 	# Handle tunnel command - runs independently of browser session
 	if args.command == 'tunnel':
@@ -1163,30 +875,14 @@ def main() -> int:
 	if args.api_key:
 		os.environ['BROWSER_USE_API_KEY'] = args.api_key
 
-	# Validate API key for remote browser mode upfront
-	if args.browser == 'remote':
-		from browser_use.skill_cli.api_key import APIKeyRequired, require_api_key
-
-		try:
-			api_key = require_api_key('Remote browser')
-			# Ensure it's in environment for the cloud client
-			os.environ['BROWSER_USE_API_KEY'] = api_key
-		except APIKeyRequired as e:
-			print(f'Error: {e}', file=sys.stderr)
-			return 1
-
 	# Validate --profile flag usage
 	if args.profile and args.browser == 'chromium':
 		print(
 			'Error: --profile is not supported in chromium mode.\n'
-			'Use -b real for local Chrome profiles or -b remote for cloud profiles.',
+			'Use -b real for local Chrome profiles.',
 			file=sys.stderr,
 		)
 		return 1
-
-	# Handle remote run with --wait directly (prints task_id immediately, then waits)
-	if args.browser == 'remote' and args.command == 'run' and getattr(args, 'wait', False):
-		return _handle_remote_run_with_wait(args)
 
 	# Ensure server is running
 	ensure_server(args.session, args.browser, args.headed, args.profile, args.api_key)
@@ -1199,9 +895,7 @@ def main() -> int:
 		if key not in skip_keys and value is not None:
 			params[key] = value
 
-	# Add profile to params for commands that need it (agent tasks, etc.)
-	# Note: profile is passed to ensure_server for local browser profile,
-	# but also needs to be in params for cloud profile ID in remote mode
+	# Add profile to params for commands that need it
 	if args.profile:
 		params['profile'] = args.profile
 
