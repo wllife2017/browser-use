@@ -180,9 +180,7 @@ browser-use tunnel stop --all       # Stop all tunnels
 
 ### Session Management
 ```bash
-browser-use sessions                # List active sessions
-browser-use close                   # Close current session
-browser-use close --all             # Close all sessions
+browser-use close                   # Close browser session
 ```
 
 ## Common Workflows
@@ -213,7 +211,6 @@ browser-use screenshot
 
 | Option | Description |
 |--------|-------------|
-| `--session NAME` | Named session (default: "default") |
 | `--browser MODE` | Browser mode: chromium, real |
 | `--json` | Output as JSON |
 
@@ -230,7 +227,7 @@ browser-use screenshot
 
 **Browser won't start?**
 - Run `browser-use doctor` to check configuration
-- `browser-use close --all` then retry
+- `browser-use close` then retry
 
 **Tunnel not working?**
 - Verify cloudflared is installed: `which cloudflared`

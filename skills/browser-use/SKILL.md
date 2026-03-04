@@ -68,9 +68,7 @@ browser-use wait selector "h1"            # Wait for element
 browser-use wait text "Success"           # Wait for text
 
 # Session
-browser-use sessions                      # List active sessions
-browser-use close                         # Close current session
-browser-use close --all                   # Close all sessions
+browser-use close                         # Close browser session
 
 # AI Agent
 browser-use run "Fill the contact form"   # Run local agent
@@ -186,9 +184,7 @@ browser-use tunnel stop --all       # Stop all tunnels
 
 ### Session Management
 ```bash
-browser-use sessions                      # List active sessions
-browser-use close                         # Close current session
-browser-use close --all                   # Close all sessions
+browser-use close                         # Close browser session
 ```
 
 ### Profile Management
@@ -198,11 +194,6 @@ browser-use close --all                   # Close all sessions
 browser-use -b real profile list          # List local Chrome profiles
 browser-use -b real profile get "Default" # Get profile details
 browser-use -b real profile cookies "Default"  # Show cookie domains in profile
-```
-
-### Server Control
-```bash
-browser-use server logs                   # View server logs
 ```
 
 ## Common Workflows
@@ -267,14 +258,11 @@ browser-use screenshot
 
 | Option | Description |
 |--------|-------------|
-| `--session NAME` | Use named session (default: "default") |
 | `--browser MODE` | Browser mode: chromium, real |
 | `--headed` | Show browser window (chromium mode) |
 | `--profile NAME` | Browser profile (local Chrome profile name) |
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |
-
-**Session behavior**: All commands without `--session` use the same "default" session. The browser stays open and is reused across commands. Use `--session NAME` to run multiple browsers in parallel.
 
 ## Tips
 
@@ -294,7 +282,7 @@ browser-use doctor
 
 **Browser won't start?**
 ```bash
-browser-use close --all               # Close all sessions
+browser-use close                     # Close browser session
 browser-use --headed open <url>       # Try with visible window
 ```
 
@@ -303,13 +291,6 @@ browser-use --headed open <url>       # Try with visible window
 browser-use state                     # Check current elements
 browser-use scroll down               # Element might be below fold
 browser-use state                     # Check again
-```
-
-**Session issues?**
-```bash
-browser-use sessions                  # Check active sessions
-browser-use close --all               # Clean slate
-browser-use open <url>                # Fresh start
 ```
 
 ## Cleanup

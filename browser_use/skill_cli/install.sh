@@ -76,10 +76,10 @@
 #    - Always kill stale processes before retrying
 #    - Or kill all Python: taskkill /IM python.exe /F
 #
-# 7. Debugging server issues
-#    To see actual error messages instead of "Failed to start session server":
-#      & "$env:USERPROFILE\.browser-use-env\Scripts\python.exe" -m browser_use.skill_cli.server --session default --browser chromium
-#    This runs the server in foreground and shows all errors.
+# 7. Debugging daemon issues
+#    To see actual error messages instead of "Failed to start daemon":
+#      & "$env:USERPROFILE\.browser-use-env\Scripts\python.exe" -m browser_use.skill_cli.daemon --browser chromium
+#    This runs the daemon in foreground and shows all errors.
 #
 # =============================================================================
 

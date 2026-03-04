@@ -19,13 +19,13 @@ def test_headed_flag_before_open_subcommand():
 	assert args.command == 'open'
 
 
-def test_headed_flag_with_session():
-	"""Test that --headed works with other global flags like -s/--session."""
+def test_headed_flag_with_browser():
+	"""Test that --headed works with other global flags like --browser."""
 	parser = build_parser()
 
-	args = parser.parse_args(['--headed', '-s', 'mysession', 'open', 'http://example.com'])
+	args = parser.parse_args(['--headed', '-b', 'chromium', 'open', 'http://example.com'])
 	assert args.headed is True
-	assert args.session == 'mysession'
+	assert args.browser == 'chromium'
 	assert args.url == 'http://example.com'
 
 

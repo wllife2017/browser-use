@@ -1,205 +1,63 @@
-"""Platform utilities for CLI and server."""
+"""Platform utilities for CLI and daemon."""
 
-import hashlib
 import os
 import platform
-import signal
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import IO
-
-import portalocker
 
 
-def get_socket_path(session: str) -> str:
-	"""Get socket path for session.
+def get_socket_path() -> str:
+	"""Get the fixed daemon socket path.
 
 	On Windows, returns a TCP address (tcp://127.0.0.1:PORT).
 	On Unix, returns a Unix socket path.
 	"""
 	if sys.platform == 'win32':
-		# Windows: use TCP on deterministic port (49152-65535)
-		# Use 127.0.0.1 explicitly (not localhost) to avoid IPv6 binding issues
-		port = 49152 + (int(hashlib.md5(session.encode()).hexdigest()[:4], 16) % 16383)
-		return f'tcp://127.0.0.1:{port}'
-	return str(Path(tempfile.gettempdir()) / f'browser-use-{session}.sock')
+		return 'tcp://127.0.0.1:49200'
+	return str(Path(tempfile.gettempdir()) / 'browser-use-cli.sock')
 
 
-def get_pid_path(session: str) -> Path:
-	"""Get PID file path for session."""
-	return Path(tempfile.gettempdir()) / f'browser-use-{session}.pid'
+def is_daemon_alive() -> bool:
+	"""Check daemon liveness by attempting socket connect.
 
-
-def get_log_path(session: str) -> Path:
-	"""Get log file path for session."""
-	return Path(tempfile.gettempdir()) / f'browser-use-{session}.log'
-
-
-def get_lock_path(session: str) -> Path:
-	"""Get lock file path for session."""
-	return Path(tempfile.gettempdir()) / f'browser-use-{session}.lock'
-
-
-def _pid_exists(pid: int) -> bool:
-	"""Check if a process with given PID exists.
-
-	On Windows, uses ctypes to call OpenProcess (os.kill doesn't work reliably).
-	On Unix, uses os.kill(pid, 0) which is the standard approach.
+	If socket file exists but nobody is listening, removes the stale file.
 	"""
-	if sys.platform == 'win32':
-		import ctypes
+	import socket
 
-		PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-		handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-		if handle:
-			ctypes.windll.kernel32.CloseHandle(handle)
-			return True
-		return False
-	else:
+	sock_path = get_socket_path()
+
+	if sock_path.startswith('tcp://'):
+		_, hostport = sock_path.split('://', 1)
+		host, port_str = hostport.split(':')
 		try:
-			os.kill(pid, 0)
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.settimeout(0.5)
+			s.connect((host, int(port_str)))
+			s.close()
 			return True
 		except OSError:
 			return False
-
-
-def is_server_running(session: str) -> bool:
-	"""Check if server is running for session."""
-	pid_path = get_pid_path(session)
-	if not pid_path.exists():
-		return False
-	try:
-		pid = int(pid_path.read_text().strip())
-		return _pid_exists(pid)
-	except (OSError, ValueError):
-		# Can't read PID file or invalid PID
-		return False
-
-
-def try_acquire_server_lock(session: str) -> IO | None:
-	"""Try to acquire the server lock non-blocking.
-
-	Returns:
-		Lock file handle if acquired (caller must keep in scope to maintain lock),
-		None if lock is already held by another process.
-	"""
-	lock_path = get_lock_path(session)
-	lock_path.parent.mkdir(parents=True, exist_ok=True)
-	lock_path.touch(exist_ok=True)
-
-	lock_file = open(lock_path, 'r+')
-	try:
-		portalocker.lock(lock_file, portalocker.LOCK_EX | portalocker.LOCK_NB)
-		return lock_file
-	except portalocker.LockException:
-		lock_file.close()
-		return None
-
-
-def is_session_locked(session: str) -> bool:
-	"""Check if session has an active lock (server is holding it)."""
-	lock_path = get_lock_path(session)
-	if not lock_path.exists():
-		return False
-
-	try:
-		with open(lock_path, 'r+') as f:
-			portalocker.lock(f, portalocker.LOCK_EX | portalocker.LOCK_NB)
-			portalocker.unlock(f)
-			return False  # Lock acquired = no one holding it
-	except portalocker.LockException:
-		return True  # Lock failed = someone holding it
-	except OSError:
-		return False  # File access error
-
-
-def kill_orphaned_server(session: str) -> bool:
-	"""Kill an orphaned server (has PID file but no lock).
-
-	An orphaned server is one where the process is running but it doesn't
-	hold the session lock (e.g., because a newer server took over the lock
-	file but didn't kill the old process).
-
-	Returns:
-		True if an orphan was found and killed.
-	"""
-	pid_path = get_pid_path(session)
-	if not pid_path.exists():
-		return False
-
-	# Check if session is locked (server alive and holding lock)
-	if is_session_locked(session):
-		return False  # Not an orphan - server is healthy
-
-	# PID exists but no lock - orphan situation
-	try:
-		pid = int(pid_path.read_text().strip())
-		if _pid_exists(pid):
-			# Kill the orphaned process
-			if sys.platform == 'win32':
-				import ctypes
-
-				PROCESS_TERMINATE = 1
-				handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
-				if handle:
-					ctypes.windll.kernel32.TerminateProcess(handle, 1)
-					ctypes.windll.kernel32.CloseHandle(handle)
-			else:
-				os.kill(pid, signal.SIGKILL)
-			return True
-	except (OSError, ValueError):
-		pass
-
-	# Clean up stale files even if we couldn't kill (process may be gone)
-	cleanup_session_files(session)
-	return False
-
-
-def find_all_sessions() -> list[str]:
-	"""Find all running browser-use sessions by scanning PID files."""
-	sessions = []
-	tmpdir = Path(tempfile.gettempdir())
-	for pid_file in tmpdir.glob('browser-use-*.pid'):
-		# Extract session name from filename: browser-use-{session}.pid
-		name = pid_file.stem.replace('browser-use-', '', 1)
-		if is_server_running(name):
-			sessions.append(name)
-	return sessions
-
-
-def cleanup_session_files(session: str) -> None:
-	"""Remove session socket, PID, lock, and metadata files."""
-	sock_path = get_socket_path(session)
-	pid_path = get_pid_path(session)
-	lock_path = get_lock_path(session)
-	meta_path = Path(tempfile.gettempdir()) / f'browser-use-{session}.meta'
-
-	# Remove socket file (Unix only)
-	if not sock_path.startswith('tcp://'):
+	else:
+		sock_file = Path(sock_path)
+		if not sock_file.exists():
+			return False
 		try:
-			os.unlink(sock_path)
+			s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+			s.settimeout(0.5)
+			s.connect(sock_path)
+			s.close()
+			return True
 		except OSError:
-			pass
+			# Stale socket file — remove it
+			sock_file.unlink(missing_ok=True)
+			return False
 
-	# Remove PID file
-	try:
-		pid_path.unlink()
-	except OSError:
-		pass
 
-	# Remove lock file
-	try:
-		lock_path.unlink()
-	except OSError:
-		pass
-
-	# Remove metadata file
-	try:
-		meta_path.unlink()
-	except OSError:
-		pass
+def get_log_path() -> Path:
+	"""Get log file path for the daemon."""
+	return Path(tempfile.gettempdir()) / 'browser-use-cli.log'
 
 
 def find_chrome_executable() -> str | None:

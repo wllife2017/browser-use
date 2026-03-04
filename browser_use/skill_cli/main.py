@@ -2,13 +2,12 @@
 """Fast CLI for browser-use. STDLIB ONLY - must start in <50ms.
 
 This is the main entry point for the browser-use CLI. It uses only stdlib
-imports to ensure fast startup, delegating heavy operations to the session
-server which loads once and stays running.
+imports to ensure fast startup, delegating heavy operations to the daemon
+which loads once and stays running.
 """
 
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import socket
@@ -20,7 +19,7 @@ from pathlib import Path
 
 # =============================================================================
 # Early command interception (before heavy imports)
-# These commands don't need the session server infrastructure
+# These commands don't need the daemon infrastructure
 # =============================================================================
 
 # Handle --mcp flag early to prevent logging initialization
@@ -124,7 +123,7 @@ if '--template' in sys.argv:
 		# Keep --force/-f and --list/-l flags
 		elif arg in ('--force', '-f', '--list', '-l'):
 			new_argv.append(arg)
-		# Skip other flags (--session, --browser, --headed, etc.)
+		# Skip other flags (--browser, --headed, etc.)
 		i += 1
 
 	sys.argv = new_argv
@@ -136,69 +135,24 @@ if '--template' in sys.argv:
 # =============================================================================
 
 
-def get_socket_path(session: str) -> str:
-	"""Get socket path for session."""
+def _get_socket_path() -> str:
+	"""Get the fixed daemon socket path."""
 	if sys.platform == 'win32':
-		# Use 127.0.0.1 explicitly (not localhost) to avoid IPv6 binding issues
-		port = 49152 + (int(hashlib.md5(session.encode()).hexdigest()[:4], 16) % 16383)
-		return f'tcp://127.0.0.1:{port}'
-	return str(Path(tempfile.gettempdir()) / f'browser-use-{session}.sock')
+		return 'tcp://127.0.0.1:49200'
+	return str(Path(tempfile.gettempdir()) / 'browser-use-cli.sock')
 
 
-def get_pid_path(session: str) -> Path:
-	"""Get PID file path for session."""
-	return Path(tempfile.gettempdir()) / f'browser-use-{session}.pid'
-
-
-def _pid_exists(pid: int) -> bool:
-	"""Check if a process with given PID exists.
-
-	On Windows, uses ctypes to call OpenProcess (os.kill doesn't work reliably).
-	On Unix, uses os.kill(pid, 0) which is the standard approach.
-	"""
-	if sys.platform == 'win32':
-		import ctypes
-
-		PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-		handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-		if handle:
-			ctypes.windll.kernel32.CloseHandle(handle)
-			return True
-		return False
-	else:
-		try:
-			os.kill(pid, 0)
-			return True
-		except OSError:
-			return False
-
-
-def is_server_running(session: str) -> bool:
-	"""Check if server is running for session."""
-	pid_path = get_pid_path(session)
-	if not pid_path.exists():
-		return False
-	try:
-		pid = int(pid_path.read_text().strip())
-		return _pid_exists(pid)
-	except (OSError, ValueError):
-		# Can't read PID file or invalid PID
-		return False
-
-
-def connect_to_server(session: str, timeout: float = 60.0) -> socket.socket:
-	"""Connect to session server."""
-	sock_path = get_socket_path(session)
+def _connect_to_daemon(timeout: float = 60.0) -> socket.socket:
+	"""Connect to daemon socket."""
+	sock_path = _get_socket_path()
 
 	if sock_path.startswith('tcp://'):
-		# Windows: TCP connection
 		_, hostport = sock_path.split('://', 1)
 		host, port = hostport.split(':')
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		sock.settimeout(timeout)
 		sock.connect((host, int(port)))
 	else:
-		# Unix socket
 		sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 		sock.settimeout(timeout)
 		sock.connect(sock_path)
@@ -206,47 +160,52 @@ def connect_to_server(session: str, timeout: float = 60.0) -> socket.socket:
 	return sock
 
 
-def get_session_metadata_path(session: str) -> Path:
-	"""Get path to session metadata file (stores browser_mode, headed, profile)."""
-	return Path(tempfile.gettempdir()) / f'browser-use-{session}.meta'
+def _is_daemon_alive() -> bool:
+	"""Check if daemon is alive by attempting socket connect."""
+	try:
+		sock = _connect_to_daemon(timeout=0.5)
+		sock.close()
+		return True
+	except OSError:
+		# Clean up stale socket on Unix
+		sock_path = _get_socket_path()
+		if not sock_path.startswith('tcp://'):
+			Path(sock_path).unlink(missing_ok=True)
+		return False
 
 
-def ensure_server(session: str, browser: str, headed: bool, profile: str | None, api_key: str | None) -> bool:
-	"""Start server if not running. Returns True if started."""
-	from browser_use.skill_cli.utils import is_session_locked, kill_orphaned_server
+def ensure_daemon(
+	browser: str,
+	headed: bool,
+	profile: str | None,
+	api_key: str | None,
+	*,
+	explicit_config: bool = False,
+) -> None:
+	"""Start daemon if not running. Restarts only if user explicitly set config flags."""
+	if _is_daemon_alive():
+		if not explicit_config:
+			return  # Daemon is alive, user didn't request specific config — reuse it
 
-	meta_path = get_session_metadata_path(session)
-
-	# Check if server is already running AND holding its lock (healthy server)
-	if is_server_running(session) and is_session_locked(session):
+		# User explicitly set --browser/--headed/--profile — check config matches
 		try:
-			sock = connect_to_server(session, timeout=0.5)  # Increased from 0.1s
-			sock.close()
+			response = send_command('ping', {})
+			if response.get('success'):
+				data = response.get('data', {})
+				if data.get('browser_mode') == browser and data.get('headed') == headed and data.get('profile') == profile:
+					return  # Already running with correct config
 
-			# Check browser mode matches existing session
-			if meta_path.exists():
-				try:
-					meta = json.loads(meta_path.read_text())
-					existing_mode = meta.get('browser_mode', 'chromium')
-					if existing_mode != browser:
-						pass  # Mode mismatch is non-fatal for local modes
-				except (json.JSONDecodeError, OSError):
-					pass  # Metadata file corrupt, ignore
-
-			return False  # Already running with correct mode
+				# Config mismatch — shutdown and restart
+				send_command('shutdown', {})
+				time.sleep(0.3)
 		except Exception:
-			pass  # Server not responsive, continue to restart logic
+			pass  # Daemon not responsive, continue to start
 
-	# Kill any orphaned server (has PID file but no lock)
-	kill_orphaned_server(session)
-
-	# Build server command
+	# Build daemon command
 	cmd = [
 		sys.executable,
 		'-m',
-		'browser_use.skill_cli.server',
-		'--session',
-		session,
+		'browser_use.skill_cli.daemon',
 		'--browser',
 		browser,
 	]
@@ -260,10 +219,8 @@ def ensure_server(session: str, browser: str, headed: bool, profile: str | None,
 	if api_key:
 		env['BROWSER_USE_API_KEY'] = api_key
 
-	# Start server as background process
+	# Start daemon as background process
 	if sys.platform == 'win32':
-		# Windows: CREATE_NO_WINDOW prevents console window from appearing
-		# CREATE_NEW_PROCESS_GROUP allows the process to survive parent exit
 		subprocess.Popen(
 			cmd,
 			env=env,
@@ -272,7 +229,6 @@ def ensure_server(session: str, browser: str, headed: bool, profile: str | None,
 			stderr=subprocess.DEVNULL,
 		)
 	else:
-		# Unix: use start_new_session
 		subprocess.Popen(
 			cmd,
 			env=env,
@@ -281,43 +237,25 @@ def ensure_server(session: str, browser: str, headed: bool, profile: str | None,
 			stderr=subprocess.DEVNULL,
 		)
 
-	# Wait for server to be ready (must have PID, lock, and responsive socket)
+	# Wait for daemon to be ready
 	for _ in range(100):  # 5 seconds max
-		if is_server_running(session) and is_session_locked(session):
-			try:
-				sock = connect_to_server(session, timeout=0.5)
-				sock.close()
-
-				# Write metadata file to track session config
-				meta_path.write_text(
-					json.dumps(
-						{
-							'browser_mode': browser,
-							'headed': headed,
-							'profile': profile,
-						}
-					)
-				)
-
-				return True
-			except Exception:
-				pass
+		if _is_daemon_alive():
+			return
 		time.sleep(0.05)
 
-	print('Error: Failed to start session server', file=sys.stderr)
+	print('Error: Failed to start daemon', file=sys.stderr)
 	sys.exit(1)
 
 
-def send_command(session: str, action: str, params: dict) -> dict:
-	"""Send command to server and get response."""
+def send_command(action: str, params: dict) -> dict:
+	"""Send command to daemon and get response."""
 	request = {
 		'id': f'r{int(time.time() * 1000000) % 1000000}',
 		'action': action,
-		'session': session,
 		'params': params,
 	}
 
-	sock = connect_to_server(session)
+	sock = _connect_to_daemon()
 	try:
 		# Send request
 		sock.sendall((json.dumps(request) + '\n').encode())
@@ -331,7 +269,7 @@ def send_command(session: str, action: str, params: dict) -> dict:
 			data += chunk
 
 		if not data:
-			return {'id': request['id'], 'success': False, 'error': 'No response from server'}
+			return {'id': request['id'], 'success': False, 'error': 'No response from daemon'}
 
 		return json.loads(data.decode())
 	finally:
@@ -374,7 +312,6 @@ Setup:
 	)
 
 	# Global flags
-	parser.add_argument('--session', '-s', default='default', help='Session name (default: default)')
 	parser.add_argument(
 		'--browser',
 		'-b',
@@ -607,22 +544,8 @@ Setup:
 	# Session Management
 	# -------------------------------------------------------------------------
 
-	# sessions
-	subparsers.add_parser('sessions', help='List active sessions')
-
 	# close
-	p = subparsers.add_parser('close', help='Close session')
-	p.add_argument('--all', action='store_true', help='Close all sessions')
-
-	# -------------------------------------------------------------------------
-	# Server Control
-	# -------------------------------------------------------------------------
-
-	server_p = subparsers.add_parser('server', help='Server control')
-	server_sub = server_p.add_subparsers(dest='server_command')
-	server_sub.add_parser('status', help='Check server status')
-	server_sub.add_parser('stop', help='Stop server')
-	server_sub.add_parser('logs', help='View server logs')
+	subparsers.add_parser('close', help='Close browser and stop daemon')
 
 	# -------------------------------------------------------------------------
 	# Profile Management (local only, use -b real)
@@ -645,39 +568,6 @@ Setup:
 	return parser
 
 
-def handle_server_command(args: argparse.Namespace) -> int:
-	"""Handle server subcommands."""
-	if args.server_command == 'status':
-		if is_server_running(args.session):
-			print(f'Server for session "{args.session}" is running')
-			return 0
-		else:
-			print(f'Server for session "{args.session}" is not running')
-			return 1
-
-	elif args.server_command == 'stop':
-		if not is_server_running(args.session):
-			print(f'Server for session "{args.session}" is not running')
-			return 0
-		response = send_command(args.session, 'shutdown', {})
-		if response.get('success'):
-			print(f'Server for session "{args.session}" stopped')
-			return 0
-		else:
-			print(f'Error: {response.get("error")}', file=sys.stderr)
-			return 1
-
-	elif args.server_command == 'logs':
-		log_path = Path(tempfile.gettempdir()) / f'browser-use-{args.session}.log'
-		if log_path.exists():
-			print(log_path.read_text())
-		else:
-			print('No logs found')
-		return 0
-
-	return 0
-
-
 def main() -> int:
 	"""Main entry point."""
 	parser = build_parser()
@@ -687,59 +577,11 @@ def main() -> int:
 		parser.print_help()
 		return 0
 
-	# Handle server subcommands without starting server
-	if args.command == 'server':
-		return handle_server_command(args)
-
-	# Handle profile subcommands without starting server
+	# Handle profile subcommands without starting daemon
 	if args.command == 'profile':
 		from browser_use.skill_cli.commands.profile import handle_profile_command
 
 		return handle_profile_command(args)
-
-	# Handle sessions list - find all running sessions
-	if args.command == 'sessions':
-		from browser_use.skill_cli.utils import find_all_sessions
-
-		session_names = find_all_sessions()
-		sessions = [{'name': name, 'status': 'running'} for name in session_names]
-
-		if args.json:
-			print(json.dumps(sessions))
-		else:
-			if sessions:
-				for s in sessions:
-					print(f'  {s["name"]}: {s["status"]}')
-			else:
-				print('No active sessions')
-		return 0
-
-	# Handle close --all by closing all running sessions
-	if args.command == 'close' and getattr(args, 'all', False):
-		from browser_use.skill_cli.utils import find_all_sessions
-
-		session_names = find_all_sessions()
-		closed = []
-		for name in session_names:
-			try:
-				response = send_command(name, 'close', {})
-				if response.get('success'):
-					closed.append(name)
-					# Clean up metadata file
-					meta_path = get_session_metadata_path(name)
-					if meta_path.exists():
-						meta_path.unlink()
-			except Exception:
-				pass  # Server may already be stopping
-
-		if args.json:
-			print(json.dumps({'closed': closed, 'count': len(closed)}))
-		else:
-			if closed:
-				print(f'Closed {len(closed)} session(s): {", ".join(closed)}')
-			else:
-				print('No active sessions')
-		return 0
 
 	# Handle setup command
 	if args.command == 'setup':
@@ -864,6 +706,24 @@ def main() -> int:
 					print(f'Stopped tunnel on port {result["stopped"]}')
 		return 0
 
+	# Handle close — shutdown daemon
+	if args.command == 'close':
+		if _is_daemon_alive():
+			try:
+				response = send_command('shutdown', {})
+				if args.json:
+					print(json.dumps(response))
+				else:
+					print('Browser closed')
+			except Exception:
+				print('Browser closed')
+		else:
+			if args.json:
+				print(json.dumps({'success': True, 'data': {'shutdown': True}}))
+			else:
+				print('No active browser session')
+		return 0
+
 	# Validate requested mode is available based on installation config
 	from browser_use.skill_cli.install_config import get_mode_unavailable_error, is_mode_available
 
@@ -878,18 +738,19 @@ def main() -> int:
 	# Validate --profile flag usage
 	if args.profile and args.browser == 'chromium':
 		print(
-			'Error: --profile is not supported in chromium mode.\n'
-			'Use -b real for local Chrome profiles.',
+			'Error: --profile is not supported in chromium mode.\nUse -b real for local Chrome profiles.',
 			file=sys.stderr,
 		)
 		return 1
 
-	# Ensure server is running
-	ensure_server(args.session, args.browser, args.headed, args.profile, args.api_key)
+	# Ensure daemon is running
+	# Only restart on config mismatch if the user explicitly passed config flags
+	explicit_config = any(flag in sys.argv for flag in ('--browser', '-b', '--headed', '--profile'))
+	ensure_daemon(args.browser, args.headed, args.profile, args.api_key, explicit_config=explicit_config)
 
 	# Build params from args
 	params = {}
-	skip_keys = {'command', 'session', 'browser', 'headed', 'json', 'api_key', 'server_command'}
+	skip_keys = {'command', 'browser', 'headed', 'json', 'api_key'}
 
 	for key, value in vars(args).items():
 		if key not in skip_keys and value is not None:
@@ -899,14 +760,8 @@ def main() -> int:
 	if args.profile:
 		params['profile'] = args.profile
 
-	# Send command to server
-	response = send_command(args.session, args.command, params)
-
-	# Clean up metadata file on successful close
-	if args.command == 'close' and response.get('success'):
-		meta_path = get_session_metadata_path(args.session)
-		if meta_path.exists():
-			meta_path.unlink()
+	# Send command to daemon
+	response = send_command(args.command, params)
 
 	# Output response
 	if args.json:

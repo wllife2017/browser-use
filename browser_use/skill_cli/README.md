@@ -322,30 +322,22 @@ browser-use -b remote open https://abc.trycloudflare.com
 | `profile update <id> --name <name>` | Rename profile |
 | `profile delete <id>` | Delete profile |
 
-## Local Session Management
+## Session Management
 
 | Command | Description |
 |---------|-------------|
-| `sessions` | List active sessions |
-| `close` | Close browser session |
-| `close --all` | Close all sessions |
-| `server status` | Check if server is running |
-| `server stop` | Stop server |
-| `server logs` | View server logs |
+| `close` | Close browser and stop daemon |
 
 ## Global Options
 
 | Option | Description |
 |--------|-------------|
-| `--session NAME` | Use named session (default: "default") |
 | `--browser MODE` | Browser mode: chromium, real, remote |
 | `--headed` | Show browser window |
 | `--profile NAME` | Browser profile (local name or cloud ID) |
 | `--json` | Output as JSON |
 | `--api-key KEY` | Override API key |
 | `--mcp` | Run as MCP server via stdin/stdout |
-
-**Session behavior**: All commands without `--session` use the same "default" session. The browser stays open and is reused across commands. Use `--session NAME` to run multiple browsers in parallel.
 
 ## Examples
 
@@ -363,15 +355,6 @@ browser-use click 2
 ```bash
 browser-use open https://news.ycombinator.com
 browser-use eval "Array.from(document.querySelectorAll('.titleline a')).slice(0,5).map(a => a.textContent)"
-```
-
-### Multi-Session Workflow
-```bash
-browser-use --session work open https://work.example.com
-browser-use --session personal open https://personal.example.com
-browser-use --session work state
-browser-use --session personal state
-browser-use close --all
 ```
 
 ### Python Automation
@@ -410,12 +393,12 @@ curl -o ~/.claude/skills/browser-use/SKILL.md \
 
 ## How It Works
 
-The CLI uses a session server architecture:
+The CLI uses a daemon architecture:
 
-1. First command starts a background server (browser stays open)
+1. First command starts a background daemon (browser stays open)
 2. Subsequent commands communicate via Unix socket (or TCP on Windows)
 3. Browser persists across commands for fast interaction
-4. Server auto-starts when needed, stops with `browser-use server stop`
+4. Daemon auto-starts when needed, auto-exits when browser dies, or stops with `browser-use close`
 
 This gives you ~50ms command latency instead of waiting for browser startup each time.
 
@@ -444,11 +427,11 @@ echo $env:PATH
 & "C:\Program Files\Git\bin\bash.exe" -c 'browser-use --help'
 ```
 
-### "Failed to start session server" error
+### "Failed to start daemon" error
 Kill zombie processes:
 ```powershell
 # Find process on port
-netstat -ano | findstr 49698
+netstat -ano | findstr 49200
 
 # Kill by PID
 taskkill /PID <pid> /F
