@@ -211,7 +211,8 @@ browser-use screenshot
 
 | Option | Description |
 |--------|-------------|
-| `--browser MODE` | Browser mode: chromium, real |
+| `--headed` | Show browser window |
+| `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
 | `--json` | Output as JSON |
 
 ## Tips

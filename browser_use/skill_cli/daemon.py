@@ -34,11 +34,9 @@ class Daemon:
 
 	def __init__(
 		self,
-		browser_mode: str,
 		headed: bool,
 		profile: str | None,
 	) -> None:
-		self.browser_mode = browser_mode
 		self.headed = headed
 		self.profile = profile
 		self.running = True
@@ -54,14 +52,13 @@ class Daemon:
 
 		from browser_use.skill_cli.sessions import SessionInfo, create_browser_session
 
-		logger.info(f'Creating session (mode={self.browser_mode}, headed={self.headed})')
+		logger.info(f'Creating session (headed={self.headed}, profile={self.profile})')
 
-		bs = await create_browser_session(self.browser_mode, self.headed, self.profile)
+		bs = await create_browser_session(self.headed, self.profile)
 		await bs.start()
 
 		self._session = SessionInfo(
 			name='default',
-			browser_mode=self.browser_mode,
 			headed=self.headed,
 			profile=self.profile,
 			browser_session=bs,
@@ -135,7 +132,6 @@ class Daemon:
 					'id': req_id,
 					'success': True,
 					'data': {
-						'browser_mode': self.browser_mode,
 						'headed': self.headed,
 						'profile': self.profile,
 					},
@@ -241,15 +237,13 @@ class Daemon:
 def main() -> None:
 	"""Main entry point for daemon process."""
 	parser = argparse.ArgumentParser(description='Browser-use daemon')
-	parser.add_argument('--browser', default='chromium', choices=['chromium', 'real'])
 	parser.add_argument('--headed', action='store_true', help='Show browser window')
-	parser.add_argument('--profile', help='Chrome profile (real browser mode)')
+	parser.add_argument('--profile', help='Chrome profile (triggers real Chrome mode)')
 	args = parser.parse_args()
 
-	logger.info(f'Starting daemon: browser={args.browser}, headed={args.headed}')
+	logger.info(f'Starting daemon: headed={args.headed}, profile={args.profile}')
 
 	daemon = Daemon(
-		browser_mode=args.browser,
 		headed=args.headed,
 		profile=args.profile,
 	)

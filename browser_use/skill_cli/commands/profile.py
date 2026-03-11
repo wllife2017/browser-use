@@ -36,12 +36,12 @@ def handle_profile_command(args: argparse.Namespace) -> int:
 
 def _print_usage() -> None:
 	"""Print profile command usage."""
-	print('Usage: browser-use [-b real] profile <command>')
+	print('Usage: browser-use profile <command>')
 	print()
 	print('Commands:')
 	print('  list              List local Chrome profiles')
 	print('  get <id>          Get profile details')
-	print('  cookies <id>      Show cookies by domain (requires -b real)')
+	print('  cookies <id>      Show cookies by domain')
 
 
 # -----------------------------------------------------------------------------
@@ -97,12 +97,6 @@ def _get_local_profile(args: argparse.Namespace) -> int:
 
 def _handle_cookies(args: argparse.Namespace) -> int:
 	"""Handle 'profile cookies <id>' command."""
-	browser_mode = getattr(args, 'browser', None)
-	if browser_mode and browser_mode != 'real':
-		print('Error: Cookie listing is only available for local Chrome profiles.', file=sys.stderr)
-		print('Use -b real to access local profile cookies.', file=sys.stderr)
-		return 1
-
 	return _list_profile_cookies(args)
 
 
@@ -137,7 +131,7 @@ def _list_profile_cookies(args: argparse.Namespace) -> int:
 	print(f'Loading cookies from: {selected_profile["name"]} ({selected_profile["email"]})')
 
 	async def get_cookies():
-		local_session = await create_browser_session('real', headed=False, profile=profile_id)
+		local_session = await create_browser_session(headed=False, profile=profile_id)
 		await local_session.start()
 		try:
 			cookies = await local_session._cdp_get_cookies()

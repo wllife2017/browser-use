@@ -123,7 +123,7 @@ if '--template' in sys.argv:
 		# Keep --force/-f and --list/-l flags
 		elif arg in ('--force', '-f', '--list', '-l'):
 			new_argv.append(arg)
-		# Skip other flags (--browser, --headed, etc.)
+		# Skip other flags (--headed, etc.)
 		i += 1
 
 	sys.argv = new_argv
@@ -175,7 +175,6 @@ def _is_daemon_alive() -> bool:
 
 
 def ensure_daemon(
-	browser: str,
 	headed: bool,
 	profile: str | None,
 	api_key: str | None,
@@ -187,12 +186,12 @@ def ensure_daemon(
 		if not explicit_config:
 			return  # Daemon is alive, user didn't request specific config — reuse it
 
-		# User explicitly set --browser/--headed/--profile — check config matches
+		# User explicitly set --headed/--profile — check config matches
 		try:
 			response = send_command('ping', {})
 			if response.get('success'):
 				data = response.get('data', {})
-				if data.get('browser_mode') == browser and data.get('headed') == headed and data.get('profile') == profile:
+				if data.get('headed') == headed and data.get('profile') == profile:
 					return  # Already running with correct config
 
 				# Config mismatch — shutdown and restart
@@ -206,8 +205,6 @@ def ensure_daemon(
 		sys.executable,
 		'-m',
 		'browser_use.skill_cli.daemon',
-		'--browser',
-		browser,
 	]
 	if headed:
 		cmd.append('--headed')
@@ -283,14 +280,6 @@ def send_command(action: str, params: dict) -> dict:
 
 def build_parser() -> argparse.ArgumentParser:
 	"""Build argument parser with all commands."""
-	# Import install config to get available modes and default
-	from browser_use.skill_cli.install_config import get_available_modes, get_default_mode
-
-	available_modes = [m for m in get_available_modes() if m != 'remote']
-	default_mode = get_default_mode()
-	if default_mode == 'remote':
-		default_mode = 'chromium'
-
 	# Build epilog
 	epilog_parts = []
 
@@ -312,15 +301,14 @@ Setup:
 	)
 
 	# Global flags
-	parser.add_argument(
-		'--browser',
-		'-b',
-		choices=available_modes,
-		default=default_mode,
-		help=f'Browser mode (available: {", ".join(available_modes)})',
-	)
 	parser.add_argument('--headed', action='store_true', help='Show browser window')
-	parser.add_argument('--profile', help='Browser profile (local name)')
+	parser.add_argument(
+		'--profile',
+		nargs='?',
+		const='Default',
+		default=None,
+		help='Use real Chrome with profile (bare --profile uses "Default")',
+	)
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
 	parser.add_argument('--api-key', help='LLM API key')
 	parser.add_argument('--mcp', action='store_true', help='Run as MCP server (JSON-RPC via stdin/stdout)')
@@ -548,10 +536,10 @@ Setup:
 	subparsers.add_parser('close', help='Close browser and stop daemon')
 
 	# -------------------------------------------------------------------------
-	# Profile Management (local only, use -b real)
+	# Profile Management
 	# -------------------------------------------------------------------------
 
-	profile_p = subparsers.add_parser('profile', help='Manage local browser profiles (use -b real)')
+	profile_p = subparsers.add_parser('profile', help='Manage local browser profiles')
 	profile_sub = profile_p.add_subparsers(dest='profile_command')
 
 	# profile list
@@ -562,7 +550,7 @@ Setup:
 	p.add_argument('id', help='Profile ID or name')
 
 	# profile cookies <id>
-	p = profile_sub.add_parser('cookies', help='List cookies by domain (requires -b real)')
+	p = profile_sub.add_parser('cookies', help='List cookies by domain')
 	p.add_argument('id', help='Profile ID or name (e.g. "Default", "Profile 1")')
 
 	return parser
@@ -606,7 +594,6 @@ def main() -> int:
 		else:
 			if result.get('status') == 'success':
 				print('\n✓ Setup complete!')
-				print(f'\nMode: {result["mode"]}')
 				print('Next: browser-use open https://example.com')
 		return 0
 
@@ -724,33 +711,18 @@ def main() -> int:
 				print('No active browser session')
 		return 0
 
-	# Validate requested mode is available based on installation config
-	from browser_use.skill_cli.install_config import get_mode_unavailable_error, is_mode_available
-
-	if not is_mode_available(args.browser):
-		print(get_mode_unavailable_error(args.browser), file=sys.stderr)
-		return 1
-
 	# Set API key in environment if provided
 	if args.api_key:
 		os.environ['BROWSER_USE_API_KEY'] = args.api_key
 
-	# Validate --profile flag usage
-	if args.profile and args.browser == 'chromium':
-		print(
-			'Error: --profile is not supported in chromium mode.\nUse -b real for local Chrome profiles.',
-			file=sys.stderr,
-		)
-		return 1
-
 	# Ensure daemon is running
 	# Only restart on config mismatch if the user explicitly passed config flags
-	explicit_config = any(flag in sys.argv for flag in ('--browser', '-b', '--headed', '--profile'))
-	ensure_daemon(args.browser, args.headed, args.profile, args.api_key, explicit_config=explicit_config)
+	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile'))
+	ensure_daemon(args.headed, args.profile, args.api_key, explicit_config=explicit_config)
 
 	# Build params from args
 	params = {}
-	skip_keys = {'command', 'browser', 'headed', 'json', 'api_key'}
+	skip_keys = {'command', 'headed', 'json', 'api_key'}
 
 	for key, value in vars(args).items():
 		if key not in skip_keys and value is not None:
@@ -765,16 +737,10 @@ def main() -> int:
 
 	# Output response
 	if args.json:
-		# Add mode to JSON output for browser-related commands
-		if args.command in ('open', 'run', 'state', 'click', 'type', 'input', 'scroll', 'screenshot'):
-			response['mode'] = args.browser
 		print(json.dumps(response))
 	else:
 		if response.get('success'):
 			data = response.get('data')
-			# Show mode for browser-related commands (first line of output)
-			if args.command in ('open', 'run'):
-				print(f'mode: {args.browser}')
 			if data is not None:
 				if isinstance(data, dict):
 					# Special case: raw text output (e.g., state command)

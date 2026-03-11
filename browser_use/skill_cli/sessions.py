@@ -14,7 +14,6 @@ class SessionInfo:
 	"""Information about a browser session."""
 
 	name: str
-	browser_mode: str
 	headed: bool
 	profile: str | None
 	browser_session: BrowserSession
@@ -22,48 +21,33 @@ class SessionInfo:
 
 
 async def create_browser_session(
-	mode: str,
 	headed: bool,
 	profile: str | None,
 ) -> BrowserSession:
-	"""Create BrowserSession based on mode.
+	"""Create BrowserSession based on whether a profile is specified.
 
-	Modes:
-	- chromium: Playwright-managed Chromium (default)
-	- real: User's Chrome with profile
-
-	Raises:
-		RuntimeError: If the requested mode is not available based on installation config
+	- No profile: Playwright-managed Chromium (default)
+	- With profile: User's real Chrome with the specified profile
 	"""
-	from browser_use.skill_cli.install_config import get_mode_unavailable_error, is_mode_available
-
-	# Validate mode is available based on installation config
-	if not is_mode_available(mode):
-		raise RuntimeError(get_mode_unavailable_error(mode))
-
-	if mode == 'chromium':
+	if profile is None:
 		return BrowserSession(
 			headless=not headed,
 		)
 
-	elif mode == 'real':
-		from browser_use.skill_cli.utils import find_chrome_executable, get_chrome_profile_path
+	from browser_use.skill_cli.utils import find_chrome_executable, get_chrome_profile_path
 
-		chrome_path = find_chrome_executable()
-		if not chrome_path:
-			raise RuntimeError('Could not find Chrome executable. Please install Chrome or specify --browser chromium')
+	chrome_path = find_chrome_executable()
+	if not chrome_path:
+		raise RuntimeError('Could not find Chrome executable. Please install Chrome or omit --profile to use Chromium.')
 
-		# Always get the Chrome user data directory (not the profile subdirectory)
-		user_data_dir = get_chrome_profile_path(None)
-		# Profile directory defaults to 'Default', or use the specified profile name
-		profile_directory = profile if profile else 'Default'
+	# Always get the Chrome user data directory (not the profile subdirectory)
+	user_data_dir = get_chrome_profile_path(None)
+	# Profile directory defaults to 'Default', or use the specified profile name
+	profile_directory = profile
 
-		return BrowserSession(
-			executable_path=chrome_path,
-			user_data_dir=user_data_dir,
-			profile_directory=profile_directory,
-			headless=not headed,  # Headless by default, --headed for visible
-		)
-
-	else:
-		raise ValueError(f'Unknown browser mode: {mode}')
+	return BrowserSession(
+		executable_path=chrome_path,
+		user_data_dir=user_data_dir,
+		profile_directory=profile_directory,
+		headless=not headed,
+	)

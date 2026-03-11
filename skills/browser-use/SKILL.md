@@ -29,14 +29,14 @@ For more information, see https://github.com/browser-use/browser-use/blob/main/b
 ## Browser Modes
 
 ```bash
-browser-use --browser chromium open <url>      # Default: headless Chromium
-browser-use --browser chromium --headed open <url>  # Visible Chromium window
-browser-use --browser real open <url>          # Real Chrome (no profile = fresh)
-browser-use --browser real --profile "Default" open <url>  # Real Chrome with your login sessions
+browser-use open <url>                         # Default: headless Chromium
+browser-use --headed open <url>                # Visible Chromium window
+browser-use --profile open <url>               # Real Chrome with Default profile
+browser-use --profile "Profile 1" open <url>   # Real Chrome with named profile
 ```
 
-- **chromium**: Fast, isolated, headless by default
-- **real**: Uses a real Chrome binary. Without `--profile`, uses a persistent but empty CLI profile at `~/.config/browseruse/profiles/cli/`. With `--profile "ProfileName"`, copies your actual Chrome profile (cookies, logins, extensions)
+- **Default (no --profile)**: Fast, isolated Chromium, headless by default
+- **With --profile**: Uses your real Chrome binary with the specified profile (cookies, logins, extensions). Bare `--profile` uses "Default".
 
 ## Essential Commands
 
@@ -189,11 +189,11 @@ browser-use close                         # Close browser session
 
 ### Profile Management
 
-#### Local Chrome Profiles (`--browser real`)
+#### Local Chrome Profiles
 ```bash
-browser-use -b real profile list          # List local Chrome profiles
-browser-use -b real profile get "Default" # Get profile details
-browser-use -b real profile cookies "Default"  # Show cookie domains in profile
+browser-use profile list                  # List local Chrome profiles
+browser-use profile get "Default"         # Get profile details
+browser-use profile cookies "Default"     # Show cookie domains in profile
 ```
 
 ## Common Workflows
@@ -212,7 +212,7 @@ Use when a task requires browsing a site the user is already logged into (e.g. G
 #### Step 1: Check existing profiles
 
 ```bash
-browser-use -b real profile list
+browser-use profile list
 # → Default: Person 1 (user@gmail.com)
 # → Profile 1: Work (work@company.com)
 ```
@@ -220,15 +220,15 @@ browser-use -b real profile list
 #### Step 2: Browse with the chosen profile
 
 ```bash
-# Real browser — uses local Chrome with existing login sessions
-browser-use --browser real --profile "Default" open https://github.com
+# Real Chrome — uses existing login sessions from the chosen profile
+browser-use --profile "Default" open https://github.com
 ```
 
 The user is already authenticated — no login needed.
 
 #### Check what cookies a profile has
 ```bash
-browser-use -b real profile cookies "Default"
+browser-use profile cookies "Default"
 # → youtube.com: 23
 # → google.com: 18
 # → github.com: 2
@@ -258,9 +258,8 @@ browser-use screenshot
 
 | Option | Description |
 |--------|-------------|
-| `--browser MODE` | Browser mode: chromium, real |
-| `--headed` | Show browser window (chromium mode) |
-| `--profile NAME` | Browser profile (local Chrome profile name) |
+| `--headed` | Show browser window |
+| `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |
 

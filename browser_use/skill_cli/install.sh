@@ -78,7 +78,7 @@
 #
 # 7. Debugging daemon issues
 #    To see actual error messages instead of "Failed to start daemon":
-#      & "$env:USERPROFILE\.browser-use-env\Scripts\python.exe" -m browser_use.skill_cli.daemon --browser chromium
+#      & "$env:USERPROFILE\.browser-use-env\Scripts\python.exe" -m browser_use.skill_cli.daemon
 #    This runs the daemon in foreground and shows all errors.
 #
 # =============================================================================
@@ -596,39 +596,6 @@ install_dependencies() {
 }
 
 # =============================================================================
-# Write install configuration
-# =============================================================================
-
-write_install_config() {
-	# Determine installed modes and default
-	local modes=""
-	local default_mode=""
-
-	if [ "$INSTALL_LOCAL" = true ] && [ "$INSTALL_REMOTE" = true ]; then
-		modes='["chromium", "real", "remote"]'
-		default_mode="chromium"
-	elif [ "$INSTALL_REMOTE" = true ]; then
-		modes='["remote"]'
-		default_mode="remote"
-	else
-		modes='["chromium", "real"]'
-		default_mode="chromium"
-	fi
-
-	# Write config file
-	mkdir -p "$HOME/.browser-use"
-	cat > "$HOME/.browser-use/install-config.json" << EOF
-{
-  "installed_modes": $modes,
-  "default_mode": "$default_mode"
-}
-EOF
-
-	local mode_names=$(echo $modes | tr -d '[]"' | tr ',' ' ')
-	log_success "Configured: $mode_names"
-}
-
-# =============================================================================
 # PATH configuration
 # =============================================================================
 
@@ -853,19 +820,16 @@ main() {
 	# Step 5: Install dependencies
 	install_dependencies
 
-	# Step 6: Write install config
-	write_install_config
-
-	# Step 7: Configure PATH
+	# Step 6: Configure PATH
 	configure_path
 
-	# Step 8: Run setup wizard
+	# Step 7: Run setup wizard
 	run_setup
 
-	# Step 9: Validate
+	# Step 8: Validate
 	validate
 
-	# Step 10: Show next steps
+	# Step 9: Show next steps
 	print_next_steps
 }
 

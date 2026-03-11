@@ -70,7 +70,6 @@ class TestClickCommandHandler:
 
 			session_info = SessionInfo(
 				name='test',
-				browser_mode='chromium',
 				headed=False,
 				profile=None,
 				browser_session=session,
@@ -102,7 +101,6 @@ class TestClickCommandHandler:
 
 			session_info = SessionInfo(
 				name='test',
-				browser_mode='chromium',
 				headed=False,
 				profile=None,
 				browser_session=session,
@@ -124,7 +122,6 @@ class TestClickCommandHandler:
 		# 3-arg error branch before doing anything with the session.
 		session_info = SessionInfo(
 			name='test',
-			browser_mode='chromium',
 			headed=False,
 			profile=None,
 			browser_session=BrowserSession(headless=True),
