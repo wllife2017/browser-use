@@ -80,7 +80,8 @@ def _get_api_key() -> str:
 		return key
 
 	print('Error: No API key found.', file=sys.stderr)
-	print('Set BROWSER_USE_API_KEY or run: browser-use cloud login <key>', file=sys.stderr)
+	print('Get one at: https://cloud.browser-use.com/settings?tab=api-keys&new=1', file=sys.stderr)
+	print('Then run: browser-use cloud login <key>', file=sys.stderr)
 	sys.exit(1)
 
 
