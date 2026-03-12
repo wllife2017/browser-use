@@ -177,7 +177,6 @@ def _is_daemon_alive() -> bool:
 def ensure_daemon(
 	headed: bool,
 	profile: str | None,
-	api_key: str | None,
 	*,
 	explicit_config: bool = False,
 ) -> None:
@@ -213,8 +212,6 @@ def ensure_daemon(
 
 	# Set up environment
 	env = os.environ.copy()
-	if api_key:
-		env['BROWSER_USE_API_KEY'] = api_key
 
 	# Start daemon as background process
 	if sys.platform == 'win32':
@@ -283,13 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
 	# Build epilog
 	epilog_parts = []
 
-	epilog_parts.append("""Local Mode (default):
-  browser-use run "Fill the form"               # Uses local browser + your API keys
-  browser-use run "task" --llm gpt-4o           # Specify model (requires API key)
-  browser-use open https://example.com""")
-
-	epilog_parts.append("""
-Cloud API:
+	epilog_parts.append("""Cloud API:
   browser-use cloud login <api-key>             # Save API key
   browser-use cloud v2 GET /browsers            # List browsers
   browser-use cloud v2 POST /tasks '{...}'      # Create task
@@ -298,6 +289,7 @@ Cloud API:
 
 	epilog_parts.append("""
 Setup:
+  browser-use open https://example.com          # Navigate to URL
   browser-use install                           # Install Chromium browser
   browser-use init                              # Generate template file""")
 
@@ -318,7 +310,6 @@ Setup:
 		help='Use real Chrome with profile (bare --profile uses "Default")',
 	)
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
-	parser.add_argument('--api-key', help='LLM API key')
 	parser.add_argument('--mcp', action='store_true', help='Run as MCP server (JSON-RPC via stdin/stdout)')
 	parser.add_argument('--template', help='Generate template file (use with --output for custom path)')
 
@@ -511,16 +502,6 @@ Setup:
 	p.add_argument('--file', '-f', help='Execute Python file')
 	p.add_argument('--reset', action='store_true', help='Reset Python namespace')
 	p.add_argument('--vars', action='store_true', help='Show defined variables')
-
-	# -------------------------------------------------------------------------
-	# Agent Tasks
-	# -------------------------------------------------------------------------
-
-	p = subparsers.add_parser('run', help='Run agent task (requires API key)')
-	p.add_argument('task', help='Task description')
-	p.add_argument('--max-steps', type=int, help='Maximum steps')
-	# Model selection
-	p.add_argument('--llm', help='LLM model (gpt-4o, claude-sonnet-4-20250514, gemini-2.0-flash)')
 
 	# -------------------------------------------------------------------------
 	# Tunnel Commands
@@ -732,18 +713,14 @@ def main() -> int:
 				print('No active browser session')
 		return 0
 
-	# Set API key in environment if provided
-	if args.api_key:
-		os.environ['BROWSER_USE_API_KEY'] = args.api_key
-
 	# Ensure daemon is running
 	# Only restart on config mismatch if the user explicitly passed config flags
 	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile'))
-	ensure_daemon(args.headed, args.profile, args.api_key, explicit_config=explicit_config)
+	ensure_daemon(args.headed, args.profile, explicit_config=explicit_config)
 
 	# Build params from args
 	params = {}
-	skip_keys = {'command', 'headed', 'json', 'api_key'}
+	skip_keys = {'command', 'headed', 'json'}
 
 	for key, value in vars(args).items():
 		if key not in skip_keys and value is not None:

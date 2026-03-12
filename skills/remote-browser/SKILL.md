@@ -67,10 +67,6 @@ browser-use wait text "Success"           # Wait for text
 
 # Session
 browser-use close                         # Close browser session
-
-# AI Agent
-browser-use run "Fill the contact form"   # Run local agent
-browser-use run "task" --llm gpt-4o       # Specify model
 ```
 
 ## Commands
@@ -160,14 +156,6 @@ The Python session maintains state across commands. The `browser` object provide
 - `browser.click(index)`, `browser.type(text)`, `browser.input(index, text)`, `browser.keys(keys)` — interactions
 - `browser.screenshot(path)`, `browser.scroll(direction, amount)` — visual
 - `browser.wait(seconds)`, `browser.extract(query)` — utilities
-
-### Agent Tasks
-```bash
-browser-use run "Fill the contact form with test data"   # AI agent
-browser-use run "Extract all product prices" --max-steps 50
-browser-use run "task" --llm gpt-4o                      # Specify LLM model
-browser-use run "task" --llm claude-sonnet-4-20250514
-```
 
 ### Tunnels
 ```bash

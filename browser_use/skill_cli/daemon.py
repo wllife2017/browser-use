@@ -137,7 +137,7 @@ class Daemon:
 					},
 				}
 
-			from browser_use.skill_cli.commands import agent, browser, python_exec
+			from browser_use.skill_cli.commands import browser, python_exec
 
 			# Get or create the single session
 			session = await self._get_or_create_session()
@@ -147,8 +147,6 @@ class Daemon:
 				result = await browser.handle(action, session, params)
 			elif action == 'python':
 				result = await python_exec.handle(session, params)
-			elif action == 'run':
-				result = await agent.handle(session, params)
 			else:
 				return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
 

@@ -8,7 +8,6 @@ Usage:
     browser-use click 5
     browser-use type "Hello World"
     browser-use python "print(browser.url)"
-    browser-use run "Fill the contact form"
     browser-use close
 """
 

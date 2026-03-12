@@ -190,20 +190,6 @@ browser-use python --reset            # Clear namespace
 browser-use python --file script.py   # Run Python file
 ```
 
-## Agent Tasks
-
-Run AI-powered browser automation tasks.
-
-### Local Mode
-```bash
-browser-use run "Fill the contact form with test data"
-browser-use run "Extract all product prices" --max-steps 50
-browser-use run "task" --llm gpt-4o   # Specify LLM model
-```
-
-Requires an LLM API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
-
-
 ## Cloud API
 
 Generic REST passthrough to the Browser-Use Cloud API.
@@ -277,7 +263,6 @@ browser-use open https://abc.trycloudflare.com
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
 | `--json` | Output as JSON |
-| `--api-key KEY` | Override API key |
 | `--mcp` | Run as MCP server via stdin/stdout |
 
 ## Examples

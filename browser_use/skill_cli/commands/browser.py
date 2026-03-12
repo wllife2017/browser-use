@@ -246,7 +246,7 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		query = params['query']
 		# This requires LLM integration
 		# For now, return a placeholder
-		return {'query': query, 'error': 'extract requires agent mode - use: browser-use run "extract ..."'}
+		return {'query': query, 'error': 'extract is not yet implemented'}
 
 	elif action == 'hover':
 		index = params['index']
