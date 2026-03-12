@@ -289,6 +289,14 @@ def build_parser() -> argparse.ArgumentParser:
   browser-use open https://example.com""")
 
 	epilog_parts.append("""
+Cloud API:
+  browser-use cloud login <api-key>             # Save API key
+  browser-use cloud v2 GET /browsers            # List browsers
+  browser-use cloud v2 POST /tasks '{...}'      # Create task
+  browser-use cloud v2 poll <task-id>           # Poll task until done
+  browser-use cloud v2 --help                   # Show API endpoints""")
+
+	epilog_parts.append("""
 Setup:
   browser-use install                           # Install Chromium browser
   browser-use init                              # Generate template file""")
@@ -536,6 +544,13 @@ Setup:
 	subparsers.add_parser('close', help='Close browser and stop daemon')
 
 	# -------------------------------------------------------------------------
+	# Cloud API (Generic REST passthrough)
+	# -------------------------------------------------------------------------
+
+	cloud_p = subparsers.add_parser('cloud', help='Browser-Use Cloud API')
+	cloud_p.add_argument('cloud_args', nargs=argparse.REMAINDER, help='cloud subcommand args')
+
+	# -------------------------------------------------------------------------
 	# Profile Management
 	# -------------------------------------------------------------------------
 
@@ -564,6 +579,12 @@ def main() -> int:
 	if not args.command:
 		parser.print_help()
 		return 0
+
+	# Handle cloud subcommands without starting daemon
+	if args.command == 'cloud':
+		from browser_use.skill_cli.commands.cloud import handle_cloud_command
+
+		return handle_cloud_command(getattr(args, 'cloud_args', []))
 
 	# Handle profile subcommands without starting daemon
 	if args.command == 'profile':

@@ -204,6 +204,40 @@ browser-use run "task" --llm gpt-4o   # Specify LLM model
 Requires an LLM API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
 
 
+## Cloud API
+
+Generic REST passthrough to the Browser-Use Cloud API.
+
+| Command | Description |
+|---------|-------------|
+| `cloud login <api-key>` | Save API key |
+| `cloud logout` | Remove API key |
+| `cloud v2 GET <path>` | GET request to API v2 |
+| `cloud v2 POST <path> '<json>'` | POST request to API v2 |
+| `cloud v3 POST <path> '<json>'` | POST request to API v3 |
+| `cloud v2 poll <task-id>` | Poll task until done |
+| `cloud v2 --help` | Show API v2 endpoints (from OpenAPI spec) |
+| `cloud v3 --help` | Show API v3 endpoints |
+
+```bash
+# Save API key (or set BROWSER_USE_API_KEY env var)
+browser-use cloud login sk-abc123...
+
+# List browsers
+browser-use cloud v2 GET /browsers
+
+# Create a task
+browser-use cloud v2 POST /tasks '{"task":"Search for AI news","url":"https://google.com"}'
+
+# Poll until done
+browser-use cloud v2 poll <task-id>
+
+# Remove API key
+browser-use cloud logout
+```
+
+API key stored in `~/.config/browser-use/config.json` with `0600` permissions.
+
 ## Tunnels
 
 Expose local dev servers to cloud browsers via Cloudflare tunnels.

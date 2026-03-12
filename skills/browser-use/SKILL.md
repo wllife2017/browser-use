@@ -173,6 +173,21 @@ browser-use run "task" --llm gpt-4o                      # Specify LLM model
 browser-use run "task" --llm claude-sonnet-4-20250514
 ```
 
+### Cloud API
+```bash
+browser-use cloud login <api-key>                          # Save API key
+browser-use cloud logout                                   # Remove API key
+browser-use cloud v2 GET /browsers                         # List browsers
+browser-use cloud v2 POST /tasks '{"task":"...","url":"https://..."}'  # Create task
+browser-use cloud v3 POST /sessions '{"task":"...","model":"bu-mini"}' # Create session
+browser-use cloud v2 GET /tasks/<task-id>                  # Get task status
+browser-use cloud v2 poll <task-id>                        # Poll task until done
+browser-use cloud v2 --help                                # Show API v2 endpoints
+browser-use cloud v3 --help                                # Show API v3 endpoints
+```
+
+API key: env var `BROWSER_USE_API_KEY` or `browser-use cloud login`. Stored in `~/.config/browser-use/config.json`.
+
 ### Tunnels
 ```bash
 browser-use tunnel <port>           # Start tunnel (returns URL)
