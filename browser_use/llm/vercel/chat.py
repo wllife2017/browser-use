@@ -115,6 +115,7 @@ ChatVercelModel: TypeAlias = Literal[
 	'google/veo-3.0-generate-001',
 	'google/veo-3.1-fast-generate-001',
 	'google/veo-3.1-generate-001',
+	'inception/mercury-2',
 	'inception/mercury-coder-small',
 	'klingai/kling-v2.5-turbo-i2v',
 	'klingai/kling-v2.5-turbo-t2v',
@@ -139,6 +140,7 @@ ChatVercelModel: TypeAlias = Literal[
 	'minimax/minimax-m2.1',
 	'minimax/minimax-m2.1-lightning',
 	'minimax/minimax-m2.5',
+	'minimax/minimax-m2.5-highspeed',
 	'mistral/codestral',
 	'mistral/codestral-embed',
 	'mistral/devstral-2',
@@ -168,7 +170,6 @@ ChatVercelModel: TypeAlias = Literal[
 	'nvidia/nemotron-3-nano-30b-a3b',
 	'nvidia/nemotron-nano-12b-v2-vl',
 	'nvidia/nemotron-nano-9b-v2',
-	'openai/codex-mini',
 	'openai/gpt-3.5-turbo',
 	'openai/gpt-3.5-turbo-instruct',
 	'openai/gpt-4-turbo',
@@ -195,6 +196,8 @@ ChatVercelModel: TypeAlias = Literal[
 	'openai/gpt-5.2-pro',
 	'openai/gpt-5.3-chat',
 	'openai/gpt-5.3-codex',
+	'openai/gpt-5.4',
+	'openai/gpt-5.4-pro',
 	'openai/gpt-image-1',
 	'openai/gpt-image-1-mini',
 	'openai/gpt-image-1.5',
@@ -243,6 +246,9 @@ ChatVercelModel: TypeAlias = Literal[
 	'xai/grok-4-fast-reasoning',
 	'xai/grok-4.1-fast-non-reasoning',
 	'xai/grok-4.1-fast-reasoning',
+	'xai/grok-4.20-multi-agent-beta',
+	'xai/grok-4.20-non-reasoning-beta',
+	'xai/grok-4.20-reasoning-beta',
 	'xai/grok-code-fast-1',
 	'xai/grok-imagine-image',
 	'xai/grok-imagine-image-pro',
@@ -288,10 +294,12 @@ class ChatVercel(BaseChatModel):
 	    max_retries: Maximum number of retries for failed requests
 	    provider_options: Provider routing options for the gateway. Use this to control which
 	        providers are used and in what order. Example: {'gateway': {'order': ['vertex', 'anthropic']}}
-	    reasoning: Optional reasoning configuration passed as extra_body['reasoning'].
-	        Example: {'enabled': True, 'max_tokens': 2000} or {'effort': 'high'}.
+	    reasoning: Optional provider-specific reasoning configuration. Merged into
+	        providerOptions under the appropriate provider key. Example for Anthropic:
+	        {'anthropic': {'thinking': {'type': 'adaptive'}}}. Example for OpenAI:
+	        {'openai': {'reasoningEffort': 'high', 'reasoningSummary': 'detailed'}}.
 	    model_fallbacks: Optional list of fallback model IDs tried in order if the primary
-	        model fails. Passed as extra_body['models'].
+	        model fails. Passed as providerOptions.gateway.models.
 	    caching: Optional caching mode for the gateway. Currently supports 'auto', which
 	        enables provider-specific prompt caching via providerOptions.gateway.caching.
 	"""
@@ -309,10 +317,10 @@ class ChatVercel(BaseChatModel):
 			'o3',
 			'o4',
 			'gpt-oss',
-			'gpt-5',
+			'gpt-5.2-pro',
+			'gpt-5.4-pro',
 			'deepseek-r1',
 			'-thinking',
-			'magistral',
 			'perplexity/sonar-reasoning',
 		]
 	)
@@ -327,7 +335,7 @@ class ChatVercel(BaseChatModel):
 	http_client: httpx.AsyncClient | None = None
 	_strict_response_validation: bool = False
 	provider_options: dict[str, Any] | None = None
-	reasoning: dict[str, Any] | None = None
+	reasoning: dict[str, dict[str, Any]] | None = None
 	model_fallbacks: list[str] | None = None
 	caching: Literal['auto'] | None = None
 
@@ -500,19 +508,27 @@ class ChatVercel(BaseChatModel):
 				model_params['top_p'] = self.top_p
 
 			extra_body: dict[str, Any] = {}
-			if self.reasoning:
-				extra_body['reasoning'] = self.reasoning
-
-			if self.model_fallbacks:
-				extra_body['models'] = self.model_fallbacks
 
 			provider_opts: dict[str, Any] = {}
 			if self.provider_options:
 				provider_opts.update(self.provider_options)
 
+			if self.reasoning:
+				# Merge provider-specific reasoning options (ex: {'anthropic': {'thinking': ...}})
+				for provider_name, opts in self.reasoning.items():
+					existing = provider_opts.get(provider_name, {})
+					existing.update(opts)
+					provider_opts[provider_name] = existing
+
+			gateway_opts: dict[str, Any] = provider_opts.get('gateway', {})
+
+			if self.model_fallbacks:
+				gateway_opts['models'] = self.model_fallbacks
+
 			if self.caching:
-				gateway_opts = provider_opts.get('gateway', {})
 				gateway_opts['caching'] = self.caching
+
+			if gateway_opts:
 				provider_opts['gateway'] = gateway_opts
 
 			if provider_opts:

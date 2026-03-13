@@ -47,8 +47,7 @@ llm_reasoning_and_fallbacks = ChatVercel(
 	model='anthropic/claude-sonnet-4.5',
 	api_key=api_key,
 	reasoning={
-		'enabled': True,
-		'max_tokens': 2000,
+		'anthropic': {'thinking': {'type': 'enabled', 'budgetTokens': 2000}},
 	},
 	model_fallbacks=[
 		'openai/gpt-5.2',
