@@ -33,10 +33,13 @@ browser-use open <url>                         # Default: headless Chromium
 browser-use --headed open <url>                # Visible Chromium window
 browser-use --profile open <url>               # Real Chrome with Default profile
 browser-use --profile "Profile 1" open <url>   # Real Chrome with named profile
+browser-use --cdp-url http://localhost:9222 open <url>  # Connect to existing browser via CDP
+browser-use --cdp-url ws://localhost:9222/devtools/browser/... state  # WebSocket CDP URL
 ```
 
 - **Default (no --profile)**: Fast, isolated Chromium, headless by default
 - **With --profile**: Uses your real Chrome binary with the specified profile (cookies, logins, extensions). Bare `--profile` uses "Default".
+- **With --cdp-url**: Connects to an already-running browser via CDP URL (http:// or ws://). Useful for Docker containers, remote debugging sessions, or cloud-provisioned browsers. `--cdp-url` and `--profile` are mutually exclusive.
 
 ## Essential Commands
 
@@ -163,6 +166,10 @@ The Python session maintains state across commands. The `browser` object provide
 
 ### Cloud API
 ```bash
+browser-use cloud connect                                  # Provision cloud browser and connect
+browser-use cloud connect --timeout 120                    # Custom timeout
+browser-use cloud connect --proxy-country US               # With proxy
+browser-use cloud connect --profile-id <id>                # With cloud profile
 browser-use cloud login <api-key>                          # Save API key
 browser-use cloud logout                                   # Remove API key
 browser-use cloud v2 GET /browsers                         # List browsers
@@ -173,6 +180,8 @@ browser-use cloud v2 poll <task-id>                        # Poll task until don
 browser-use cloud v2 --help                                # Show API v2 endpoints
 browser-use cloud v3 --help                                # Show API v3 endpoints
 ```
+
+`cloud connect` provisions a cloud browser, connects via CDP, and prints a live URL. `browser-use close` disconnects AND stops the cloud browser (no orphaned billing). Mutually exclusive with `--cdp-url` and `--profile`.
 
 API key: env var `BROWSER_USE_API_KEY` or `browser-use cloud login`. Stored in `~/.config/browser-use/config.json`.
 
@@ -237,6 +246,24 @@ browser-use profile cookies "Default"
 # → github.com: 2
 ```
 
+### Connecting to an Existing Chrome Browser
+
+Use when the user has Chrome already running and wants to control it via browser-use.
+
+**Requirement:** Chrome must have remote debugging enabled (`chrome://inspect/#remote-debugging` on Chrome >= 144, or launch with `--remote-debugging-port=<port>`).
+
+**Connection flow:**
+
+1. Read Chrome's `DevToolsActivePort` file to get the port and WebSocket path (the HTTP `/json/version` endpoint often does not respond):
+   - macOS: `~/Library/Application Support/Google/Chrome/DevToolsActivePort`
+   - Linux: `~/.config/google-chrome/DevToolsActivePort`
+   - The file contains two lines: the port and the WebSocket path. Combine into `ws://127.0.0.1:<port><path>`.
+2. Close any existing browser-use session (`browser-use close`), then connect with `--cdp-url ws://...`.
+3. List tabs with: `browser-use --cdp-url <ws_url> python "import json; tabs = browser._run(browser._session.get_tabs()); print(json.dumps(tabs, indent=2, default=str))"`
+4. Switch tabs with `browser-use --cdp-url <ws_url> switch <tab_index>`.
+
+**Important:** Always use the `ws://` WebSocket URL (not `http://`) with `--cdp-url` when connecting to an existing Chrome instance.
+
 ### Exposing Local Dev Servers
 
 Use when you have a local dev server and need to expose it via tunnel.
@@ -263,6 +290,7 @@ browser-use screenshot
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
+| `--cdp-url <url>` | Connect to existing browser via CDP URL (`http://` or `ws://`) |
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |
 
