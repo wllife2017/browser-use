@@ -491,6 +491,11 @@ def handle_cloud_command(argv: list[str]) -> int:
 	if subcmd in ('v2', 'v3'):
 		return _cloud_versioned(argv[1:], subcmd)
 
+	if subcmd == 'connect':
+		# Normally intercepted by main.py before reaching here
+		print('Error: cloud connect must be run via the main CLI (browser-use cloud connect)', file=sys.stderr)
+		return 1
+
 	if subcmd in ('--help', 'help', '-h'):
 		_print_cloud_usage()
 		return 0
@@ -504,6 +509,7 @@ def _print_cloud_usage() -> None:
 	print('Usage: browser-use cloud <command>')
 	print()
 	print('Commands:')
+	print('  connect                           Provision cloud browser and connect')
 	print('  login <api-key>                   Save API key')
 	print('  logout                            Remove API key')
 	print('  v2 <METHOD> <path> [body]         REST passthrough (API v2)')

@@ -2,31 +2,77 @@
 
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
+import zlib
 from pathlib import Path
 
 
-def get_socket_path() -> str:
-	"""Get the fixed daemon socket path.
+def validate_session_name(session: str) -> None:
+	"""Validate session name — reject path traversal and special characters.
+
+	Raises ValueError on invalid name.
+	"""
+	if not re.match(r'^[a-zA-Z0-9_-]+$', session):
+		raise ValueError(f'Invalid session name {session!r}: only letters, digits, hyphens, and underscores allowed')
+
+
+def get_runtime_dir() -> Path:
+	"""Get runtime directory for daemon socket/PID files.
+
+	Priority: BROWSER_USE_RUNTIME_DIR > XDG_RUNTIME_DIR/browser-use > ~/.browser-use/run > tempdir/browser-use
+	"""
+	env_dir = os.environ.get('BROWSER_USE_RUNTIME_DIR')
+	if env_dir:
+		d = Path(env_dir)
+		d.mkdir(parents=True, exist_ok=True)
+		return d
+
+	xdg = os.environ.get('XDG_RUNTIME_DIR')
+	if xdg:
+		d = Path(xdg) / 'browser-use'
+		d.mkdir(parents=True, exist_ok=True)
+		return d
+
+	home_dir = Path.home() / '.browser-use' / 'run'
+	try:
+		home_dir.mkdir(parents=True, exist_ok=True)
+		return home_dir
+	except OSError:
+		pass
+
+	d = Path(tempfile.gettempdir()) / 'browser-use'
+	d.mkdir(parents=True, exist_ok=True)
+	return d
+
+
+def get_socket_path(session: str = 'default') -> str:
+	"""Get daemon socket path for a session.
 
 	On Windows, returns a TCP address (tcp://127.0.0.1:PORT).
 	On Unix, returns a Unix socket path.
 	"""
 	if sys.platform == 'win32':
-		return 'tcp://127.0.0.1:49200'
-	return str(Path(tempfile.gettempdir()) / 'browser-use-cli.sock')
+		port = 49152 + zlib.adler32(session.encode()) % 16383
+		return f'tcp://127.0.0.1:{port}'
+	return str(get_runtime_dir() / f'browser-use-{session}.sock')
 
 
-def is_daemon_alive() -> bool:
+def get_pid_path(session: str = 'default') -> Path:
+	"""Get PID file path for a session."""
+	return get_runtime_dir() / f'browser-use-{session}.pid'
+
+
+def is_daemon_alive(session: str = 'default') -> bool:
 	"""Check daemon liveness by attempting socket connect.
 
 	If socket file exists but nobody is listening, removes the stale file.
 	"""
 	import socket
 
-	sock_path = get_socket_path()
+	sock_path = get_socket_path(session)
 
 	if sock_path.startswith('tcp://'):
 		_, hostport = sock_path.split('://', 1)
@@ -53,6 +99,51 @@ def is_daemon_alive() -> bool:
 			# Stale socket file — remove it
 			sock_file.unlink(missing_ok=True)
 			return False
+
+
+def list_sessions() -> list[dict]:
+	"""List active daemon sessions by scanning PID files.
+
+	Returns list of {'name': str, 'pid': int, 'socket': str} for alive sessions.
+	Cleans up stale PID/socket files for dead sessions.
+	"""
+	runtime_dir = get_runtime_dir()
+	sessions: list[dict] = []
+
+	for pid_file in sorted(runtime_dir.glob('browser-use-*.pid')):
+		# Extract session name from filename: browser-use-<session>.pid
+		stem = pid_file.stem  # browser-use-<session>
+		session_name = stem[len('browser-use-') :]
+		if not session_name:
+			continue
+
+		try:
+			pid = int(pid_file.read_text().strip())
+		except (OSError, ValueError):
+			# Corrupt PID file — clean up
+			pid_file.unlink(missing_ok=True)
+			continue
+
+		# Check if process is alive
+		try:
+			os.kill(pid, 0)
+		except (OSError, ProcessLookupError):
+			# Dead process — clean up stale files
+			pid_file.unlink(missing_ok=True)
+			sock_path = get_socket_path(session_name)
+			if not sock_path.startswith('tcp://'):
+				Path(sock_path).unlink(missing_ok=True)
+			continue
+
+		sessions.append(
+			{
+				'name': session_name,
+				'pid': pid,
+				'socket': get_socket_path(session_name),
+			}
+		)
+
+	return sessions
 
 
 def get_log_path() -> Path:
