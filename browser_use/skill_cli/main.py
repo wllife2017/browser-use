@@ -10,11 +10,13 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import tempfile
 import time
+import zlib
 from pathlib import Path
 
 # =============================================================================
@@ -135,16 +137,57 @@ if '--template' in sys.argv:
 # =============================================================================
 
 
-def _get_socket_path() -> str:
-	"""Get the fixed daemon socket path."""
+def _get_runtime_dir() -> Path:
+	"""Get runtime directory for daemon files.
+
+	Must match utils.get_runtime_dir() — same env vars, same fallback chain.
+	"""
+	env_dir = os.environ.get('BROWSER_USE_RUNTIME_DIR')
+	if env_dir:
+		d = Path(env_dir)
+		d.mkdir(parents=True, exist_ok=True)
+		return d
+
+	xdg = os.environ.get('XDG_RUNTIME_DIR')
+	if xdg:
+		d = Path(xdg) / 'browser-use'
+		d.mkdir(parents=True, exist_ok=True)
+		return d
+
+	home_dir = Path.home() / '.browser-use' / 'run'
+	try:
+		home_dir.mkdir(parents=True, exist_ok=True)
+		return home_dir
+	except OSError:
+		pass
+
+	d = Path(tempfile.gettempdir()) / 'browser-use'
+	d.mkdir(parents=True, exist_ok=True)
+	return d
+
+
+def _get_socket_path(session: str = 'default') -> str:
+	"""Get daemon socket path for a session.
+
+	Must match utils.get_socket_path().
+	"""
 	if sys.platform == 'win32':
-		return 'tcp://127.0.0.1:49200'
-	return str(Path(tempfile.gettempdir()) / 'browser-use-cli.sock')
+		port = 49152 + zlib.adler32(session.encode()) % 16383
+		return f'tcp://127.0.0.1:{port}'
+	return str(_get_runtime_dir() / f'browser-use-{session}.sock')
 
 
-def _connect_to_daemon(timeout: float = 60.0) -> socket.socket:
+def _get_pid_path(session: str = 'default') -> Path:
+	"""Get PID file path for a session.
+
+	Must match utils.get_pid_path().
+	"""
+	return _get_runtime_dir() / f'browser-use-{session}.pid'
+
+
+def _connect_to_daemon(timeout: float = 60.0, session: str = 'default') -> socket.socket:
 	"""Connect to daemon socket."""
-	sock_path = _get_socket_path()
+	sock_path = _get_socket_path(session)
 
 	if sock_path.startswith('tcp://'):
 		_, hostport = sock_path.split('://', 1)
@@ -160,15 +203,15 @@ def _connect_to_daemon(timeout: float = 60.0) -> socket.socket:
 	return sock
 
 
-def _is_daemon_alive() -> bool:
+def _is_daemon_alive(session: str = 'default') -> bool:
 	"""Check if daemon is alive by attempting socket connect."""
 	try:
-		sock = _connect_to_daemon(timeout=0.5)
+		sock = _connect_to_daemon(timeout=0.5, session=session)
 		sock.close()
 		return True
 	except OSError:
 		# Clean up stale socket on Unix
-		sock_path = _get_socket_path()
+		sock_path = _get_socket_path(session)
 		if not sock_path.startswith('tcp://'):
 			Path(sock_path).unlink(missing_ok=True)
 		return False
@@ -177,25 +220,40 @@ def _is_daemon_alive() -> bool:
 def ensure_daemon(
 	headed: bool,
 	profile: str | None,
+	cdp_url: str | None = None,
 	*,
+	session: str = 'default',
 	explicit_config: bool = False,
+	use_cloud: bool = False,
+	cloud_timeout: int | None = None,
+	cloud_proxy_country_code: str | None = None,
+	cloud_profile_id: str | None = None,
 ) -> None:
-	"""Start daemon if not running. Restarts only if user explicitly set config flags."""
-	if _is_daemon_alive():
+	"""Start daemon if not running. Errors on config mismatch."""
+	if _is_daemon_alive(session):
 		if not explicit_config:
 			return  # Daemon is alive, user didn't request specific config — reuse it
 
-		# User explicitly set --headed/--profile — check config matches
+		# User explicitly set --headed/--profile/--cdp-url — check config matches
 		try:
-			response = send_command('ping', {})
+			response = send_command('ping', {}, session=session)
 			if response.get('success'):
 				data = response.get('data', {})
-				if data.get('headed') == headed and data.get('profile') == profile:
+				if (
+					data.get('headed') == headed
+					and data.get('profile') == profile
+					and data.get('cdp_url') == cdp_url
+					and data.get('use_cloud') == use_cloud
+				):
 					return  # Already running with correct config
 
-				# Config mismatch — shutdown and restart
-				send_command('shutdown', {})
-				time.sleep(0.3)
+				# Config mismatch — error, don't auto-restart (avoids orphan cascades)
+				print(
+					f'Error: Session {session!r} is already running with different config.\n'
+					f'Run `browser-use{" --session " + session if session != "default" else ""} close` first.',
+					file=sys.stderr,
+				)
+				sys.exit(1)
 		except Exception:
 			pass  # Daemon not responsive, continue to start
 
@@ -204,11 +262,23 @@ def ensure_daemon(
 		sys.executable,
 		'-m',
 		'browser_use.skill_cli.daemon',
+		'--session',
+		session,
 	]
 	if headed:
 		cmd.append('--headed')
 	if profile:
 		cmd.extend(['--profile', profile])
+	if cdp_url:
+		cmd.extend(['--cdp-url', cdp_url])
+	if use_cloud:
+		cmd.append('--use-cloud')
+	if cloud_timeout is not None:
+		cmd.extend(['--cloud-timeout', str(cloud_timeout)])
+	if cloud_proxy_country_code is not None:
+		cmd.extend(['--cloud-proxy-country', cloud_proxy_country_code])
+	if cloud_profile_id is not None:
+		cmd.extend(['--cloud-profile-id', cloud_profile_id])
 
 	# Set up environment
 	env = os.environ.copy()
@@ -233,7 +303,7 @@ def ensure_daemon(
 
 	# Wait for daemon to be ready
 	for _ in range(100):  # 5 seconds max
-		if _is_daemon_alive():
+		if _is_daemon_alive(session):
 			return
 		time.sleep(0.05)
 
@@ -241,7 +311,7 @@ def ensure_daemon(
 	sys.exit(1)
 
 
-def send_command(action: str, params: dict) -> dict:
+def send_command(action: str, params: dict, *, session: str = 'default') -> dict:
 	"""Send command to daemon and get response."""
 	request = {
 		'id': f'r{int(time.time() * 1000000) % 1000000}',
@@ -249,7 +319,7 @@ def send_command(action: str, params: dict) -> dict:
 		'params': params,
 	}
 
-	sock = _connect_to_daemon()
+	sock = _connect_to_daemon(session=session)
 	try:
 		# Send request
 		sock.sendall((json.dumps(request) + '\n').encode())
@@ -282,6 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 	epilog_parts.append("""Cloud API:
   browser-use cloud login <api-key>             # Save API key
+  browser-use cloud connect                     # Provision cloud browser
   browser-use cloud v2 GET /browsers            # List browsers
   browser-use cloud v2 POST /tasks '{...}'      # Create task
   browser-use cloud v2 poll <task-id>           # Poll task until done
@@ -309,6 +380,12 @@ Setup:
 		default=None,
 		help='Use real Chrome with profile (bare --profile uses "Default")',
 	)
+	parser.add_argument(
+		'--cdp-url',
+		default=None,
+		help='Connect to existing browser via CDP URL (http:// or ws://)',
+	)
+	parser.add_argument('--session', default=None, help='Session name (default: "default")')
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
 	parser.add_argument('--mcp', action='store_true', help='Run as MCP server (JSON-RPC via stdin/stdout)')
 	parser.add_argument('--template', help='Generate template file (use with --output for custom path)')
@@ -522,7 +599,11 @@ Setup:
 	# -------------------------------------------------------------------------
 
 	# close
-	subparsers.add_parser('close', help='Close browser and stop daemon')
+	close_p = subparsers.add_parser('close', help='Close browser and stop daemon')
+	close_p.add_argument('--all', action='store_true', help='Close all sessions')
+
+	# sessions
+	subparsers.add_parser('sessions', help='List active browser sessions')
 
 	# -------------------------------------------------------------------------
 	# Cloud API (Generic REST passthrough)
@@ -552,6 +633,177 @@ Setup:
 	return parser
 
 
+def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, session: str) -> int:
+	"""Handle `browser-use cloud connect` — provision cloud browser and connect."""
+	# Parse connect-specific args
+	connect_parser = argparse.ArgumentParser(prog='browser-use cloud connect', add_help=False)
+	connect_parser.add_argument('--timeout', type=int, default=None, help='Cloud browser timeout in seconds')
+	connect_parser.add_argument('--proxy-country', default=None, help='Cloud browser proxy country code')
+	connect_parser.add_argument('--profile-id', default=None, help='Cloud browser profile ID')
+	connect_args, _ = connect_parser.parse_known_args(cloud_args)
+
+	# Mutual exclusivity checks
+	if args.cdp_url:
+		print('Error: --cdp-url and cloud connect are mutually exclusive', file=sys.stderr)
+		return 1
+	if args.profile:
+		print('Error: --profile and cloud connect are mutually exclusive', file=sys.stderr)
+		return 1
+
+	# Start daemon with cloud config
+	ensure_daemon(
+		args.headed,
+		None,
+		session=session,
+		explicit_config=True,
+		use_cloud=True,
+		cloud_timeout=connect_args.timeout,
+		cloud_proxy_country_code=connect_args.proxy_country,
+		cloud_profile_id=connect_args.profile_id,
+	)
+
+	# Send connect command to force immediate session creation
+	response = send_command('connect', {}, session=session)
+
+	if args.json:
+		print(json.dumps(response))
+	else:
+		if response.get('success'):
+			data = response.get('data', {})
+			print(f'status: {data.get("status", "unknown")}')
+			if 'live_url' in data:
+				print(f'live_url: {data["live_url"]}')
+			if 'cdp_url' in data:
+				print(f'cdp_url: {data["cdp_url"]}')
+		else:
+			print(f'Error: {response.get("error")}', file=sys.stderr)
+			return 1
+
+	return 0
+
+
+def _handle_sessions(args: argparse.Namespace) -> int:
+	"""List active daemon sessions."""
+	runtime_dir = _get_runtime_dir()
+	sessions: list[dict] = []
+
+	for pid_file in sorted(runtime_dir.glob('browser-use-*.pid')):
+		stem = pid_file.stem  # browser-use-<session>
+		name = stem[len('browser-use-') :]
+		if not name:
+			continue
+
+		try:
+			pid = int(pid_file.read_text().strip())
+		except (OSError, ValueError):
+			pid_file.unlink(missing_ok=True)
+			continue
+
+		# Check if process is alive
+		try:
+			os.kill(pid, 0)
+		except (OSError, ProcessLookupError):
+			# Dead — clean up stale files
+			pid_file.unlink(missing_ok=True)
+			sock_path = _get_socket_path(name)
+			if not sock_path.startswith('tcp://'):
+				Path(sock_path).unlink(missing_ok=True)
+			continue
+
+		entry: dict = {'name': name, 'pid': pid}
+
+		# Try to ping for config info
+		try:
+			resp = send_command('ping', {}, session=name)
+			if resp.get('success'):
+				data = resp.get('data', {})
+				config_parts = []
+				if data.get('headed'):
+					config_parts.append('headed')
+				if data.get('profile'):
+					config_parts.append(f'profile={data["profile"]}')
+				if data.get('cdp_url'):
+					config_parts.append('cdp')
+				if data.get('use_cloud'):
+					config_parts.append('cloud')
+				entry['config'] = ', '.join(config_parts) if config_parts else 'headless'
+		except Exception:
+			entry['config'] = '?'
+
+		sessions.append(entry)
+
+	if args.json:
+		print(json.dumps({'sessions': sessions}))
+	else:
+		if sessions:
+			print(f'{"SESSION":<16} {"PID":<8} CONFIG')
+			for s in sessions:
+				print(f'{s["name"]:<16} {s["pid"]:<8} {s.get("config", "")}')
+		else:
+			print('No active sessions')
+
+	return 0
+
+
+def _handle_close_all(args: argparse.Namespace) -> int:
+	"""Close all active sessions."""
+	runtime_dir = _get_runtime_dir()
+	# Snapshot the list first to avoid mutating during iteration
+	pid_files = list(runtime_dir.glob('browser-use-*.pid'))
+	closed = 0
+
+	for pid_file in pid_files:
+		stem = pid_file.stem
+		name = stem[len('browser-use-') :]
+		if not name:
+			continue
+
+		if _is_daemon_alive(name):
+			try:
+				send_command('shutdown', {}, session=name)
+				closed += 1
+			except Exception:
+				pass
+
+	if args.json:
+		print(json.dumps({'closed': closed}))
+	else:
+		if closed:
+			print(f'Closed {closed} session(s)')
+		else:
+			print('No active sessions')
+
+	return 0
+
+
+def _migrate_legacy_socket() -> None:
+	"""One-time cleanup of old single-socket daemon (pre-multi-session)."""
+	legacy_path = Path(tempfile.gettempdir()) / 'browser-use-cli.sock'
+	if sys.platform == 'win32':
+		# Old Windows path was tcp://127.0.0.1:49200 — try to connect and shut down
+		try:
+			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			sock.settimeout(0.5)
+			sock.connect(('127.0.0.1', 49200))
+			# Send shutdown
+			req = json.dumps({'id': 'legacy', 'action': 'shutdown', 'params': {}}) + '\n'
+			sock.sendall(req.encode())
+			sock.close()
+		except OSError:
+			pass
+	elif legacy_path.exists():
+		try:
+			sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+			sock.settimeout(0.5)
+			sock.connect(str(legacy_path))
+			req = json.dumps({'id': 'legacy', 'action': 'shutdown', 'params': {}}) + '\n'
+			sock.sendall(req.encode())
+			sock.close()
+		except OSError:
+			# Stale socket — just remove
+			legacy_path.unlink(missing_ok=True)
+
+
 def main() -> int:
 	"""Main entry point."""
 	parser = build_parser()
@@ -561,11 +813,28 @@ def main() -> int:
 		parser.print_help()
 		return 0
 
-	# Handle cloud subcommands without starting daemon
+	# Resolve session name
+	session = args.session or os.environ.get('BROWSER_USE_SESSION', 'default')
+	if not re.match(r'^[a-zA-Z0-9_-]+$', session):
+		print(f'Error: Invalid session name {session!r}: only letters, digits, hyphens, underscores', file=sys.stderr)
+		return 1
+
+	# Handle sessions command (before daemon interaction)
+	if args.command == 'sessions':
+		return _handle_sessions(args)
+
+	# Handle cloud subcommands
 	if args.command == 'cloud':
+		cloud_args = getattr(args, 'cloud_args', [])
+
+		# Intercept 'cloud connect' — needs daemon, not REST passthrough
+		if cloud_args and cloud_args[0] == 'connect':
+			return _handle_cloud_connect(cloud_args[1:], args, session)
+
+		# All other cloud subcommands are stateless REST passthroughs
 		from browser_use.skill_cli.commands.cloud import handle_cloud_command
 
-		return handle_cloud_command(getattr(args, 'cloud_args', []))
+		return handle_cloud_command(cloud_args)
 
 	# Handle profile subcommands without starting daemon
 	if args.command == 'profile':
@@ -697,9 +966,12 @@ def main() -> int:
 
 	# Handle close — shutdown daemon
 	if args.command == 'close':
-		if _is_daemon_alive():
+		if getattr(args, 'all', False):
+			return _handle_close_all(args)
+
+		if _is_daemon_alive(session):
 			try:
-				response = send_command('shutdown', {})
+				response = send_command('shutdown', {}, session=session)
 				if args.json:
 					print(json.dumps(response))
 				else:
@@ -713,14 +985,22 @@ def main() -> int:
 				print('No active browser session')
 		return 0
 
+	# Mutual exclusivity: --cdp-url and --profile
+	if args.cdp_url and args.profile:
+		print('Error: --cdp-url and --profile are mutually exclusive', file=sys.stderr)
+		return 1
+
+	# One-time legacy migration
+	_migrate_legacy_socket()
+
 	# Ensure daemon is running
 	# Only restart on config mismatch if the user explicitly passed config flags
-	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile'))
-	ensure_daemon(args.headed, args.profile, explicit_config=explicit_config)
+	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile', '--cdp-url'))
+	ensure_daemon(args.headed, args.profile, args.cdp_url, session=session, explicit_config=explicit_config)
 
 	# Build params from args
 	params = {}
-	skip_keys = {'command', 'headed', 'json'}
+	skip_keys = {'command', 'headed', 'json', 'cdp_url', 'session'}
 
 	for key, value in vars(args).items():
 		if key not in skip_keys and value is not None:
@@ -731,7 +1011,7 @@ def main() -> int:
 		params['profile'] = args.profile
 
 	# Send command to daemon
-	response = send_command(args.command, params)
+	response = send_command(args.command, params, session=session)
 
 	# Output response
 	if args.json:

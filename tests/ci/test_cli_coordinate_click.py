@@ -72,6 +72,7 @@ class TestClickCommandHandler:
 				name='test',
 				headed=False,
 				profile=None,
+				cdp_url=None,
 				browser_session=session,
 			)
 
@@ -103,6 +104,7 @@ class TestClickCommandHandler:
 				name='test',
 				headed=False,
 				profile=None,
+				cdp_url=None,
 				browser_session=session,
 			)
 
@@ -124,6 +126,7 @@ class TestClickCommandHandler:
 			name='test',
 			headed=False,
 			profile=None,
+			cdp_url=None,
 			browser_session=BrowserSession(headless=True),
 		)
 

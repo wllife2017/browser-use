@@ -52,13 +52,10 @@ If you prefer not to use the one-line installer:
 # 1. Install the package
 uv pip install browser-use
 
-# 2. Install Chromium (for local browser mode)
+# 2. Install Chromium
 browser-use install
 
-# 3. Configure API key (for remote mode)
-export BROWSER_USE_API_KEY=your_key  # or $env:BROWSER_USE_API_KEY on Windows
-
-# 4. Validate
+# 3. Validate
 browser-use doctor
 ```
 
@@ -101,6 +98,12 @@ browser-use --profile open https://gmail.com
 
 # Use a specific Chrome profile
 browser-use --profile "Profile 1" open https://gmail.com
+
+# Connect to an existing browser via CDP URL
+browser-use --cdp-url http://localhost:9222 open https://example.com
+
+# WebSocket CDP URL also works
+browser-use --cdp-url ws://localhost:9222/devtools/browser/... state
 ```
 
 ## All Commands
@@ -192,10 +195,14 @@ browser-use python --file script.py   # Run Python file
 
 ## Cloud API
 
-Generic REST passthrough to the Browser-Use Cloud API.
+Generic REST passthrough to the Browser-Use Cloud API, plus cloud browser provisioning.
 
 | Command | Description |
 |---------|-------------|
+| `cloud connect` | Provision cloud browser and connect |
+| `cloud connect --timeout 120` | Cloud browser with custom timeout |
+| `cloud connect --proxy-country US` | Cloud browser with proxy |
+| `cloud connect --profile-id <id>` | Cloud browser with profile |
 | `cloud login <api-key>` | Save API key |
 | `cloud logout` | Remove API key |
 | `cloud v2 GET <path>` | GET request to API v2 |
@@ -208,6 +215,11 @@ Generic REST passthrough to the Browser-Use Cloud API.
 ```bash
 # Save API key (or set BROWSER_USE_API_KEY env var)
 browser-use cloud login sk-abc123...
+
+# Provision a cloud browser and connect
+browser-use cloud connect
+browser-use state                    # works normally
+browser-use close                    # disconnects AND stops cloud browser
 
 # List browsers
 browser-use cloud v2 GET /browsers
@@ -254,7 +266,33 @@ browser-use open https://abc.trycloudflare.com
 
 | Command | Description |
 |---------|-------------|
-| `close` | Close browser and stop daemon |
+| `sessions` | List active browser sessions |
+| `close` | Close current session's browser and daemon |
+| `close --all` | Close all sessions |
+| `--session NAME` | Target a named session (default: "default") |
+
+```bash
+# Default behavior unchanged
+browser-use open https://example.com           # uses session 'default'
+browser-use state                              # talks to 'default' daemon
+
+# Named sessions
+browser-use --session work open https://example.com
+browser-use --session work state
+browser-use --session cloud cloud connect
+
+# List active sessions
+browser-use sessions
+
+# Close specific session
+browser-use --session work close
+
+# Close all sessions
+browser-use close --all
+
+# Env var fallback
+BROWSER_USE_SESSION=work browser-use state
+```
 
 ## Global Options
 
@@ -262,6 +300,8 @@ browser-use open https://abc.trycloudflare.com
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
+| `--cdp-url <url>` | Connect to existing browser via CDP URL (`http://` or `ws://`) |
+| `--session NAME` | Target a named session (default: "default", env: `BROWSER_USE_SESSION`) |
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |
 
@@ -306,12 +346,13 @@ curl -o ~/.claude/skills/browser-use/SKILL.md \
 
 ## How It Works
 
-The CLI uses a daemon architecture:
+The CLI uses a multi-session daemon architecture:
 
-1. First command starts a background daemon (browser stays open)
+1. First command starts a background daemon for that session (browser stays open)
 2. Subsequent commands communicate via Unix socket (or TCP on Windows)
 3. Browser persists across commands for fast interaction
-4. Daemon auto-starts when needed, auto-exits when browser dies, or stops with `browser-use close`
+4. Each `--session` gets its own daemon, socket, and PID file in `~/.browser-use/run/`
+5. Daemon auto-starts when needed, auto-exits when browser dies, or stops with `browser-use close`
 
 This gives you ~50ms command latency instead of waiting for browser startup each time.
 

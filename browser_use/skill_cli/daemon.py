@@ -1,9 +1,8 @@
 """Background daemon - keeps a single BrowserSession alive.
 
-Replaces the multi-session server.py with a simpler model:
-- One daemon, one session, one socket
-- Socket file existence = daemon is alive (no PID/lock files)
-- Auto-exits when browser dies (polls is_cdp_connected)
+Each daemon owns one session, identified by a session name (default: 'default').
+Isolation is per-session: each gets its own socket and PID file.
+Auto-exits when browser dies (polls is_cdp_connected).
 """
 
 from __future__ import annotations
@@ -36,9 +35,24 @@ class Daemon:
 		self,
 		headed: bool,
 		profile: str | None,
+		cdp_url: str | None = None,
+		use_cloud: bool = False,
+		cloud_timeout: int | None = None,
+		cloud_proxy_country_code: str | None = None,
+		cloud_profile_id: str | None = None,
+		session: str = 'default',
 	) -> None:
+		from browser_use.skill_cli.utils import validate_session_name
+
+		validate_session_name(session)
+		self.session = session
 		self.headed = headed
 		self.profile = profile
+		self.cdp_url = cdp_url
+		self.use_cloud = use_cloud
+		self.cloud_timeout = cloud_timeout
+		self.cloud_proxy_country_code = cloud_proxy_country_code
+		self.cloud_profile_id = cloud_profile_id
 		self.running = True
 		self._server: asyncio.Server | None = None
 		self._shutdown_event = asyncio.Event()
@@ -52,16 +66,28 @@ class Daemon:
 
 		from browser_use.skill_cli.sessions import SessionInfo, create_browser_session
 
-		logger.info(f'Creating session (headed={self.headed}, profile={self.profile})')
+		logger.info(
+			f'Creating session (headed={self.headed}, profile={self.profile}, cdp_url={self.cdp_url}, use_cloud={self.use_cloud})'
+		)
 
-		bs = await create_browser_session(self.headed, self.profile)
+		bs = await create_browser_session(
+			self.headed,
+			self.profile,
+			self.cdp_url,
+			use_cloud=self.use_cloud,
+			cloud_timeout=self.cloud_timeout,
+			cloud_proxy_country_code=self.cloud_proxy_country_code,
+			cloud_profile_id=self.cloud_profile_id,
+		)
 		await bs.start()
 
 		self._session = SessionInfo(
-			name='default',
+			name=self.session,
 			headed=self.headed,
 			profile=self.profile,
+			cdp_url=self.cdp_url,
 			browser_session=bs,
+			use_cloud=self.use_cloud,
 		)
 		self._browser_watchdog_task = asyncio.create_task(self._watch_browser())
 		return self._session
@@ -132,10 +158,26 @@ class Daemon:
 					'id': req_id,
 					'success': True,
 					'data': {
+						'session': self.session,
 						'headed': self.headed,
 						'profile': self.profile,
+						'cdp_url': self.cdp_url,
+						'use_cloud': self.use_cloud,
 					},
 				}
+
+			# Handle connect — forces immediate session creation (used by cloud connect)
+			if action == 'connect':
+				session = await self._get_or_create_session()
+				bs = session.browser_session
+				result_data: dict = {'status': 'connected'}
+				if bs.cdp_url:
+					result_data['cdp_url'] = bs.cdp_url
+				if self.use_cloud and bs.cdp_url:
+					from urllib.parse import quote
+
+					result_data['live_url'] = f'https://live.browser-use.com/?wss={quote(bs.cdp_url, safe="")}'
+				return {'id': req_id, 'success': True, 'data': result_data}
 
 			from browser_use.skill_cli.commands import browser, python_exec
 
@@ -157,8 +199,17 @@ class Daemon:
 			return {'id': req_id, 'success': False, 'error': str(e)}
 
 	async def run(self) -> None:
-		"""Listen on Unix socket (or TCP on Windows). No PID file, no lock file."""
-		from browser_use.skill_cli.utils import get_socket_path
+		"""Listen on Unix socket (or TCP on Windows) with PID file.
+
+		Note: we do NOT unlink the socket in our finally block. If a replacement
+		daemon was spawned during our shutdown, it already bound a new socket at
+		the same path — unlinking here would delete *its* socket, orphaning it.
+		Stale sockets are cleaned up by is_daemon_alive() and by the next
+		daemon's startup (unlink before bind).
+		"""
+		import os
+
+		from browser_use.skill_cli.utils import get_pid_path, get_socket_path
 
 		# Setup signal handlers
 		loop = asyncio.get_running_loop()
@@ -178,8 +229,9 @@ class Daemon:
 			except NotImplementedError:
 				pass
 
-		sock_path = get_socket_path()
-		logger.info(f'Socket: {sock_path}')
+		sock_path = get_socket_path(self.session)
+		pid_path = get_pid_path(self.session)
+		logger.info(f'Session: {self.session}, Socket: {sock_path}')
 
 		if sock_path.startswith('tcp://'):
 			# Windows: TCP server
@@ -201,22 +253,40 @@ class Daemon:
 			)
 			logger.info(f'Listening on Unix socket {sock_path}')
 
+		# Write PID file after server is bound
+		my_pid = str(os.getpid())
+		pid_path.write_text(my_pid)
+
 		try:
 			async with self._server:
 				await self._shutdown_event.wait()
 		except asyncio.CancelledError:
 			pass
 		finally:
-			# Clean up socket file
-			if not sock_path.startswith('tcp://'):
-				Path(sock_path).unlink(missing_ok=True)
+			# Conditionally delete PID file only if it still contains our PID
+			try:
+				if pid_path.read_text().strip() == my_pid:
+					pid_path.unlink(missing_ok=True)
+			except (OSError, ValueError):
+				pass
 			logger.info('Daemon stopped')
 
 	async def shutdown(self) -> None:
-		"""Graceful shutdown."""
+		"""Graceful shutdown.
+
+		Order matters: close the server first to release the socket/port
+		immediately, so a replacement daemon can bind without waiting for
+		browser cleanup. Then kill the browser session.
+		"""
 		logger.info('Shutting down daemon...')
 		self.running = False
 		self._shutdown_event.set()
+
+		if self._browser_watchdog_task:
+			self._browser_watchdog_task.cancel()
+
+		if self._server:
+			self._server.close()
 
 		if self._session:
 			try:
@@ -225,25 +295,33 @@ class Daemon:
 				logger.warning(f'Error closing session: {e}')
 			self._session = None
 
-		if self._browser_watchdog_task:
-			self._browser_watchdog_task.cancel()
-
-		if self._server:
-			self._server.close()
-
 
 def main() -> None:
 	"""Main entry point for daemon process."""
 	parser = argparse.ArgumentParser(description='Browser-use daemon')
+	parser.add_argument('--session', default='default', help='Session name (default: "default")')
 	parser.add_argument('--headed', action='store_true', help='Show browser window')
 	parser.add_argument('--profile', help='Chrome profile (triggers real Chrome mode)')
+	parser.add_argument('--cdp-url', help='CDP URL to connect to')
+	parser.add_argument('--use-cloud', action='store_true', help='Use cloud browser')
+	parser.add_argument('--cloud-timeout', type=int, help='Cloud browser timeout in seconds')
+	parser.add_argument('--cloud-proxy-country', help='Cloud browser proxy country code')
+	parser.add_argument('--cloud-profile-id', help='Cloud browser profile ID')
 	args = parser.parse_args()
 
-	logger.info(f'Starting daemon: headed={args.headed}, profile={args.profile}')
+	logger.info(
+		f'Starting daemon: session={args.session}, headed={args.headed}, profile={args.profile}, cdp_url={args.cdp_url}, use_cloud={args.use_cloud}'
+	)
 
 	daemon = Daemon(
 		headed=args.headed,
 		profile=args.profile,
+		cdp_url=args.cdp_url,
+		use_cloud=args.use_cloud,
+		cloud_timeout=args.cloud_timeout,
+		cloud_proxy_country_code=args.cloud_proxy_country,
+		cloud_profile_id=args.cloud_profile_id,
+		session=args.session,
 	)
 
 	try:

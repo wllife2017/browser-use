@@ -1,14 +1,12 @@
 """Setup command - configure browser-use for first-time use.
 
-Handles dependency installation and configuration for local mode.
+Checks browser availability and validates imports.
 """
 
 import logging
-from typing import Any, Literal
+from typing import Any
 
 logger = logging.getLogger(__name__)
-
-COMMANDS = {'setup'}
 
 
 async def handle(
@@ -18,11 +16,9 @@ async def handle(
 	"""Handle setup command."""
 	assert action == 'setup'
 
-	mode: Literal['local'] = 'local'
 	yes: bool = params.get('yes', False)
 	json_output: bool = params.get('json', False)
 
-	# Run setup flow
 	try:
 		checks = await run_checks()
 
@@ -46,7 +42,6 @@ async def handle(
 
 		return {
 			'status': 'success',
-			'mode': mode,
 			'checks': checks,
 			'validation': validation,
 		}
@@ -54,8 +49,6 @@ async def handle(
 	except Exception as e:
 		logger.exception(f'Setup failed: {e}')
 		error_msg = str(e)
-		if json_output:
-			return {'error': error_msg}
 		return {'error': error_msg}
 
 
