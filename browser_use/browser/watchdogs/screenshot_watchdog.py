@@ -78,8 +78,10 @@ class ScreenshotWatchdog(BaseWatchdog):
 			self.logger.error(f'[ScreenshotWatchdog] Screenshot failed: {e}')
 			raise
 		finally:
-			# Try to remove highlights even on failure
+			# Try to remove highlights even on failure.
+			# Use BaseException to also catch CancelledError so task cancellation
+			# doesn't propagate out of the finally block and trigger a spurious timeout.
 			try:
 				await self.browser_session.remove_highlights()
-			except Exception:
+			except BaseException:
 				pass
