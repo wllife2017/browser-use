@@ -83,7 +83,15 @@ class InputTextAction(BaseModel):
 
 
 class DoneAction(BaseModel):
-	text: str = Field(description='Final user message in the format the user requested')
+	text: str = Field(
+		description=(
+			'Final message to the user. '
+			'ONLY describe actions you performed and data you extracted in this session. '
+			'Do NOT claim completion of steps from compacted_memory or prior session summaries '
+			'unless you explicitly verified them yourself. '
+			'If uncertain whether a prior step completed, say so explicitly.'
+		)
+	)
 	success: bool = Field(default=True, description='True if user_request completed successfully')
 	files_to_display: list[str] | None = Field(default=[])
 
