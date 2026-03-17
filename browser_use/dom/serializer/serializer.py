@@ -1211,7 +1211,7 @@ class DOMTreeSerializer:
 			# ALWAYS check AX tree - it reflects actual typed value, DOM attribute may not update
 			elif node.ax_node and node.ax_node.properties:
 				for prop in node.ax_node.properties:
-				# Try valuetext first (human-readable display value)
+					# Try valuetext first (human-readable display value)
 					if prop.name == 'valuetext' and prop.value:
 						value_str = str(prop.value).strip()
 						if value_str:

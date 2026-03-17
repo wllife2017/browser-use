@@ -517,18 +517,14 @@ def test_password_field_value_excluded_from_dom_snapshot():
 		ax_value=secret_password,
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(
-		node, list(DEFAULT_INCLUDE_ATTRIBUTES), ''
-	)
+	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
 	assert secret_password not in attrs_str, (
 		f'Password "{secret_password}" leaked into DOM serialization! '
 		'Password field values must be excluded from DOM snapshots sent to the LLM.'
 	)
 	# The type attribute should still be present so the LLM knows it's a password field
-	assert 'type=password' in attrs_str, (
-		'Password field type attribute should be preserved'
-	)
+	assert 'type=password' in attrs_str, 'Password field type attribute should be preserved'
 
 
 def test_password_field_value_excluded_even_from_html_attributes():
@@ -547,9 +543,7 @@ def test_password_field_value_excluded_even_from_html_attributes():
 		ax_value=None,  # no AX value, but HTML attribute has it
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(
-		node, list(DEFAULT_INCLUDE_ATTRIBUTES), ''
-	)
+	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
 	assert preset_password not in attrs_str, (
 		f'Preset password "{preset_password}" leaked via HTML value attribute! '
@@ -570,13 +564,9 @@ def test_text_input_value_preserved():
 		ax_value=username,
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(
-		node, list(DEFAULT_INCLUDE_ATTRIBUTES), ''
-	)
+	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
-	assert username in attrs_str, (
-		'Non-password input values should be preserved in DOM snapshots'
-	)
+	assert username in attrs_str, 'Non-password input values should be preserved in DOM snapshots'
 
 
 def test_password_field_without_type_attribute():
@@ -595,10 +585,6 @@ def test_password_field_without_type_attribute():
 		ax_value=value,
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(
-		node, list(DEFAULT_INCLUDE_ATTRIBUTES), ''
-	)
+	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
-	assert value in attrs_str, (
-		'Input without type attribute should preserve its value'
-	)
+	assert value in attrs_str, 'Input without type attribute should preserve its value'
