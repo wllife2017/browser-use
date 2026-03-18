@@ -606,7 +606,8 @@ Setup:
 	# Profile Management
 	# -------------------------------------------------------------------------
 
-	subparsers.add_parser('profile', help='Manage browser profiles (profile-use)')
+	profile_p = subparsers.add_parser('profile', help='Manage browser profiles (profile-use)')
+	profile_p.add_argument('profile_args', nargs=argparse.REMAINDER, help='profile-use arguments')
 
 	return parser
 
@@ -833,12 +834,7 @@ def main() -> int:
 	if args.command == 'profile':
 		from browser_use.skill_cli.profile_use import run_profile_use
 
-		# Everything after 'profile' is passed through to the Go binary
-		try:
-			profile_idx = sys.argv.index('profile')
-		except ValueError:
-			profile_idx = len(sys.argv)
-		profile_argv = sys.argv[profile_idx + 1:]
+		profile_argv = getattr(args, 'profile_args', [])
 		return run_profile_use(profile_argv)
 
 	# Handle setup command
