@@ -290,7 +290,12 @@ class Daemon:
 
 		if self._session:
 			try:
-				await self._session.browser_session.kill()
+				# Only kill the browser if the daemon launched it.
+				# For external connections (--connect, --cdp-url, cloud), just disconnect.
+				if self.cdp_url or self.use_cloud:
+					await self._session.browser_session.stop()
+				else:
+					await self._session.browser_session.kill()
 			except Exception as e:
 				logger.warning(f'Error closing session: {e}')
 			self._session = None

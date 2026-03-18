@@ -33,13 +33,15 @@ browser-use open <url>                         # Default: headless Chromium
 browser-use --headed open <url>                # Visible Chromium window
 browser-use --profile open <url>               # Real Chrome with Default profile
 browser-use --profile "Profile 1" open <url>   # Real Chrome with named profile
+browser-use --connect open <url>               # Auto-discover running Chrome via CDP
 browser-use --cdp-url http://localhost:9222 open <url>  # Connect to existing browser via CDP
 browser-use --cdp-url ws://localhost:9222/devtools/browser/... state  # WebSocket CDP URL
 ```
 
 - **Default (no --profile)**: Fast, isolated Chromium, headless by default
 - **With --profile**: Uses your real Chrome binary with the specified profile (cookies, logins, extensions). Bare `--profile` uses "Default".
-- **With --cdp-url**: Connects to an already-running browser via CDP URL (http:// or ws://). Useful for Docker containers, remote debugging sessions, or cloud-provisioned browsers. `--cdp-url` and `--profile` are mutually exclusive.
+- **With --connect**: Auto-discovers a running Chrome instance with remote debugging enabled by reading `DevToolsActivePort` or probing well-known ports. No manual URL needed.
+- **With --cdp-url**: Connects to an already-running browser via CDP URL (http:// or ws://). Useful for Docker containers, remote debugging sessions, or cloud-provisioned browsers. `--connect`, `--cdp-url`, and `--profile` are mutually exclusive.
 
 ## Essential Commands
 
@@ -252,15 +254,25 @@ Use when the user has Chrome already running and wants to control it via browser
 
 **Requirement:** Chrome must have remote debugging enabled (`chrome://inspect/#remote-debugging` on Chrome >= 144, or launch with `--remote-debugging-port=<port>`).
 
-**Connection flow:**
+**Recommended: auto-discovery with `--connect`:**
+```bash
+browser-use close                              # Close any existing session
+browser-use --connect open https://example.com # Auto-discovers Chrome's CDP endpoint
+browser-use --connect state                    # Works with all commands
+```
 
-1. Read Chrome's `DevToolsActivePort` file to get the port and WebSocket path (the HTTP `/json/version` endpoint often does not respond):
+`--connect` reads `DevToolsActivePort` from known Chrome data directories and probes well-known ports (9222, 9229) as a fallback — no manual URL construction needed.
+
+**Manual fallback with `--cdp-url`:**
+
+If auto-discovery doesn't work (e.g. non-standard Chrome location or remote host), read Chrome's `DevToolsActivePort` file manually:
    - macOS: `~/Library/Application Support/Google/Chrome/DevToolsActivePort`
    - Linux: `~/.config/google-chrome/DevToolsActivePort`
    - The file contains two lines: the port and the WebSocket path. Combine into `ws://127.0.0.1:<port><path>`.
-2. Close any existing browser-use session (`browser-use close`), then connect with `--cdp-url ws://...`.
-3. List tabs with: `browser-use --cdp-url <ws_url> python "import json; tabs = browser._run(browser._session.get_tabs()); print(json.dumps(tabs, indent=2, default=str))"`
-4. Switch tabs with `browser-use --cdp-url <ws_url> switch <tab_index>`.
+
+```bash
+browser-use --cdp-url ws://127.0.0.1:<port><path> open https://example.com
+```
 
 **Important:** Always use the `ws://` WebSocket URL (not `http://`) with `--cdp-url` when connecting to an existing Chrome instance.
 
@@ -290,6 +302,7 @@ browser-use screenshot
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
+| `--connect` | Auto-discover and connect to running Chrome via CDP |
 | `--cdp-url <url>` | Connect to existing browser via CDP URL (`http://` or `ws://`) |
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |

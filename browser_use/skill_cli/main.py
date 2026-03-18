@@ -385,6 +385,11 @@ Setup:
 		default=None,
 		help='Connect to existing browser via CDP URL (http:// or ws://)',
 	)
+	parser.add_argument(
+		'--connect',
+		action='store_true',
+		help='Auto-discover and connect to running Chrome via CDP',
+	)
 	parser.add_argument('--session', default=None, help='Session name (default: "default")')
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
 	parser.add_argument('--mcp', action='store_true', help='Run as MCP server (JSON-RPC via stdin/stdout)')
@@ -643,6 +648,9 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 	connect_args, _ = connect_parser.parse_known_args(cloud_args)
 
 	# Mutual exclusivity checks
+	if getattr(args, 'connect', False):
+		print('Error: --connect and cloud connect are mutually exclusive', file=sys.stderr)
+		return 1
 	if args.cdp_url:
 		print('Error: --cdp-url and cloud connect are mutually exclusive', file=sys.stderr)
 		return 1
@@ -985,22 +993,38 @@ def main() -> int:
 				print('No active browser session')
 		return 0
 
-	# Mutual exclusivity: --cdp-url and --profile
+	# Mutual exclusivity: --connect, --cdp-url, and --profile
+	if args.connect and args.cdp_url:
+		print('Error: --connect and --cdp-url are mutually exclusive', file=sys.stderr)
+		return 1
+	if args.connect and args.profile:
+		print('Error: --connect and --profile are mutually exclusive', file=sys.stderr)
+		return 1
 	if args.cdp_url and args.profile:
 		print('Error: --cdp-url and --profile are mutually exclusive', file=sys.stderr)
 		return 1
+
+	# Resolve --connect to a CDP URL
+	if args.connect:
+		from browser_use.skill_cli.utils import discover_chrome_cdp_url
+
+		try:
+			args.cdp_url = discover_chrome_cdp_url()
+		except RuntimeError as e:
+			print(f'Error: {e}', file=sys.stderr)
+			return 1
 
 	# One-time legacy migration
 	_migrate_legacy_socket()
 
 	# Ensure daemon is running
 	# Only restart on config mismatch if the user explicitly passed config flags
-	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile', '--cdp-url'))
+	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile', '--cdp-url', '--connect'))
 	ensure_daemon(args.headed, args.profile, args.cdp_url, session=session, explicit_config=explicit_config)
 
 	# Build params from args
 	params = {}
-	skip_keys = {'command', 'headed', 'json', 'cdp_url', 'session'}
+	skip_keys = {'command', 'headed', 'json', 'cdp_url', 'session', 'connect'}
 
 	for key, value in vars(args).items():
 		if key not in skip_keys and value is not None:

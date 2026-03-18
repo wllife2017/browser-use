@@ -99,6 +99,9 @@ browser-use --profile open https://gmail.com
 # Use a specific Chrome profile
 browser-use --profile "Profile 1" open https://gmail.com
 
+# Auto-discover and connect to running Chrome
+browser-use --connect open https://example.com
+
 # Connect to an existing browser via CDP URL
 browser-use --cdp-url http://localhost:9222 open https://example.com
 
@@ -300,6 +303,7 @@ BROWSER_USE_SESSION=work browser-use state
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
+| `--connect` | Auto-discover and connect to running Chrome via CDP |
 | `--cdp-url <url>` | Connect to existing browser via CDP URL (`http://` or `ws://`) |
 | `--session NAME` | Target a named session (default: "default", env: `BROWSER_USE_SESSION`) |
 | `--json` | Output as JSON |

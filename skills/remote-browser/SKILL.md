@@ -23,12 +23,14 @@ For more information, see https://github.com/browser-use/browser-use/blob/main/b
 ```bash
 browser-use open <url>                                    # Default: headless Chromium
 browser-use cloud connect                                 # Provision cloud browser and connect
+browser-use --connect open <url>                          # Auto-discover running Chrome via CDP
 browser-use --cdp-url http://localhost:9222 open <url>    # Connect to existing browser via CDP
 browser-use --cdp-url ws://localhost:9222/devtools/browser/... state  # WebSocket CDP URL
 ```
 
 - **Default**: Launches headless Chromium
 - **With cloud connect**: Provisions a cloud browser via Browser-Use Cloud API, connects via CDP, and prints a live URL. `browser-use close` disconnects AND stops the cloud browser. Requires API key (`BROWSER_USE_API_KEY` env var or `browser-use cloud login`).
+- **With --connect**: Auto-discovers a running Chrome instance with remote debugging enabled. No manual URL needed.
 - **With --cdp-url**: Connects to an already-running browser via CDP URL (http:// or ws://). Useful for Docker containers, remote debugging sessions, or cloud-provisioned browsers. `browser-use close` disconnects without killing the external browser.
 
 ## Core Workflow
@@ -214,6 +216,7 @@ browser-use screenshot
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
+| `--connect` | Auto-discover and connect to running Chrome via CDP |
 | `--cdp-url <url>` | Connect to existing browser via CDP URL (`http://` or `ws://`) |
 | `--json` | Output as JSON |
 
