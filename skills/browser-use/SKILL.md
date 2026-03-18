@@ -203,11 +203,16 @@ browser-use close                         # Close browser session
 
 ### Profile Management
 
-#### Local Chrome Profiles
+Manages browser profiles via the profile-use Go binary (auto-downloaded to `~/.browser-use/bin/`).
+
 ```bash
-browser-use profile list                  # List local Chrome profiles
-browser-use profile get "Default"         # Get profile details
-browser-use profile cookies "Default"     # Show cookie domains in profile
+browser-use profile                       # Interactive sync wizard
+browser-use profile list                  # List detected browsers and profiles
+browser-use profile sync --all            # Sync all profiles to cloud
+browser-use profile sync --browser "Google Chrome" --profile "Default"  # Sync specific
+browser-use profile auth --apikey <key>   # Set API key (shared with cloud login)
+browser-use profile inspect --browser "Google Chrome" --profile "Default"  # Inspect locally
+browser-use profile update                # Download/update profile-use binary
 ```
 
 ## Common Workflows
@@ -227,8 +232,8 @@ Use when a task requires browsing a site the user is already logged into (e.g. G
 
 ```bash
 browser-use profile list
-# → Default: Person 1 (user@gmail.com)
-# → Profile 1: Work (work@company.com)
+# → Google Chrome - Person 1 (Default)
+# → Google Chrome - Work (Profile 1)
 ```
 
 #### Step 2: Browse with the chosen profile
@@ -242,10 +247,8 @@ The user is already authenticated — no login needed.
 
 #### Check what cookies a profile has
 ```bash
-browser-use profile cookies "Default"
-# → youtube.com: 23
-# → google.com: 18
-# → github.com: 2
+browser-use profile inspect --browser "Google Chrome" --profile "Person 1"
+# Shows cookie domains and counts
 ```
 
 ### Connecting to an Existing Chrome Browser

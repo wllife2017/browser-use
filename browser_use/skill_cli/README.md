@@ -259,11 +259,19 @@ browser-use open https://abc.trycloudflare.com
 
 ## Profile Management
 
-### Local Profiles
+The `profile` subcommand delegates to the [profile-use](https://github.com/browser-use/profile-use) Go binary, which syncs local browser cookies to Browser-Use cloud.
+
+The binary is managed at `~/.browser-use/bin/profile-use` and auto-downloaded on first use.
+
 | Command | Description |
 |---------|-------------|
-| `profile list` | List Chrome profiles |
-| `profile cookies <name>` | Show cookies by domain |
+| `profile` | Interactive sync wizard |
+| `profile list` | List detected browsers and profiles |
+| `profile sync --all` | Sync all profiles to cloud |
+| `profile sync --browser "Google Chrome" --profile "Default"` | Sync specific profile |
+| `profile auth --apikey <key>` | Set API key (shared with `cloud login`) |
+| `profile inspect --browser "Google Chrome" --profile "Default"` | Inspect cookies locally |
+| `profile update` | Download/update the profile-use binary |
 
 ## Session Management
 
@@ -355,10 +363,27 @@ The CLI uses a multi-session daemon architecture:
 1. First command starts a background daemon for that session (browser stays open)
 2. Subsequent commands communicate via Unix socket (or TCP on Windows)
 3. Browser persists across commands for fast interaction
-4. Each `--session` gets its own daemon, socket, and PID file in `~/.browser-use/run/`
+4. Each `--session` gets its own daemon, socket, and PID file in `~/.browser-use/`
 5. Daemon auto-starts when needed, auto-exits when browser dies, or stops with `browser-use close`
 
 This gives you ~50ms command latency instead of waiting for browser startup each time.
+
+### File Layout
+
+All CLI-managed files live under `~/.browser-use/` (override with `BROWSER_USE_HOME`):
+
+```
+~/.browser-use/
+├── config.json          # API key, settings (shared with profile-use)
+├── bin/
+│   └── profile-use      # Managed Go binary (auto-downloaded)
+├── tunnels/
+│   ├── {port}.json      # Tunnel metadata
+│   └── {port}.log       # Tunnel logs
+├── default.sock         # Daemon socket (ephemeral)
+├── default.pid          # Daemon PID (ephemeral)
+└── cli.log              # Daemon log
+```
 
 <details>
 <summary>Windows Troubleshooting</summary>
