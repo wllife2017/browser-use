@@ -237,7 +237,7 @@ browser-use cloud v2 poll <task-id>
 browser-use cloud logout
 ```
 
-API key stored in `~/.config/browser-use/config.json` with `0600` permissions.
+API key stored in `~/.browser-use/config.json` with `0600` permissions.
 
 ## Tunnels
 

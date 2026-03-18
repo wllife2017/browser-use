@@ -14,7 +14,7 @@ async def test_doctor_handle_returns_valid_structure():
 	assert 'summary' in result
 
 	# Verify all expected checks are present
-	expected_checks = ['package', 'browser', 'network']
+	expected_checks = ['package', 'browser', 'network', 'cloudflared', 'profile_use']
 	for check in expected_checks:
 		assert check in result['checks']
 		assert 'status' in result['checks'][check]
@@ -43,6 +43,22 @@ async def test_check_network_returns_valid_structure():
 
 	assert 'status' in result
 	assert result['status'] in ('ok', 'warning')
+	assert 'message' in result
+
+
+def test_check_cloudflared_returns_valid_structure():
+	"""Test _check_cloudflared returns a valid result."""
+	result = doctor._check_cloudflared()
+	assert 'status' in result
+	assert result['status'] in ('ok', 'missing')
+	assert 'message' in result
+
+
+def test_check_profile_use_returns_valid_structure():
+	"""Test _check_profile_use returns a valid result."""
+	result = doctor._check_profile_use()
+	assert 'status' in result
+	assert result['status'] in ('ok', 'missing')
 	assert 'message' in result
 
 

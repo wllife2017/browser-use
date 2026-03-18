@@ -50,14 +50,14 @@ def test_cloud_login_saves_key(tmp_path: Path):
 		'login',
 		'sk-test-key-123',
 		env_override={
-			'XDG_CONFIG_HOME': str(tmp_path),
+			'BROWSER_USE_HOME': str(tmp_path),
 		},
 	)
 	assert result.returncode == 0
 	assert 'saved' in result.stdout.lower()
 
 	# Verify file was written
-	real_config = tmp_path / 'browser-use' / 'config.json'
+	real_config = tmp_path / 'config.json'
 	assert real_config.exists()
 	data = json.loads(real_config.read_text())
 	assert data['api_key'] == 'sk-test-key-123'
@@ -65,14 +65,12 @@ def test_cloud_login_saves_key(tmp_path: Path):
 
 def test_cloud_logout_removes_key(tmp_path: Path):
 	# First save a key
-	config_dir = tmp_path / 'browser-use'
-	config_dir.mkdir(parents=True)
-	config_file = config_dir / 'config.json'
+	config_file = tmp_path / 'config.json'
 	config_file.write_text(json.dumps({'api_key': 'sk-remove-me'}))
 
 	result = run_cli(
 		'logout',
-		env_override={'XDG_CONFIG_HOME': str(tmp_path)},
+		env_override={'BROWSER_USE_HOME': str(tmp_path)},
 	)
 	assert result.returncode == 0
 	assert 'removed' in result.stdout.lower()
@@ -84,7 +82,7 @@ def test_cloud_logout_removes_key(tmp_path: Path):
 def test_cloud_logout_no_key(tmp_path: Path):
 	result = run_cli(
 		'logout',
-		env_override={'XDG_CONFIG_HOME': str(tmp_path)},
+		env_override={'BROWSER_USE_HOME': str(tmp_path)},
 	)
 	assert result.returncode == 0
 	assert 'no api key' in result.stdout.lower()
@@ -183,7 +181,7 @@ def test_cloud_rest_no_api_key_errors(tmp_path: Path):
 		'GET',
 		'/browsers',
 		env_override={
-			'XDG_CONFIG_HOME': str(tmp_path),
+			'BROWSER_USE_HOME': str(tmp_path),
 		},
 	)
 	# _get_api_key calls sys.exit(1)

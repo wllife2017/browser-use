@@ -6,7 +6,6 @@ import platform
 import re
 import subprocess
 import sys
-import tempfile
 import urllib.request
 import zlib
 from pathlib import Path
@@ -21,31 +20,17 @@ def validate_session_name(session: str) -> None:
 		raise ValueError(f'Invalid session name {session!r}: only letters, digits, hyphens, and underscores allowed')
 
 
-def get_runtime_dir() -> Path:
-	"""Get runtime directory for daemon socket/PID files.
+def get_home_dir() -> Path:
+	"""Get the browser-use home directory (~/.browser-use/).
 
-	Priority: BROWSER_USE_RUNTIME_DIR > XDG_RUNTIME_DIR/browser-use > ~/.browser-use/run > tempdir/browser-use
+	All CLI-managed files live here: config, sockets, PIDs, binaries, tunnels.
+	Override with BROWSER_USE_HOME env var.
 	"""
-	env_dir = os.environ.get('BROWSER_USE_RUNTIME_DIR')
-	if env_dir:
-		d = Path(env_dir)
-		d.mkdir(parents=True, exist_ok=True)
-		return d
-
-	xdg = os.environ.get('XDG_RUNTIME_DIR')
-	if xdg:
-		d = Path(xdg) / 'browser-use'
-		d.mkdir(parents=True, exist_ok=True)
-		return d
-
-	home_dir = Path.home() / '.browser-use' / 'run'
-	try:
-		home_dir.mkdir(parents=True, exist_ok=True)
-		return home_dir
-	except OSError:
-		pass
-
-	d = Path(tempfile.gettempdir()) / 'browser-use'
+	env = os.environ.get('BROWSER_USE_HOME')
+	if env:
+		d = Path(env).expanduser()
+	else:
+		d = Path.home() / '.browser-use'
 	d.mkdir(parents=True, exist_ok=True)
 	return d
 
@@ -59,12 +44,12 @@ def get_socket_path(session: str = 'default') -> str:
 	if sys.platform == 'win32':
 		port = 49152 + zlib.adler32(session.encode()) % 16383
 		return f'tcp://127.0.0.1:{port}'
-	return str(get_runtime_dir() / f'browser-use-{session}.sock')
+	return str(get_home_dir() / f'{session}.sock')
 
 
 def get_pid_path(session: str = 'default') -> Path:
 	"""Get PID file path for a session."""
-	return get_runtime_dir() / f'browser-use-{session}.pid'
+	return get_home_dir() / f'{session}.pid'
 
 
 def is_daemon_alive(session: str = 'default') -> bool:
@@ -109,13 +94,11 @@ def list_sessions() -> list[dict]:
 	Returns list of {'name': str, 'pid': int, 'socket': str} for alive sessions.
 	Cleans up stale PID/socket files for dead sessions.
 	"""
-	runtime_dir = get_runtime_dir()
+	home_dir = get_home_dir()
 	sessions: list[dict] = []
 
-	for pid_file in sorted(runtime_dir.glob('browser-use-*.pid')):
-		# Extract session name from filename: browser-use-<session>.pid
-		stem = pid_file.stem  # browser-use-<session>
-		session_name = stem[len('browser-use-') :]
+	for pid_file in sorted(home_dir.glob('*.pid')):
+		session_name = pid_file.stem
 		if not session_name:
 			continue
 
@@ -150,7 +133,7 @@ def list_sessions() -> list[dict]:
 
 def get_log_path() -> Path:
 	"""Get log file path for the daemon."""
-	return Path(tempfile.gettempdir()) / 'browser-use-cli.log'
+	return get_home_dir() / 'cli.log'
 
 
 def find_chrome_executable() -> str | None:
@@ -353,15 +336,41 @@ def list_chrome_profiles() -> list[dict[str, str]]:
 		return []
 
 
-def get_config_dir() -> Path:
-	"""Get browser-use config directory."""
-	if sys.platform == 'win32':
-		base = Path(os.environ.get('APPDATA', Path.home()))
-	else:
-		base = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
-	return base / 'browser-use'
-
-
 def get_config_path() -> Path:
 	"""Get browser-use config file path."""
-	return get_config_dir() / 'config.json'
+	return get_home_dir() / 'config.json'
+
+
+def get_bin_dir() -> Path:
+	"""Get directory for CLI-managed binaries."""
+	d = get_home_dir() / 'bin'
+	d.mkdir(parents=True, exist_ok=True)
+	return d
+
+
+def get_tunnel_dir() -> Path:
+	"""Get directory for tunnel metadata and logs."""
+	return get_home_dir() / 'tunnels'
+
+
+def migrate_legacy_paths() -> None:
+	"""One-time migration of config from old XDG location to ~/.browser-use/.
+
+	Copies (not moves) config.json if old location exists and new location does not.
+	"""
+	new_config = get_home_dir() / 'config.json'
+	if new_config.exists():
+		return
+
+	# Check old XDG location
+	if sys.platform == 'win32':
+		old_base = Path(os.environ.get('APPDATA', Path.home()))
+	else:
+		old_base = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+	old_config = old_base / 'browser-use' / 'config.json'
+
+	if old_config.exists():
+		import shutil
+
+		shutil.copy2(str(old_config), str(new_config))
+		print(f'Migrated config from {old_config} to {new_config}', file=sys.stderr)

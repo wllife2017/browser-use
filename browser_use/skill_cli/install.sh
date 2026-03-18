@@ -357,6 +357,19 @@ install_chromium() {
 	log_success "Chromium installed"
 }
 
+install_profile_use() {
+	log_info "Installing profile-use..."
+
+	mkdir -p "$HOME/.browser-use/bin"
+	INSTALL_DIR="$HOME/.browser-use/bin" curl -fsSL https://browser-use.com/profile/cli/install.sh | sh
+
+	if [ -x "$HOME/.browser-use/bin/profile-use" ]; then
+		log_success "profile-use installed"
+	else
+		log_warn "profile-use installation failed (will auto-download on first use)"
+	fi
+}
+
 # =============================================================================
 # PATH configuration
 # =============================================================================
@@ -511,13 +524,16 @@ main() {
 	# Step 5: Install Chromium
 	install_chromium
 
-	# Step 6: Configure PATH
+	# Step 6: Install profile-use
+	install_profile_use
+
+	# Step 7: Configure PATH
 	configure_path
 
-	# Step 7: Validate
+	# Step 8: Validate
 	validate
 
-	# Step 8: Print next steps
+	# Step 9: Print next steps
 	print_next_steps
 }
 

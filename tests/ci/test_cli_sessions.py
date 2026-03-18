@@ -9,14 +9,14 @@ import re
 import pytest
 
 from browser_use.skill_cli.main import (
+	_get_home_dir,
 	_get_pid_path,
-	_get_runtime_dir,
 	_get_socket_path,
 	build_parser,
 )
 from browser_use.skill_cli.utils import (
+	get_home_dir,
 	get_pid_path,
-	get_runtime_dir,
 	get_socket_path,
 	validate_session_name,
 )
@@ -92,19 +92,19 @@ def test_session_name_regex_in_main():
 
 def test_socket_path_includes_session():
 	path = _get_socket_path('work')
-	assert 'browser-use-work.sock' in path or 'tcp://' in path
+	assert 'work.sock' in path or 'tcp://' in path
 
 
 def test_pid_path_includes_session():
 	path = _get_pid_path('work')
-	assert path.name == 'browser-use-work.pid'
+	assert path.name == 'work.pid'
 
 
 def test_default_session_paths():
 	sock = _get_socket_path('default')
 	pid = _get_pid_path('default')
-	assert 'browser-use-default' in sock or 'tcp://' in sock
-	assert pid.name == 'browser-use-default.pid'
+	assert 'default' in sock or 'tcp://' in sock
+	assert pid.name == 'default.pid'
 
 
 # ---------------------------------------------------------------------------
@@ -124,16 +124,16 @@ def test_main_utils_pid_path_agreement():
 		assert _get_pid_path(session) == get_pid_path(session), f'PID mismatch for {session!r}'
 
 
-def test_main_utils_runtime_dir_agreement():
-	"""main._get_runtime_dir must produce identical results to utils.get_runtime_dir."""
-	assert _get_runtime_dir() == get_runtime_dir()
+def test_main_utils_home_dir_agreement():
+	"""main._get_home_dir must produce identical results to utils.get_home_dir."""
+	assert _get_home_dir() == get_home_dir()
 
 
 def test_path_agreement_with_env_override(tmp_path, monkeypatch):
-	"""Path agreement under BROWSER_USE_RUNTIME_DIR override."""
-	override = str(tmp_path / 'custom-runtime')
-	monkeypatch.setenv('BROWSER_USE_RUNTIME_DIR', override)
+	"""Path agreement under BROWSER_USE_HOME override."""
+	override = str(tmp_path / 'custom-home')
+	monkeypatch.setenv('BROWSER_USE_HOME', override)
 
-	assert _get_runtime_dir() == get_runtime_dir()
+	assert _get_home_dir() == get_home_dir()
 	assert _get_socket_path('test') == get_socket_path('test')
 	assert _get_pid_path('test') == get_pid_path('test')

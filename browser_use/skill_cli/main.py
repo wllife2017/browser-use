@@ -137,31 +137,16 @@ if '--template' in sys.argv:
 # =============================================================================
 
 
-def _get_runtime_dir() -> Path:
-	"""Get runtime directory for daemon files.
+def _get_home_dir() -> Path:
+	"""Get browser-use home directory.
 
-	Must match utils.get_runtime_dir() — same env vars, same fallback chain.
+	Must match utils.get_home_dir().
 	"""
-	env_dir = os.environ.get('BROWSER_USE_RUNTIME_DIR')
-	if env_dir:
-		d = Path(env_dir)
-		d.mkdir(parents=True, exist_ok=True)
-		return d
-
-	xdg = os.environ.get('XDG_RUNTIME_DIR')
-	if xdg:
-		d = Path(xdg) / 'browser-use'
-		d.mkdir(parents=True, exist_ok=True)
-		return d
-
-	home_dir = Path.home() / '.browser-use' / 'run'
-	try:
-		home_dir.mkdir(parents=True, exist_ok=True)
-		return home_dir
-	except OSError:
-		pass
-
-	d = Path(tempfile.gettempdir()) / 'browser-use'
+	env = os.environ.get('BROWSER_USE_HOME')
+	if env:
+		d = Path(env).expanduser()
+	else:
+		d = Path.home() / '.browser-use'
 	d.mkdir(parents=True, exist_ok=True)
 	return d
 
@@ -174,7 +159,7 @@ def _get_socket_path(session: str = 'default') -> str:
 	if sys.platform == 'win32':
 		port = 49152 + zlib.adler32(session.encode()) % 16383
 		return f'tcp://127.0.0.1:{port}'
-	return str(_get_runtime_dir() / f'browser-use-{session}.sock')
+	return str(_get_home_dir() / f'{session}.sock')
 
 
 def _get_pid_path(session: str = 'default') -> Path:
@@ -182,7 +167,7 @@ def _get_pid_path(session: str = 'default') -> Path:
 
 	Must match utils.get_pid_path().
 	"""
-	return _get_runtime_dir() / f'browser-use-{session}.pid'
+	return _get_home_dir() / f'{session}.pid'
 
 
 def _connect_to_daemon(timeout: float = 60.0, session: str = 'default') -> socket.socket:
@@ -621,19 +606,7 @@ Setup:
 	# Profile Management
 	# -------------------------------------------------------------------------
 
-	profile_p = subparsers.add_parser('profile', help='Manage local browser profiles')
-	profile_sub = profile_p.add_subparsers(dest='profile_command')
-
-	# profile list
-	profile_sub.add_parser('list', help='List local Chrome profiles')
-
-	# profile get <id>
-	p = profile_sub.add_parser('get', help='Get profile details')
-	p.add_argument('id', help='Profile ID or name')
-
-	# profile cookies <id>
-	p = profile_sub.add_parser('cookies', help='List cookies by domain')
-	p.add_argument('id', help='Profile ID or name (e.g. "Default", "Profile 1")')
+	subparsers.add_parser('profile', help='Manage browser profiles (profile-use)')
 
 	return parser
 
@@ -692,12 +665,11 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 
 def _handle_sessions(args: argparse.Namespace) -> int:
 	"""List active daemon sessions."""
-	runtime_dir = _get_runtime_dir()
+	home_dir = _get_home_dir()
 	sessions: list[dict] = []
 
-	for pid_file in sorted(runtime_dir.glob('browser-use-*.pid')):
-		stem = pid_file.stem  # browser-use-<session>
-		name = stem[len('browser-use-') :]
+	for pid_file in sorted(home_dir.glob('*.pid')):
+		name = pid_file.stem
 		if not name:
 			continue
 
@@ -755,14 +727,13 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 
 def _handle_close_all(args: argparse.Namespace) -> int:
 	"""Close all active sessions."""
-	runtime_dir = _get_runtime_dir()
+	home_dir = _get_home_dir()
 	# Snapshot the list first to avoid mutating during iteration
-	pid_files = list(runtime_dir.glob('browser-use-*.pid'))
+	pid_files = list(home_dir.glob('*.pid'))
 	closed = 0
 
 	for pid_file in pid_files:
-		stem = pid_file.stem
-		name = stem[len('browser-use-') :]
+		name = pid_file.stem
 		if not name:
 			continue
 
@@ -784,16 +755,20 @@ def _handle_close_all(args: argparse.Namespace) -> int:
 	return 0
 
 
-def _migrate_legacy_socket() -> None:
-	"""One-time cleanup of old single-socket daemon (pre-multi-session)."""
+def _migrate_legacy_files() -> None:
+	"""One-time cleanup of old daemon files and config migration."""
+	# Migrate config from old XDG location
+	from browser_use.skill_cli.utils import migrate_legacy_paths
+
+	migrate_legacy_paths()
+
+	# Clean up old single-socket daemon (pre-multi-session)
 	legacy_path = Path(tempfile.gettempdir()) / 'browser-use-cli.sock'
 	if sys.platform == 'win32':
-		# Old Windows path was tcp://127.0.0.1:49200 — try to connect and shut down
 		try:
 			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			sock.settimeout(0.5)
 			sock.connect(('127.0.0.1', 49200))
-			# Send shutdown
 			req = json.dumps({'id': 'legacy', 'action': 'shutdown', 'params': {}}) + '\n'
 			sock.sendall(req.encode())
 			sock.close()
@@ -808,8 +783,18 @@ def _migrate_legacy_socket() -> None:
 			sock.sendall(req.encode())
 			sock.close()
 		except OSError:
-			# Stale socket — just remove
 			legacy_path.unlink(missing_ok=True)
+
+	# Clean up old ~/.browser-use/run/ directory (stale PID/socket files)
+	old_run_dir = Path.home() / '.browser-use' / 'run'
+	if old_run_dir.is_dir():
+		for stale_file in old_run_dir.glob('browser-use-*'):
+			stale_file.unlink(missing_ok=True)
+		# Remove the directory if empty
+		try:
+			old_run_dir.rmdir()
+		except OSError:
+			pass
 
 
 def main() -> int:
@@ -844,11 +829,17 @@ def main() -> int:
 
 		return handle_cloud_command(cloud_args)
 
-	# Handle profile subcommands without starting daemon
+	# Handle profile subcommand — passthrough to profile-use Go binary
 	if args.command == 'profile':
-		from browser_use.skill_cli.commands.profile import handle_profile_command
+		from browser_use.skill_cli.profile_use import run_profile_use
 
-		return handle_profile_command(args)
+		# Everything after 'profile' is passed through to the Go binary
+		try:
+			profile_idx = sys.argv.index('profile')
+		except ValueError:
+			profile_idx = len(sys.argv)
+		profile_argv = sys.argv[profile_idx + 1:]
+		return run_profile_use(profile_argv)
 
 	# Handle setup command
 	if args.command == 'setup':
@@ -1015,7 +1006,7 @@ def main() -> int:
 			return 1
 
 	# One-time legacy migration
-	_migrate_legacy_socket()
+	_migrate_legacy_files()
 
 	# Ensure daemon is running
 	# Only restart on config mismatch if the user explicitly passed config flags

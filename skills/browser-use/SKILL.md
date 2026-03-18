@@ -185,7 +185,7 @@ browser-use cloud v3 --help                                # Show API v3 endpoin
 
 `cloud connect` provisions a cloud browser, connects via CDP, and prints a live URL. `browser-use close` disconnects AND stops the cloud browser (no orphaned billing). Mutually exclusive with `--cdp-url` and `--profile`.
 
-API key: env var `BROWSER_USE_API_KEY` or `browser-use cloud login`. Stored in `~/.config/browser-use/config.json`.
+API key: env var `BROWSER_USE_API_KEY` or `browser-use cloud login`. Stored in `~/.browser-use/config.json`.
 
 ### Tunnels
 ```bash
