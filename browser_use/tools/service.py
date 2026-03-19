@@ -208,9 +208,16 @@ try {
 		if (ATTRIBUTES && ATTRIBUTES.length > 0) {
 			item.attrs = {};
 			for (var j = 0; j < ATTRIBUTES.length; j++) {
-				var val = el.getAttribute(ATTRIBUTES[j]);
+				var attrName = ATTRIBUTES[j];
+				var val;
+				// Use resolved DOM property for src/href to get absolute URLs
+				if ((attrName === 'src' || attrName === 'href') && typeof el[attrName] === 'string' && el[attrName] !== '') {
+					val = el[attrName];
+				} else {
+					val = el.getAttribute(attrName);
+				}
 				if (val !== null) {
-					item.attrs[ATTRIBUTES[j]] = val.length > 500 ? val.slice(0, 500) + '...' : val;
+					item.attrs[attrName] = val.length > 500 ? val.slice(0, 500) + '...' : val;
 				}
 			}
 		}
@@ -964,7 +971,7 @@ class Tools(Generic[Context]):
 				)
 
 		@self.registry.action(
-			"""LLM extracts structured data from page markdown. Use when: on right page, know what to extract, haven't called before on same page+query. Can't get interactive elements. Set extract_links=True for URLs. Use start_from_char if previous extraction was truncated to extract data further down the page. When paginating across pages, pass already_collected with item identifiers (names/URLs) from prior pages to avoid duplicates.""",
+			"""LLM extracts structured data from page markdown. Use when: on right page, know what to extract, haven't called before on same page+query. Can't get interactive elements. Set extract_links=True for URLs. Set extract_images=True for image src URLs. Use start_from_char if previous extraction was truncated to extract data further down the page. When paginating across pages, pass already_collected with item identifiers (names/URLs) from prior pages to avoid duplicates.""",
 			param_model=ExtractAction,
 		)
 		async def extract(
@@ -978,11 +985,17 @@ class Tools(Generic[Context]):
 			MAX_CHAR_LIMIT = 100000
 			query = params['query'] if isinstance(params, dict) else params.query
 			extract_links = params['extract_links'] if isinstance(params, dict) else params.extract_links
+			extract_images = params.get('extract_images', False) if isinstance(params, dict) else params.extract_images
 			start_from_char = params['start_from_char'] if isinstance(params, dict) else params.start_from_char
 			output_schema: dict | None = params.get('output_schema') if isinstance(params, dict) else params.output_schema
 			already_collected: list[str] = (
 				params.get('already_collected', []) if isinstance(params, dict) else params.already_collected
 			)
+
+			# Auto-enable extract_images if query contains image-related keywords
+			_IMAGE_KEYWORDS = ['image', 'photo', 'picture', 'thumbnail', 'img url', 'image url', 'photo url', 'product image']
+			if not extract_images and any(kw in query.lower() for kw in _IMAGE_KEYWORDS):
+				extract_images = True
 
 			# If the LLM didn't provide an output_schema, use the agent-injected extraction_schema
 			if output_schema is None and extraction_schema is not None:
@@ -1004,7 +1017,7 @@ class Tools(Generic[Context]):
 				from browser_use.dom.markdown_extractor import extract_clean_markdown
 
 				content, content_stats = await extract_clean_markdown(
-					browser_session=browser_session, extract_links=extract_links
+					browser_session=browser_session, extract_links=extract_links, extract_images=extract_images
 				)
 			except Exception as e:
 				raise RuntimeError(f'Could not extract clean markdown: {type(e).__name__}')
