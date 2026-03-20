@@ -361,7 +361,7 @@ install_profile_use() {
 	log_info "Installing profile-use..."
 
 	mkdir -p "$HOME/.browser-use/bin"
-	curl -fsSL https://browser-use.com/profile/cli/install.sh | INSTALL_DIR="$HOME/.browser-use/bin" sh
+	curl -fsSL https://browser-use.com/profile/cli/install.sh | PROFILE_USE_VERSION=v1.0.2 INSTALL_DIR="$HOME/.browser-use/bin" sh
 
 	if [ -x "$HOME/.browser-use/bin/profile-use" ]; then
 		log_success "profile-use installed"
