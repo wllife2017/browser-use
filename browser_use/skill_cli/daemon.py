@@ -56,10 +56,10 @@ class Daemon:
 		self.running = True
 		self._server: asyncio.Server | None = None
 		self._shutdown_event = asyncio.Event()
-		self._session: 'SessionInfo | None' = None
+		self._session: SessionInfo | None = None
 		self._browser_watchdog_task: asyncio.Task | None = None
 
-	async def _get_or_create_session(self) -> 'SessionInfo':
+	async def _get_or_create_session(self) -> SessionInfo:
 		"""Lazy-create the single session on first command."""
 		if self._session is not None:
 			return self._session
