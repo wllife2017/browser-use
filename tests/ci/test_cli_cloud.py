@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from pytest_httpserver import HTTPServer
+from werkzeug.wrappers import Request, Response
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -115,11 +116,11 @@ def test_cloud_rest_get(httpserver: HTTPServer):
 def test_cloud_rest_post_with_body(httpserver: HTTPServer):
 	body_to_send = {'task': 'Search for AI news', 'url': 'https://google.com'}
 
-	def handler(request):
+	def handler(request: Request) -> Response:
 		assert request.content_type == 'application/json'
 		received = json.loads(request.data)
 		assert received == body_to_send
-		return json.dumps({'id': 'task-1', 'status': 'created'})
+		return Response(json.dumps({'id': 'task-1', 'status': 'created'}), content_type='application/json')
 
 	httpserver.expect_request('/api/v2/tasks', method='POST').respond_with_handler(handler)
 
@@ -139,9 +140,9 @@ def test_cloud_rest_post_with_body(httpserver: HTTPServer):
 
 
 def test_cloud_rest_sends_auth_header(httpserver: HTTPServer):
-	def handler(request):
+	def handler(request: Request) -> Response:
 		assert request.headers.get('X-Browser-Use-API-Key') == 'sk-secret-key'
-		return json.dumps({'ok': True})
+		return Response(json.dumps({'ok': True}), content_type='application/json')
 
 	httpserver.expect_request('/api/v2/test', method='GET').respond_with_handler(handler)
 
@@ -198,11 +199,11 @@ def test_cloud_poll_finishes(httpserver: HTTPServer):
 	# First call: running, second call: finished
 	call_count = {'n': 0}
 
-	def handler(request):
+	def handler(request: Request) -> Response:
 		call_count['n'] += 1
 		if call_count['n'] == 1:
-			return json.dumps({'status': 'running', 'cost': 0.0012})
-		return json.dumps({'status': 'finished', 'cost': 0.0050, 'result': 'done'})
+			return Response(json.dumps({'status': 'running', 'cost': 0.0012}), content_type='application/json')
+		return Response(json.dumps({'status': 'finished', 'cost': 0.0050, 'result': 'done'}), content_type='application/json')
 
 	httpserver.expect_request('/api/v2/tasks/t-123', method='GET').respond_with_handler(handler)
 
