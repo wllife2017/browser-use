@@ -87,8 +87,8 @@ def is_daemon_alive(session: str = 'default') -> bool:
 	if sock_path.startswith('tcp://'):
 		_, hostport = sock_path.split('://', 1)
 		host, port_str = hostport.split(':')
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			s.settimeout(0.5)
 			s.connect((host, int(port_str)))
 			return True
@@ -100,8 +100,8 @@ def is_daemon_alive(session: str = 'default') -> bool:
 		sock_file = Path(sock_path)
 		if not sock_file.exists():
 			return False
-		s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 		try:
+			s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 			s.settimeout(0.5)
 			s.connect(sock_path)
 			return True
