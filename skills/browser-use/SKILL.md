@@ -312,6 +312,23 @@ browser-use screenshot
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |
 
+## Command Chaining
+
+Commands can be chained with `&&` in a single shell invocation. The browser persists between commands via a background daemon, so chaining is safe and more efficient than separate calls.
+
+```bash
+# Chain open + state in one call
+browser-use open https://example.com && browser-use state
+
+# Chain multiple interactions
+browser-use input 5 "user@example.com" && browser-use input 6 "password123" && browser-use click 7
+
+# Fill and verify
+browser-use input 3 "search query" && browser-use keys "Enter" && browser-use state
+```
+
+**When to chain:** Use `&&` when you don't need to read the output of an intermediate command before proceeding. Run commands separately when you need to parse the output first (e.g., `state` to discover indices, then interact using those indices).
+
 ## Tips
 
 1. **Always run `browser-use state` first** to see available elements and their indices
