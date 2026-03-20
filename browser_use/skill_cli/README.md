@@ -94,7 +94,7 @@ browser-use open https://example.com
 browser-use --headed open https://example.com
 
 # Use your real Chrome with Default profile (with existing logins/cookies)
-browser-use --profile open https://gmail.com
+browser-use --profile "Default" open https://gmail.com
 
 # Use a specific Chrome profile
 browser-use --profile "Profile 1" open https://gmail.com

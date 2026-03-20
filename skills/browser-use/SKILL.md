@@ -30,7 +30,7 @@ For setup details, see https://github.com/browser-use/browser-use/blob/main/brow
 ```bash
 browser-use open <url>                         # Default: headless Chromium
 browser-use --headed open <url>                # Visible window
-browser-use --profile open <url>               # Real Chrome with Default profile (existing logins/cookies)
+browser-use --profile "Default" open <url>      # Real Chrome with Default profile (existing logins/cookies)
 browser-use --profile "Profile 1" open <url>   # Real Chrome with named profile
 browser-use --connect open <url>               # Auto-discover running Chrome via CDP
 browser-use --cdp-url ws://localhost:9222/... open <url>  # Connect via CDP URL
