@@ -199,7 +199,7 @@ class TestExtractCleanMarkdown:
 class TestExtractImagesAutoDetection:
 	"""Tests for auto-detection of image-related queries in the extract action."""
 
-	async def test_auto_detect_image_url_query(self, browser_session, base_url):
+	async def test_auto_detect_image_url_query(self, browser_session, base_url, tmp_path):
 		"""Query containing 'image url' auto-enables extract_images: table-cell img URLs appear in LLM input."""
 		from unittest.mock import AsyncMock
 
@@ -238,7 +238,7 @@ class TestExtractImagesAutoDetection:
 			query='get image url for each product',
 			browser_session=browser_session,
 			page_extraction_llm=mock_llm,
-			file_system=FileSystem(base_dir='/tmp/test_extract_images'),
+			file_system=FileSystem(base_dir=str(tmp_path)),
 		)
 
 		# The LLM should have received content that includes image markdown (td images with URLs)
@@ -247,7 +247,7 @@ class TestExtractImagesAutoDetection:
 			f'Expected image URLs in LLM input but got: {all_content[:500]}'
 		)
 
-	async def test_no_auto_detect_without_image_keyword(self, browser_session, base_url):
+	async def test_no_auto_detect_without_image_keyword(self, browser_session, base_url, tmp_path):
 		"""Query without image keywords does NOT auto-enable extract_images: table-cell img URLs absent."""
 		from unittest.mock import AsyncMock
 
@@ -286,7 +286,7 @@ class TestExtractImagesAutoDetection:
 			query='get product names and prices',
 			browser_session=browser_session,
 			page_extraction_llm=mock_llm,
-			file_system=FileSystem(base_dir='/tmp/test_extract_images'),
+			file_system=FileSystem(base_dir=str(tmp_path)),
 		)
 
 		# Table-cell image URLs should NOT appear (extract_images=False, no auto-detect)
