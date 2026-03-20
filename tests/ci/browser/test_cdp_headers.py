@@ -172,4 +172,6 @@ async def test_headers_used_for_json_version_endpoint():
 				for key, value in test_headers.items():
 					assert actual_headers[key] == value, f'Header {key} should be passed to /json/version'
 				# User-Agent should be injected
-				assert actual_headers['User-Agent'].startswith('browser-use/'), 'User-Agent should be injected for /json/version fetch'
+				assert actual_headers['User-Agent'].startswith('browser-use/'), (
+					'User-Agent should be injected for /json/version fetch'
+				)
