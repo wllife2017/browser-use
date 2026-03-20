@@ -457,6 +457,11 @@ Setup:
 	p.add_argument('index', type=int, help='Element index')
 	p.add_argument('value', help='Value to select')
 
+	# upload <index> <path>
+	p = subparsers.add_parser('upload', help='Upload file to file input element')
+	p.add_argument('index', type=int, help='Element index of file input')
+	p.add_argument('path', help='Path to file to upload')
+
 	# eval <js>
 	p = subparsers.add_parser('eval', help='Execute JavaScript')
 	p.add_argument('js', help='JavaScript code to execute')
@@ -1016,6 +1021,10 @@ def main() -> int:
 	for key, value in vars(args).items():
 		if key not in skip_keys and value is not None:
 			params[key] = value
+
+	# Resolve file paths to absolute before sending to daemon (daemon may have different CWD)
+	if args.command == 'upload' and 'path' in params:
+		params['path'] = str(Path(params['path']).expanduser().resolve())
 
 	# Add profile to params for commands that need it
 	if args.profile:

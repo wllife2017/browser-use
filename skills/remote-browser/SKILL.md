@@ -70,6 +70,7 @@ browser-use type "text"                   # Type into focused element
 browser-use input <index> "text"          # Click element, then type
 browser-use keys "Enter"                  # Send keyboard keys
 browser-use select <index> "option"       # Select dropdown option
+browser-use upload <index> <path>         # Upload file to file input
 
 # Data Extraction
 browser-use eval "document.title"         # Execute JavaScript
@@ -114,6 +115,7 @@ browser-use input <index> "text"    # Click element, then type
 browser-use keys "Enter"            # Send keyboard keys
 browser-use keys "Control+a"        # Key combination
 browser-use select <index> "option" # Select dropdown option
+browser-use upload <index> <path>   # Upload file to file input
 browser-use hover <index>           # Hover over element
 browser-use dblclick <index>        # Double-click
 browser-use rightclick <index>      # Right-click
@@ -168,7 +170,7 @@ browser-use python --file script.py   # Run Python file
 The Python session maintains state across commands. The `browser` object provides:
 - `browser.url`, `browser.title`, `browser.html` — page info
 - `browser.goto(url)`, `browser.back()` — navigation
-- `browser.click(index)`, `browser.type(text)`, `browser.input(index, text)`, `browser.keys(keys)` — interactions
+- `browser.click(index)`, `browser.type(text)`, `browser.input(index, text)`, `browser.keys(keys)`, `browser.upload(index, path)` — interactions
 - `browser.screenshot(path)`, `browser.scroll(direction, amount)` — visual
 - `browser.wait(seconds)`, `browser.extract(query)` — utilities
 

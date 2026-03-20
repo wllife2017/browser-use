@@ -136,6 +136,7 @@ browser-use --cdp-url ws://localhost:9222/devtools/browser/... state
 | `keys "Enter"` | Send keyboard keys |
 | `keys "Control+a"` | Send key combination |
 | `select <index> "value"` | Select dropdown option |
+| `upload <index> <path>` | Upload file to file input element |
 | `hover <index>` | Hover over element |
 | `dblclick <index>` | Double-click element |
 | `rightclick <index>` | Right-click element |
