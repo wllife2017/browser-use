@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Pattern to extract tunnel URL from cloudflared output
 _URL_PATTERN = re.compile(r'(https://\S+\.trycloudflare\.com)')
 
+
 def _tunnels_dir() -> Path:
 	"""Get tunnel metadata directory (lazy to respect BROWSER_USE_HOME)."""
 	from browser_use.skill_cli.utils import get_tunnel_dir

@@ -48,7 +48,9 @@ def download_profile_use() -> Path:
 	)
 
 	if result.returncode != 0:
-		raise RuntimeError('Failed to download profile-use. Try installing manually:\n  curl -fsSL https://browser-use.com/profile/cli/install.sh | sh')
+		raise RuntimeError(
+			'Failed to download profile-use. Try installing manually:\n  curl -fsSL https://browser-use.com/profile/cli/install.sh | sh'
+		)
 
 	binary = get_profile_use_binary()
 	if binary is None:
