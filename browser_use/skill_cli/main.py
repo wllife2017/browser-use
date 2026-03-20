@@ -255,7 +255,7 @@ def ensure_daemon(
 				)
 				sys.exit(1)
 		except Exception:
-			pass  # Daemon not responsive, continue to start
+			return  # Daemon alive but can't verify config — reuse it, can't safely restart
 
 	# Build daemon command
 	cmd = [
