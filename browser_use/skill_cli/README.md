@@ -415,8 +415,8 @@ echo $env:PATH
 ### "Failed to start daemon" error
 Kill zombie processes:
 ```powershell
-# Find process on port
-netstat -ano | findstr 49200
+# Find browser-use Python processes
+tasklist | findstr python
 
 # Kill by PID
 taskkill /PID <pid> /F

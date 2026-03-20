@@ -216,7 +216,8 @@ class Daemon:
 		loop = asyncio.get_running_loop()
 
 		def signal_handler():
-			self._shutdown_task = asyncio.create_task(self.shutdown())
+			if not self._shutdown_task or self._shutdown_task.done():
+				self._shutdown_task = asyncio.create_task(self.shutdown())
 
 		for sig in (signal.SIGINT, signal.SIGTERM):
 			try:

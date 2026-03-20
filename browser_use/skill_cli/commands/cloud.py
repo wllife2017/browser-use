@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import time
+import typing
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -126,15 +127,17 @@ def _http_request(method: str, url: str, body: bytes | None, api_key: str, timeo
 		sys.exit(1)
 
 
-def _print_json(data: bytes) -> None:
+def _print_json(data: bytes, file: typing.TextIO | None = None) -> None:
 	"""Pretty-print JSON, raw fallback."""
+	out = file or sys.stdout
 	try:
 		parsed = json.loads(data)
-		print(json.dumps(parsed, indent=2))
+		print(json.dumps(parsed, indent=2), file=out)
 	except (json.JSONDecodeError, ValueError):
-		sys.stdout.buffer.write(data)
-		sys.stdout.buffer.write(b'\n')
-		sys.stdout.buffer.flush()
+		buf = out.buffer if hasattr(out, 'buffer') else sys.stdout.buffer
+		buf.write(data)
+		buf.write(b'\n')
+		buf.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +378,7 @@ def _cloud_rest(argv: list[str], version: str) -> int:
 
 	if 400 <= status < 500:
 		print(f'HTTP {status}', file=sys.stderr)
-		_print_json(resp_body)
+		_print_json(resp_body, file=sys.stderr)
 
 		# Try to suggest correct body from spec
 		spec_data = _fetch_spec(version)
@@ -391,7 +394,7 @@ def _cloud_rest(argv: list[str], version: str) -> int:
 
 	if status >= 500:
 		print(f'HTTP {status}', file=sys.stderr)
-		_print_json(resp_body)
+		_print_json(resp_body, file=sys.stderr)
 		return 1
 
 	_print_json(resp_body)
@@ -413,7 +416,7 @@ def _cloud_poll(argv: list[str], version: str) -> int:
 
 		if status_code >= 400:
 			print(f'\nHTTP {status_code}', file=sys.stderr)
-			_print_json(resp_body)
+			_print_json(resp_body, file=sys.stderr)
 			return 2
 
 		try:
@@ -433,7 +436,7 @@ def _cloud_poll(argv: list[str], version: str) -> int:
 
 		if task_status == 'failed':
 			print('', file=sys.stderr)
-			_print_json(resp_body)
+			_print_json(resp_body, file=sys.stderr)
 			return 2
 
 		time.sleep(2)
