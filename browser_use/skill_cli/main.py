@@ -254,8 +254,9 @@ def ensure_daemon(
 					file=sys.stderr,
 				)
 				sys.exit(1)
+			return  # Ping returned failure — daemon alive but can't verify config, reuse it
 		except Exception:
-			return  # Daemon alive but can't verify config — reuse it, can't safely restart
+			return  # Daemon alive but not responsive — reuse it, can't safely restart
 
 	# Build daemon command
 	cmd = [
