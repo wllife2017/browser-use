@@ -178,12 +178,17 @@ def _connect_to_daemon(timeout: float = 60.0, session: str = 'default') -> socke
 		_, hostport = sock_path.split('://', 1)
 		host, port = hostport.split(':')
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		sock.settimeout(timeout)
-		sock.connect((host, int(port)))
+		addr: str | tuple[str, int] = (host, int(port))
 	else:
 		sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+		addr = sock_path
+
+	try:
 		sock.settimeout(timeout)
-		sock.connect(sock_path)
+		sock.connect(addr)
+	except Exception:
+		sock.close()
+		raise
 
 	return sock
 
@@ -771,25 +776,27 @@ def _migrate_legacy_files() -> None:
 	# Clean up old single-socket daemon (pre-multi-session)
 	legacy_path = Path(tempfile.gettempdir()) / 'browser-use-cli.sock'
 	if sys.platform == 'win32':
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
-			sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			sock.settimeout(0.5)
 			sock.connect(('127.0.0.1', 49200))
 			req = json.dumps({'id': 'legacy', 'action': 'shutdown', 'params': {}}) + '\n'
 			sock.sendall(req.encode())
-			sock.close()
 		except OSError:
 			pass
+		finally:
+			sock.close()
 	elif legacy_path.exists():
+		sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 		try:
-			sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 			sock.settimeout(0.5)
 			sock.connect(str(legacy_path))
 			req = json.dumps({'id': 'legacy', 'action': 'shutdown', 'params': {}}) + '\n'
 			sock.sendall(req.encode())
-			sock.close()
 		except OSError:
 			legacy_path.unlink(missing_ok=True)
+		finally:
+			sock.close()
 
 	# Clean up old ~/.browser-use/run/ directory (stale PID/socket files)
 	old_run_dir = Path.home() / '.browser-use' / 'run'

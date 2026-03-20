@@ -64,28 +64,30 @@ def is_daemon_alive(session: str = 'default') -> bool:
 	if sock_path.startswith('tcp://'):
 		_, hostport = sock_path.split('://', 1)
 		host, port_str = hostport.split(':')
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
-			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			s.settimeout(0.5)
 			s.connect((host, int(port_str)))
-			s.close()
 			return True
 		except OSError:
 			return False
+		finally:
+			s.close()
 	else:
 		sock_file = Path(sock_path)
 		if not sock_file.exists():
 			return False
+		s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 		try:
-			s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 			s.settimeout(0.5)
 			s.connect(sock_path)
-			s.close()
 			return True
 		except OSError:
 			# Stale socket file — remove it
 			sock_file.unlink(missing_ok=True)
 			return False
+		finally:
+			s.close()
 
 
 def list_sessions() -> list[dict]:
@@ -257,14 +259,15 @@ def discover_chrome_cdp_url() -> str:
 		"""Check if something is listening on 127.0.0.1:{port}."""
 		import socket
 
+		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
-			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			s.settimeout(1)
 			s.connect(('127.0.0.1', port))
-			s.close()
 			return True
 		except OSError:
 			return False
+		finally:
+			s.close()
 
 	# --- Phase 1: DevToolsActivePort files ---
 	for data_dir in get_chrome_user_data_dirs():
