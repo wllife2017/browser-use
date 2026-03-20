@@ -57,6 +57,7 @@ class Daemon:
 		self._server: asyncio.Server | None = None
 		self._shutdown_event = asyncio.Event()
 		self._session: SessionInfo | None = None
+		self._shutdown_task: asyncio.Task | None = None
 		self._browser_watchdog_task: asyncio.Task | None = None
 
 	async def _get_or_create_session(self) -> SessionInfo:
@@ -215,7 +216,7 @@ class Daemon:
 		loop = asyncio.get_running_loop()
 
 		def signal_handler():
-			asyncio.create_task(self.shutdown())
+			self._shutdown_task = asyncio.create_task(self.shutdown())
 
 		for sig in (signal.SIGINT, signal.SIGTERM):
 			try:
@@ -260,6 +261,9 @@ class Daemon:
 		try:
 			async with self._server:
 				await self._shutdown_event.wait()
+				# Wait for shutdown to finish browser cleanup before exiting
+				if self._shutdown_task:
+					await self._shutdown_task
 		except asyncio.CancelledError:
 			pass
 		finally:
