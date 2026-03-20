@@ -114,7 +114,7 @@ def _check_cloudflared() -> dict[str, Any]:
 	return {
 		'status': 'missing',
 		'message': 'cloudflared not installed (needed for browser-use tunnel)',
-		'fix': 'brew install cloudflared',
+		'fix': 'Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/',
 	}
 
 
