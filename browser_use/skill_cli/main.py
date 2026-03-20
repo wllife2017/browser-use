@@ -700,10 +700,24 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 			pid_file.unlink(missing_ok=True)
 			continue
 
-		# Check if process is alive
-		try:
-			os.kill(pid, 0)
-		except (OSError, ProcessLookupError):
+		# Check if process is alive (os.kill(pid, 0) terminates on Windows, use OpenProcess instead)
+		if sys.platform == 'win32':
+			import ctypes
+
+			_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+			_handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+			if _handle:
+				ctypes.windll.kernel32.CloseHandle(_handle)
+				_alive = True
+			else:
+				_alive = False
+		else:
+			try:
+				os.kill(pid, 0)
+				_alive = True
+			except (OSError, ProcessLookupError):
+				_alive = False
+		if not _alive:
 			# Dead — clean up stale files
 			pid_file.unlink(missing_ok=True)
 			sock_path = _get_socket_path(name)

@@ -11,6 +11,29 @@ import zlib
 from pathlib import Path
 
 
+def is_process_alive(pid: int) -> bool:
+	"""Check if a process is still running.
+
+	On Windows, os.kill(pid, 0) calls TerminateProcess — so we use
+	OpenProcess via ctypes instead.
+	"""
+	if sys.platform == 'win32':
+		import ctypes
+
+		PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+		handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+		if handle:
+			ctypes.windll.kernel32.CloseHandle(handle)
+			return True
+		return False
+	else:
+		try:
+			os.kill(pid, 0)
+			return True
+		except (OSError, ProcessLookupError):
+			return False
+
+
 def validate_session_name(session: str) -> None:
 	"""Validate session name — reject path traversal and special characters.
 
@@ -112,9 +135,7 @@ def list_sessions() -> list[dict]:
 			continue
 
 		# Check if process is alive
-		try:
-			os.kill(pid, 0)
-		except (OSError, ProcessLookupError):
+		if not is_process_alive(pid):
 			# Dead process — clean up stale files
 			pid_file.unlink(missing_ok=True)
 			sock_path = get_socket_path(session_name)

@@ -150,11 +150,9 @@ def _delete_tunnel_info(port: int) -> None:
 
 def _is_process_alive(pid: int) -> bool:
 	"""Check if a process is still running."""
-	try:
-		os.kill(pid, 0)
-		return True
-	except (OSError, ProcessLookupError):
-		return False
+	from browser_use.skill_cli.utils import is_process_alive
+
+	return is_process_alive(pid)
 
 
 def _kill_process(pid: int) -> bool:
