@@ -423,23 +423,23 @@ class Tools(Generic[Context]):
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 
 				# Health check: detect empty DOM for http/https pages and retry once.
-				# Uses llm_representation() to detect pages with nothing the LLM can act on
-				# (empty body, SPA not yet rendered). Only returns error for truly blank pages
-				# (_root is None, e.g. about:blank type failures) to avoid false positives on
-				# image-only or non-interactive pages whose content is real but not in the LLM view.
+				# Uses _root is None (truly blank) OR empty llm_representation() (no actionable
+				# content for the LLM, e.g. SPA not yet rendered, empty body).
+				# NOTE: llm_representation() returns a non-empty placeholder when _root is None,
+				# so we must check _root is None separately — not rely on the repr string alone.
+				def _page_appears_empty(s) -> bool:
+					return s.dom_state._root is None or not s.dom_state.llm_representation().strip()
+
 				if not params.new_tab:
 					state = await browser_session.get_browser_state_summary(include_screenshot=False)
 					url_is_http = state.url.lower().startswith(('http://', 'https://'))
-					if url_is_http and not state.dom_state.llm_representation().strip():
+					if url_is_http and _page_appears_empty(state):
 						browser_session.logger.warning(
 							f'⚠️ Empty DOM detected after navigation to {params.url}, waiting 3s and rechecking...'
 						)
 						await asyncio.sleep(3.0)
 						state = await browser_session.get_browser_state_summary(include_screenshot=False)
-						if (
-							state.url.lower().startswith(('http://', 'https://'))
-							and not state.dom_state.llm_representation().strip()
-						):
+						if state.url.lower().startswith(('http://', 'https://')) and _page_appears_empty(state):
 							# Second attempt: reload the page and wait longer
 							browser_session.logger.warning(f'⚠️ Still empty after 3s, attempting page reload for {params.url}...')
 							reload_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=params.url, new_tab=False))
