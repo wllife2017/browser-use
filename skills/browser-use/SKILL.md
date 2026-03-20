@@ -57,7 +57,8 @@ browser-use screenshot                    # Take screenshot (base64)
 browser-use screenshot path.png           # Save screenshot to file
 
 # Interactions (use indices from state)
-browser-use click <index>                 # Click element
+browser-use click <index>                 # Click element by index
+browser-use click <x> <y>                 # Click at pixel coordinates
 browser-use type "text"                   # Type into focused element
 browser-use input <index> "text"          # Click element, then type
 browser-use keys "Enter"                  # Send keyboard keys
@@ -66,6 +67,7 @@ browser-use upload <index> <path>         # Upload file to file input
 
 # Data Extraction
 browser-use eval "document.title"         # Execute JavaScript
+browser-use extract "query"               # Extract data with LLM (not yet implemented)
 browser-use get text <index>              # Get element text
 browser-use get html --selector "h1"      # Get scoped HTML
 
@@ -101,7 +103,8 @@ browser-use screenshot --full path.png    # Full page screenshot
 
 ### Interactions
 ```bash
-browser-use click <index>                 # Click element
+browser-use click <index>                 # Click element by index
+browser-use click <x> <y>                 # Click at pixel coordinates
 browser-use type "text"                   # Type text into focused element
 browser-use input <index> "text"          # Click element, then type text
 browser-use keys "Enter"                  # Send keyboard keys
@@ -118,6 +121,7 @@ Use indices from `browser-use state`.
 ### JavaScript & Data
 ```bash
 browser-use eval "document.title"         # Execute JavaScript, return result
+browser-use extract "query"               # Extract data with LLM (not yet implemented)
 browser-use get title                     # Get page title
 browser-use get html                      # Get full page HTML
 browser-use get html --selector "h1"      # Get HTML of specific element
@@ -166,7 +170,7 @@ The Python session maintains state across commands. The `browser` object provide
 - `browser.goto(url)`, `browser.back()` — navigation
 - `browser.click(index)`, `browser.type(text)`, `browser.input(index, text)`, `browser.keys(keys)`, `browser.upload(index, path)` — interactions
 - `browser.screenshot(path)`, `browser.scroll(direction, amount)` — visual
-- `browser.wait(seconds)`, `browser.extract(query)` — utilities
+- `browser.wait(seconds)` — utilities
 
 ### Cloud API
 ```bash
@@ -309,6 +313,7 @@ browser-use screenshot
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
 | `--connect` | Auto-discover and connect to running Chrome via CDP |
 | `--cdp-url <url>` | Connect to existing browser via CDP URL (`http://` or `ws://`) |
+| `--session NAME` | Target a named session (default: "default") |
 | `--json` | Output as JSON |
 | `--mcp` | Run as MCP server via stdin/stdout |
 

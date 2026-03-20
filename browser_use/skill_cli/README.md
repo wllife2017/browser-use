@@ -131,6 +131,7 @@ browser-use --cdp-url ws://localhost:9222/devtools/browser/... state
 | Command | Description |
 |---------|-------------|
 | `click <index>` | Click element by index |
+| `click <x> <y>` | Click at pixel coordinates |
 | `type "text"` | Type into focused element |
 | `input <index> "text"` | Click element, then type |
 | `keys "Enter"` | Send keyboard keys |
@@ -185,7 +186,7 @@ browser-use --cdp-url ws://localhost:9222/devtools/browser/... state
 | Command | Description |
 |---------|-------------|
 | `eval "js code"` | Execute JavaScript |
-| `extract "query"` | Extract data with LLM |
+| `extract "query"` | Extract data with LLM (not yet implemented) |
 
 ### Python (Persistent Session)
 ```bash
