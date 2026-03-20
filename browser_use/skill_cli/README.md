@@ -256,6 +256,7 @@ Expose local dev servers to cloud browsers via Cloudflare tunnels.
 # Example: Test local dev server with cloud browser
 npm run dev &                              # localhost:3000
 browser-use tunnel 3000                    # → https://abc.trycloudflare.com
+browser-use cloud connect                  # Provision cloud browser
 browser-use open https://abc.trycloudflare.com
 ```
 
