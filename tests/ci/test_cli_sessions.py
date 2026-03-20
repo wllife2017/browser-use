@@ -4,8 +4,6 @@ Validates argument parsing, socket/PID path generation, session name validation,
 and path agreement between main.py (stdlib-only) and utils.py.
 """
 
-import re
-
 import pytest
 
 from browser_use.skill_cli.main import (
@@ -75,16 +73,6 @@ def test_session_name_invalid():
 			validate_session_name(name)
 
 
-def test_session_name_regex_in_main():
-	"""Verify main.py uses the same regex as utils.validate_session_name."""
-	pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
-	assert pattern.match('default')
-	assert pattern.match('my-session_1')
-	assert not pattern.match('../evil')
-	assert not pattern.match('')
-	assert not pattern.match('a b')
-
-
 # ---------------------------------------------------------------------------
 # Path generation
 # ---------------------------------------------------------------------------
@@ -103,7 +91,7 @@ def test_pid_path_includes_session():
 def test_default_session_paths():
 	sock = _get_socket_path('default')
 	pid = _get_pid_path('default')
-	assert 'default' in sock or 'tcp://' in sock
+	assert 'default.sock' in sock or 'tcp://' in sock
 	assert pid.name == 'default.pid'
 
 

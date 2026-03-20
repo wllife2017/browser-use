@@ -38,11 +38,11 @@ def test_cloud_connect_mutual_exclusivity_profile():
 
 def test_cloud_connect_shows_in_usage():
 	"""cloud help should list connect."""
-	result = run_cli('cloud')
+	result = run_cli('cloud', '--help')
 	assert 'connect' in result.stdout.lower()
 
 
 def test_cloud_connect_help_shows_in_epilog():
 	"""Main --help epilog should mention cloud connect."""
 	result = run_cli('--help')
-	assert 'cloud connect' in result.stdout.lower() or 'cloud' in result.stdout.lower()
+	assert 'cloud connect' in result.stdout.lower()

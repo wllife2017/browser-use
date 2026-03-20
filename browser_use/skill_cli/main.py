@@ -132,6 +132,16 @@ if '--template' in sys.argv:
 	init_main()
 	sys.exit(0)
 
+# Handle 'cloud --help' / 'cloud -h' early — argparse intercepts --help before
+# REMAINDER can capture it, so we route to our custom usage printer directly
+if _get_subcommand() == 'cloud' and any(arg in sys.argv for arg in ('--help', '-h')):
+	# Only intercept if --help comes after 'cloud', not before it
+	cloud_idx = sys.argv.index('cloud')
+	if any(arg in sys.argv[cloud_idx + 1:] for arg in ('--help', '-h')):
+		from browser_use.skill_cli.commands.cloud import handle_cloud_command
+
+		sys.exit(handle_cloud_command(['--help']))
+
 # =============================================================================
 # Utility functions (inlined to avoid imports)
 # =============================================================================
