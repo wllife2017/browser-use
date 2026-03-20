@@ -56,7 +56,7 @@ async def create_browser_session(
 			headless=not headed,
 		)
 
-	from browser_use.skill_cli.utils import find_chrome_executable, get_chrome_profile_path
+	from browser_use.skill_cli.utils import find_chrome_executable, get_chrome_profile_path, list_chrome_profiles
 
 	chrome_path = find_chrome_executable()
 	if not chrome_path:
@@ -64,8 +64,34 @@ async def create_browser_session(
 
 	# Always get the Chrome user data directory (not the profile subdirectory)
 	user_data_dir = get_chrome_profile_path(None)
-	# Profile directory defaults to 'Default', or use the specified profile name
-	profile_directory = profile
+
+	# Resolve profile: accept directory names ("Default", "Profile 1") and
+	# display names ("Person 1", "Work"). Directory names take precedence.
+	known_profiles = list_chrome_profiles()
+	directory_names = {p['directory'] for p in known_profiles}
+
+	if profile in directory_names:
+		profile_directory = profile
+	else:
+		# Try case-insensitive display name match
+		profile_directory = None
+		profile_lower = profile.lower()
+		for p in known_profiles:
+			if p['name'].lower() == profile_lower:
+				profile_directory = p['directory']
+				break
+		# Also try case-insensitive directory name match
+		if profile_directory is None:
+			for d in directory_names:
+				if d.lower() == profile_lower:
+					profile_directory = d
+					break
+
+		if profile_directory is None:
+			lines = [f'Unknown profile {profile!r}. Available profiles:']
+			for p in known_profiles:
+				lines.append(f'  "{p["name"]}" ({p["directory"]})')
+			raise RuntimeError('\n'.join(lines))
 
 	return BrowserSession(
 		executable_path=chrome_path,
