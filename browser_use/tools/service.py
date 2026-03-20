@@ -422,22 +422,37 @@ class Tools(Generic[Context]):
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 
-				# Health check: detect empty DOM for http/https pages and retry once
+				# Health check: detect empty DOM for http/https pages and retry once.
+				# Uses llm_representation() to detect pages with nothing the LLM can act on
+				# (empty body, SPA not yet rendered). Only returns error for truly blank pages
+				# (_root is None, e.g. about:blank type failures) to avoid false positives on
+				# image-only or non-interactive pages whose content is real but not in the LLM view.
 				if not params.new_tab:
 					state = await browser_session.get_browser_state_summary(include_screenshot=False)
 					url_is_http = state.url.lower().startswith(('http://', 'https://'))
-					if url_is_http and state.dom_state._root is None:
+					if url_is_http and not state.dom_state.llm_representation().strip():
 						browser_session.logger.warning(
 							f'⚠️ Empty DOM detected after navigation to {params.url}, waiting 3s and rechecking...'
 						)
 						await asyncio.sleep(3.0)
 						state = await browser_session.get_browser_state_summary(include_screenshot=False)
-						if state.url.lower().startswith(('http://', 'https://')) and state.dom_state._root is None:
-							return ActionResult(
-								error=f'Page loaded but returned empty content for {params.url}. '
-								f'The page may require JavaScript that failed to render, use anti-bot measures, '
-								f'or have a connection issue (e.g. tunnel/proxy error). Try a different URL or approach.'
-							)
+						if (
+							state.url.lower().startswith(('http://', 'https://'))
+							and not state.dom_state.llm_representation().strip()
+						):
+							# Second attempt: reload the page and wait longer
+							browser_session.logger.warning(f'⚠️ Still empty after 3s, attempting page reload for {params.url}...')
+							reload_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=params.url, new_tab=False))
+							await reload_event
+							await reload_event.event_result(raise_if_any=False, raise_if_none=False)
+							await asyncio.sleep(5.0)
+							state = await browser_session.get_browser_state_summary(include_screenshot=False)
+							if state.url.lower().startswith(('http://', 'https://')) and state.dom_state._root is None:
+								return ActionResult(
+									error=f'Page loaded but returned empty content for {params.url}. '
+									f'The page may require JavaScript that failed to render, use anti-bot measures, '
+									f'or have a connection issue (e.g. tunnel/proxy error). Try a different URL or approach.'
+								)
 
 				if params.new_tab:
 					memory = f'Opened new tab with URL {params.url}'
