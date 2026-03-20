@@ -87,6 +87,7 @@ def is_daemon_alive(session: str = 'default') -> bool:
 	if sock_path.startswith('tcp://'):
 		_, hostport = sock_path.split('://', 1)
 		host, port_str = hostport.split(':')
+		s = None
 		try:
 			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			s.settimeout(0.5)
@@ -95,11 +96,13 @@ def is_daemon_alive(session: str = 'default') -> bool:
 		except OSError:
 			return False
 		finally:
-			s.close()
+			if s:
+				s.close()
 	else:
 		sock_file = Path(sock_path)
 		if not sock_file.exists():
 			return False
+		s = None
 		try:
 			s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 			s.settimeout(0.5)
@@ -110,7 +113,8 @@ def is_daemon_alive(session: str = 'default') -> bool:
 			sock_file.unlink(missing_ok=True)
 			return False
 		finally:
-			s.close()
+			if s:
+				s.close()
 
 
 def list_sessions() -> list[dict]:
