@@ -92,6 +92,29 @@ Check out the [library docs](https://docs.browser-use.com/open-source/introducti
 
 <br/>
 
+# LLM Leaderboard
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_dark.png">
+  <img alt="BU Bench V1 - LLM Success Rates" src="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_light.png" width="100%">
+</picture>
+
+We regularly benchmark which LLMs perform best with Browser Use across 100 real-world browser tasks. Our benchmark is fully open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
+
+**BU Max** is our most capable model, available exclusively on [Browser Use Cloud](https://cloud.browser-use.com).
+
+**When to use open source:**
+- You need [custom tools](https://docs.browser-use.com/customize/tools/basics) or deep integration
+- You want to deploy browser agents on your own machines
+
+**When to use [Cloud](https://cloud.browser-use.com):**
+- You want to get started right away with no setup
+- You want to use our most capable BU Max model
+- You need scalability and advanced stealth options
+
+<br/>
+
 # Demos
 
 
