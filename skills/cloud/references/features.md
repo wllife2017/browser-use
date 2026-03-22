@@ -88,7 +88,10 @@ def verify_webhook(body: bytes, signature: str, timestamp: str, secret: str) -> 
         return False
     if abs(time.time() - ts) > 300:
         return False
-    payload = json.loads(body)
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return False
     message = f"{timestamp}.{json.dumps(payload, separators=(',', ':'), sort_keys=True)}"
     expected = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
