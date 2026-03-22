@@ -197,26 +197,30 @@ Same pattern with asyncio polling:
 import asyncio
 from browser_use_sdk.v3 import AsyncBrowserUse
 
-client = AsyncBrowserUse()
+async def main():
+    client = AsyncBrowserUse()
 
-# Create session and dispatch task
-session = await client.sessions.create(task="Find the top HN post", keep_alive=True)
-print(f"Live: {session.live_url}")
+    # Create session and dispatch task
+    session = await client.sessions.create(task="Find the top HN post", keep_alive=True)
+    print(f"Live: {session.live_url}")
 
-# Poll messages
-seen = set()
-while True:
-    s = await client.sessions.get(str(session.id))
-    msgs = await client.sessions.messages(str(session.id), limit=100)
+    # Poll messages
+    seen = set()
+    while True:
+        s = await client.sessions.get(str(session.id))
+        msgs = await client.sessions.messages(str(session.id), limit=100)
 
-    for m in msgs.messages:
-        if str(m.id) not in seen:
-            seen.add(str(m.id))
-            print(f"[{m.role}] {m.data[:200]}")
+        for m in msgs.messages:
+            if str(m.id) not in seen:
+                seen.add(str(m.id))
+                print(f"[{m.role}] {m.data[:200]}")
 
-    if s.status.value in ("idle", "stopped", "error", "timed_out"):
-        print(f"\nDone — {s.output}")
-        break
+        if s.status.value in ("idle", "stopped", "error", "timed_out"):
+            print(f"\nDone — {s.output}")
+            break
+        await asyncio.sleep(2)
+
+asyncio.run(main())
     await asyncio.sleep(2)
 ```
 
