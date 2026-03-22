@@ -13,7 +13,8 @@ on:
       - '.github/workflows/install-script.yml'
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 # Cancel in-progress runs when a new commit is pushed
 concurrency:

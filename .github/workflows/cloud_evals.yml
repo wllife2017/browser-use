@@ -16,7 +16,8 @@ on:
         description: Commit hash of the library to build the Cloud eval image for
         required: false
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   trigger_cloud_eval_image_build:

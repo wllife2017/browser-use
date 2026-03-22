@@ -15,7 +15,8 @@ on:
       - '*'
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   build:
