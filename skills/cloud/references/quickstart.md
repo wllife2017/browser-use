@@ -118,8 +118,8 @@ Typical task: 10 steps = ~$0.03 (with Browser Use LLM)
 ### V3 API (Token-Based)
 | Model | Input/1M | Output/1M |
 |-------|---------|----------|
-| BU Mini | $0.72 | $2.88 |
-| BU Max | $3.60 | $14.40 |
+| BU Mini (Gemini 3 Flash) | ~$0.72 | ~$4.20 |
+| BU Max (Claude Sonnet 4.6) | ~$3.60 | ~$18.00 |
 
 ### Browser Sessions
 - PAYG: $0.06/hour

@@ -60,13 +60,13 @@ Real-time notifications when tasks complete.
 
 ```json
 {
-  "event": "agent.task.status_update",
-  "data": {
-    "task_id": "uuid",
-    "session_id": "uuid",
+  "type": "agent.task.status_update",
+  "timestamp": "2025-01-15T10:30:00Z",
+  "payload": {
+    "task_id": "task_abc123",
+    "session_id": "session_xyz",
     "status": "finished",
-    "metadata": {},
-    "timestamp": "2024-01-01T00:00:00Z"
+    "metadata": {}
   }
 }
 ```
@@ -75,15 +75,22 @@ Real-time notifications when tasks complete.
 
 Headers: `X-Browser-Use-Signature`, `X-Browser-Use-Timestamp`
 
+The signature is computed over `{timestamp}.{body}` where body is JSON with sorted keys and no extra whitespace. Reject requests older than 5 minutes to prevent replay attacks.
+
 ```python
-import hmac, hashlib
+import hmac, hashlib, json, time
 
 def verify_webhook(body: bytes, signature: str, timestamp: str, secret: str) -> bool:
-    expected = hmac.new(
-        secret.encode(),
-        f"{timestamp}.{body.decode()}".encode(),
-        hashlib.sha256
-    ).hexdigest()
+    # Reject requests older than 5 minutes
+    try:
+        ts = int(timestamp)
+    except (ValueError, TypeError):
+        return False
+    if abs(time.time() - ts) > 300:
+        return False
+    payload = json.loads(body)
+    message = f"{timestamp}.{json.dumps(payload, separators=(',', ':'), sort_keys=True)}"
+    expected = hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 ```
 

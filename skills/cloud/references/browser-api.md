@@ -105,7 +105,7 @@ from selenium.webdriver.chrome.options import Options
 browser_session = await client.browsers.create(proxy_country_code="us")
 
 options = Options()
-options.debugger_address = browser_session.cdp_url.replace("wss://", "").replace("ws://", "")
+options.debugger_address = browser_session.cdp_url.replace("ws://", "").replace("/devtools/browser/", "")
 driver = webdriver.Chrome(options=options)
 
 driver.get("https://example.com")

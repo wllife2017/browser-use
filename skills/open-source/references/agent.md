@@ -22,12 +22,12 @@ agent = Agent(
 )
 
 async def main():
-    history = await agent.run(max_steps=100)
+    history = await agent.run(max_steps=500)
 ```
 
 - `task`: The task to automate
 - `llm`: LLM instance (see `models.md`)
-- `max_steps` (default: `100`): Maximum agent steps
+- `max_steps` (default: `500`): Maximum agent steps
 
 ## All Parameters
 
@@ -261,7 +261,7 @@ Fine-tune timeouts via environment variables (values in seconds):
 ### Browser Actions
 | Variable | Default |
 |----------|---------|
-| `TIMEOUT_NavigateToUrlEvent` | 15.0 |
+| `TIMEOUT_NavigateToUrlEvent` | 30.0 |
 | `TIMEOUT_ClickElementEvent` | 15.0 |
 | `TIMEOUT_ClickCoordinateEvent` | 15.0 |
 | `TIMEOUT_TypeTextEvent` | 60.0 |
