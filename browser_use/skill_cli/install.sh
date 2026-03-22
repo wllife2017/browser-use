@@ -379,14 +379,13 @@ configure_path() {
 	local bin_path=$(get_venv_bin_dir)
 	local local_bin="$HOME/.local/bin"
 
-	# Detect shell
-	if [ -n "$BASH_VERSION" ]; then
-		shell_rc="$HOME/.bashrc"
-	elif [ -n "$ZSH_VERSION" ]; then
-		shell_rc="$HOME/.zshrc"
-	else
-		shell_rc="$HOME/.profile"
-	fi
+	# Detect user's login shell (not the running shell, since this script
+	# is typically executed via "curl ... | bash" which always sets BASH_VERSION)
+	case "$(basename "$SHELL")" in
+		zsh)  shell_rc="$HOME/.zshrc" ;;
+		bash) shell_rc="$HOME/.bashrc" ;;
+		*)    shell_rc="$HOME/.profile" ;;
+	esac
 
 	# Check if already in PATH (browser-use-env matches both /bin and /Scripts)
 	if grep -q "browser-use-env" "$shell_rc" 2>/dev/null; then
@@ -456,7 +455,7 @@ validate() {
 print_next_steps() {
 	# Detect shell for source command
 	local shell_rc=".bashrc"
-	if [ -n "$ZSH_VERSION" ]; then
+	if [ "$(basename "$SHELL")" = "zsh" ]; then
 		shell_rc=".zshrc"
 	fi
 
