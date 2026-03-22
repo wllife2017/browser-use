@@ -85,14 +85,20 @@ curl -X POST https://api.browser-use.com/api/v2/files/sessions/<session-id>/pres
   -H "Content-Type: application/json" \
   -d '{"fileName": "input.pdf", "contentType": "application/pdf", "sizeBytes": 102400}'
 
-# 2. Upload via multipart POST using the returned URL and fields (S3-style presigned POST)
+# 2. Upload via multipart POST using the returned URL and ALL returned fields (S3-style presigned POST)
+# Include every key-value pair from the response's `fields` object as form fields:
 curl -X POST "<presigned-url>" \
   -F "key=<fields.key>" \
+  -F "policy=<fields.policy>" \
+  -F "x-amz-algorithm=<fields.x-amz-algorithm>" \
+  -F "x-amz-credential=<fields.x-amz-credential>" \
+  -F "x-amz-date=<fields.x-amz-date>" \
+  -F "x-amz-signature=<fields.x-amz-signature>" \
   -F "Content-Type=application/pdf" \
   -F "file=@input.pdf"
 ```
 
-The v2 presigned URL response includes `fields` for a multipart POST form upload (S3-style). Presigned URLs expire after **120 seconds**. Max file size: **10 MB**.
+The v2 presigned URL response includes `fields` for a multipart POST form upload (S3-style). **Include all returned fields** as form fields — they contain the signing data. Presigned URLs expire after **120 seconds**. Max file size: **10 MB**.
 
 ---
 

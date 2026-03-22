@@ -69,7 +69,7 @@ async def main():
 
 ### Performance & Limits
 - `max_history_items`: Max steps to keep in LLM memory (`None` = all)
-- `llm_timeout` (default: `60`, auto-detected: 30s for Gemini, 90s for o3): Seconds for LLM calls
+- `llm_timeout` (default: auto-detected per model — Groq: 30s, Gemini: 75s, Gemini 3 Pro: 90s, o3/Claude/DeepSeek: 90s, others: 75s): Seconds for LLM calls
 - `step_timeout` (default: `180`): Seconds for each step
 - `directly_open_url` (default: `True`): Auto-open URLs detected in task
 

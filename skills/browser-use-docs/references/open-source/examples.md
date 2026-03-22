@@ -147,6 +147,7 @@ proc = subprocess.Popen([
     'google-chrome', '--remote-debugging-port=9222', '--user-data-dir=/tmp/chrome-debug'
 ])
 
+pw = None
 try:
     # 2. Connect Playwright
     pw = await async_playwright().start()
@@ -173,7 +174,8 @@ try:
     agent = Agent(task="Fill out the form", llm=ChatBrowserUse(), browser=browser, tools=tools)
     await agent.run()
 finally:
-    await pw.stop()
+    if pw:
+        await pw.stop()
     proc.terminate()
     proc.wait()
 ```
