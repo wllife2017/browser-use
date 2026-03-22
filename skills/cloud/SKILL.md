@@ -43,7 +43,7 @@ Read the relevant file based on what the user needs.
 
 ## Critical Notes
 
-- Cloud API base URL: `https://api.browser-use.com/api/v2/` (v2) or `.../api/v3` (v3)
+- Cloud API base URL: `https://api.browser-use.com/api/v2/` (v2) or `https://api.browser-use.com/api/v3` (v3)
 - Auth header: `X-Browser-Use-API-Key: <key>`
 - Get API key: https://cloud.browser-use.com/new-api-key
 - Set env var: `BROWSER_USE_API_KEY=<key>`

@@ -6,7 +6,7 @@ Delegate entire web tasks to browser-use from your orchestrator. Task in, result
 - [When to Use This Pattern](#when-to-use-this-pattern)
 - [Pick Your Integration](#pick-your-integration)
 - [Shell Command Agents (CLI)](#shell-command-agents-cli)
-- [Python Framework Agents](#python-framework-agents)
+- [Python Agents (Cloud SDK)](#python-agents-cloud-sdk)
 - [TypeScript/JS Agents](#typescriptjs-agents)
 - [MCP-Native Agents](#mcp-native-agents)
 - [HTTP / Workflow Engines](#http--workflow-engines)
@@ -199,7 +199,7 @@ curl https://api.browser-use.com/api/v2/tasks/<task-id> \
 # → Full TaskView with output, steps, outputFiles
 ```
 
-Or use webhooks for event-driven workflows (see `references/features.md`).
+Or use webhooks for event-driven workflows (see `../features.md`).
 
 ---
 
