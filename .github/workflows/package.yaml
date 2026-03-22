@@ -15,6 +15,8 @@ on:
       - '*'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build:
     name: pip-build

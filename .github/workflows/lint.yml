@@ -16,6 +16,8 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   lint-syntax:
     name: syntax-errors
