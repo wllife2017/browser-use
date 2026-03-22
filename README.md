@@ -95,9 +95,9 @@ Check out the [library docs](https://docs.browser-use.com/open-source/introducti
 # Open Source vs Cloud
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_light.png">
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_dark.png">
-  <img alt="BU Bench V1 - LLM Success Rates" src="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_light.png" width="100%">
+  <source media="(prefers-color-scheme: light)" srcset="static/accuracy_by_model_light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="static/accuracy_by_model_dark.png">
+  <img alt="BU Bench V1 - LLM Success Rates" src="static/accuracy_by_model_light.png" width="100%">
 </picture>
 
 We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
