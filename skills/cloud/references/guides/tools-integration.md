@@ -6,9 +6,6 @@ Add individual browser actions to your existing agent's tool set. Your agent sta
 - [When to Use This Pattern](#when-to-use-this-pattern)
 - [Pick Your Integration](#pick-your-integration)
 - [Shell Command Agents (CLI)](#shell-command-agents-cli)
-- [Python: Actor API](#python-actor-api)
-- [Python: Tools Registry](#python-tools-registry)
-- [Python: MCP Client](#python-mcp-client)
 - [TypeScript/JS: CDP + Playwright](#typescriptjs-cdp--playwright)
 - [MCP-Native Agents](#mcp-native-agents)
 - [Existing Playwright/Puppeteer/Selenium](#existing-playwrightpuppeteerselenium)
@@ -34,12 +31,10 @@ Your agent already has tools (search, code execution, file I/O, etc.) and its ow
 | Your agent type | Best approach | Control level |
 |----------------|---------------|--------------|
 | CLI coding agent in sandbox | [CLI commands](#shell-command-agents-cli) | Per-command |
-| Python + wants fine control | [Actor API](#python-actor-api) | Page/Element/Mouse |
-| Python + wants built-in actions | [Tools Registry](#python-tools-registry) | Action registry |
-| Python + wants auto-discovery | [MCP Client](#python-mcp-client) | MCP tools |
 | TypeScript/JS | [CDP + Playwright](#typescriptjs-cdp--playwright) | Playwright API |
 | MCP client (Claude Desktop, Cursor) | [Local MCP server](#mcp-native-agents) | MCP tools |
 | Existing Playwright/Puppeteer/Selenium | [CDP WebSocket (stealth)](#existing-playwrightpuppeteerselenium) | Your existing API |
+| HTTP only / any language | Cloud REST: `POST /browsers` → CDP URL | CDP |
 
 ---
 
@@ -95,142 +90,6 @@ browser-use close
 - `--json` flag for machine-readable output
 - `--headed` for visible browser (debugging)
 - `--profile "Default"` for authenticated browsing with saved Chrome logins
-
----
-
-## Python: Actor API
-
-**For:** Python agents that want direct, fine-grained browser control. No LLM overhead from browser-use's side — your agent provides all reasoning.
-
-```python
-from browser_use import Browser
-
-browser = Browser()
-await browser.start()
-
-# Page management
-page = await browser.new_page("https://example.com")
-pages = await browser.get_pages()
-
-# Element finding
-elements = await page.get_elements_by_css_selector("input[type='text']")
-# Or use LLM to find elements by description:
-element = await page.must_get_element_by_prompt("search box", llm=your_llm)
-
-# Interactions
-await element.fill("search query")
-await element.click()
-await page.press("Enter")
-
-# JavaScript
-title = await page.evaluate('() => document.title')
-data = await page.evaluate('() => JSON.stringify([...document.querySelectorAll("h2")].map(e => e.textContent))')
-
-# Screenshots
-screenshot_b64 = await page.screenshot()
-
-# LLM-powered extraction
-from pydantic import BaseModel
-class Product(BaseModel):
-    name: str
-    price: float
-
-product = await page.extract_content("Extract product info", Product, llm=your_llm)
-
-# Mouse operations
-mouse = page.mouse
-await mouse.click(x=100, y=200)
-await mouse.scroll(delta_y=-500)
-
-# Cleanup
-await browser.stop()
-```
-
-**Key details:**
-- Built on CDP, not Playwright — similar API but not identical
-- `get_elements_by_css_selector()` returns immediately (no visibility wait)
-- `evaluate()` requires arrow function format: `() => { ... }`
-- Use `asyncio.sleep()` after navigation-triggering actions
-- Always `browser.stop()` in `finally`
-
----
-
-## Python: Tools Registry
-
-**For:** Python agents that want browser-use's built-in actions as callable functions without the Agent loop.
-
-```python
-from browser_use import Tools, Browser, BrowserSession
-
-browser = Browser()
-await browser.start()
-
-tools = Tools()
-
-# Call built-in actions programmatically
-await tools.registry.execute_action(
-    'navigate', {'url': 'https://example.com'}, browser_session=browser
-)
-
-state = await tools.registry.execute_action(
-    'get_state', {}, browser_session=browser
-)
-
-await tools.registry.execute_action(
-    'click', {'index': 5}, browser_session=browser
-)
-
-await tools.registry.execute_action(
-    'input_text', {'index': 3, 'text': 'hello'}, browser_session=browser
-)
-
-result = await tools.registry.execute_action(
-    'extract', {'query': 'Extract all product names'}, browser_session=browser
-)
-
-await browser.stop()
-```
-
-**Available actions:** navigate, click, input_text, scroll, find_text, send_keys, screenshot, extract, go_back, switch_tab, close_tab, evaluate, dropdown_options, select_dropdown, upload_file, write_file, read_file, done.
-
-You can also register custom actions:
-```python
-@tools.registry.action('My custom browser action')
-async def custom_action(browser_session: BrowserSession):
-    page = await browser_session.must_get_current_page()
-    # ... your logic
-    return ActionResult(extracted_content="result")
-```
-
----
-
-## Python: MCP Client
-
-**For:** Python agents that want browser tools auto-discovered from an MCP server.
-
-```python
-from browser_use import Tools
-from browser_use.mcp.client import MCPClient
-
-tools = Tools()
-
-# Connect to browser-use's own MCP server
-mcp = MCPClient(
-    server_name="browser",
-    command="uvx",
-    args=["--from", "browser-use[cli]", "browser-use", "--mcp"]
-)
-
-# All MCP tools auto-registered into Tools registry
-await mcp.register_to_tools(tools)
-
-# Now your agent can call: browser_navigate, browser_click,
-# browser_type, browser_get_state, browser_extract_content,
-# browser_screenshot, browser_scroll, browser_go_back,
-# browser_list_tabs, browser_switch_tab, browser_close_tab, etc.
-```
-
-Also works with any external MCP server (filesystem, GitHub, Slack, etc.).
 
 ---
 
@@ -332,10 +191,9 @@ Browser auto-starts on connect, auto-stops on disconnect. Pricing: $0.05/hour.
 | Condition | Best option |
 |-----------|------------|
 | Agent has terminal access (sandbox/VM) | CLI commands |
-| Python, wants fine-grained control | Actor API |
-| Python, wants built-in action set | Tools Registry |
-| Python, wants auto-discovery | MCPClient |
 | TypeScript/JS | CDP WebSocket + Playwright |
 | MCP client (Claude Desktop, Cursor) | Local MCP server |
 | HTTP only / any language | Cloud REST: `POST /browsers` → CDP URL |
 | Existing Playwright/Puppeteer scripts | CDP WebSocket (stealth cloud browser) |
+
+> **Note:** For Python agents that want fine-grained browser control via direct imports (Actor API, Tools Registry, MCPClient), see the **open-source** skill's reference docs.

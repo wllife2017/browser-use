@@ -71,73 +71,37 @@ browser-use cloud v2 POST /tasks '{
 
 ---
 
-## Python Framework Agents
+## Python Agents (Cloud SDK)
 
-**For:** LangChain, CrewAI, AutoGen, PydanticAI, Semantic Kernel, or custom Python agents.
-
-### Basic: Wrap Agent as a function
-
-```python
-from browser_use import Agent, ChatBrowserUse
-
-async def browse(task: str) -> str:
-    """Delegate a web task to browser-use. Returns extracted text."""
-    agent = Agent(task=task, llm=ChatBrowserUse())
-    try:
-        history = await agent.run()
-        return history.final_result() or ""
-    finally:
-        await agent.close()
-```
-
-Register this as a tool in your framework (LangChain `@tool`, CrewAI tool, etc.).
-
-### Structured output
-
-```python
-from pydantic import BaseModel
-
-class SearchResult(BaseModel):
-    title: str
-    url: str
-    summary: str
-
-async def browse_structured(task: str) -> SearchResult:
-    agent = Agent(task=task, llm=ChatBrowserUse(), output_model_schema=SearchResult)
-    history = await agent.run()
-    return history.structured_output
-```
-
-### Multi-step with shared browser
-
-```python
-from browser_use import Agent, Browser, ChatBrowserUse
-
-browser = Browser(keep_alive=True)
-await browser.start()
-
-agent = Agent(task="Log into GitHub", llm=ChatBrowserUse(), browser=browser)
-await agent.run()
-
-# Follow-up in same browser (cookies preserved)
-agent.add_new_task("Navigate to my repos and list the top 5 by stars")
-await agent.run()
-
-await browser.close()
-```
-
-### Cloud subagent (no local browser needed)
+**For:** LangChain, CrewAI, AutoGen, PydanticAI, Semantic Kernel, or custom Python agents. Uses the Cloud SDK — no local browser needed.
 
 ```python
 from browser_use_sdk import AsyncBrowserUse
+from pydantic import BaseModel
 
 client = AsyncBrowserUse()
-result = await client.run(
-    "Find the top HN post",
-    output_schema=SearchResult,
-    session_settings={"proxy_country_code": "us"},
-)
-print(result.output)  # SearchResult instance
+
+# Simple
+async def browse(task: str) -> str:
+    result = await client.run(task)
+    return result.output
+
+# Structured output
+class SearchResult(BaseModel):
+    title: str
+    url: str
+
+async def browse_structured(task: str) -> SearchResult:
+    result = await client.run(task, output_schema=SearchResult)
+    return result.output  # SearchResult instance
+```
+
+Multi-step with `keep_alive`:
+```python
+session = await client.sessions.create(proxy_country_code="us")
+await client.run("Log into site", session_id=str(session.id), keep_alive=True)
+result = await client.run("Extract data", session_id=str(session.id))
+await client.sessions.stop(str(session.id))
 ```
 
 ---
@@ -235,29 +199,23 @@ curl https://api.browser-use.com/api/v2/tasks/<task-id> \
 # → Full TaskView with output, steps, outputFiles
 ```
 
-Or use webhooks for event-driven workflows (see `references/cloud/features.md`).
+Or use webhooks for event-driven workflows (see `references/features.md`).
 
 ---
 
 ## Cross-Cutting Concerns
 
-### Structured output (all integrations)
+### Structured output
 
-- **Local Python:** `output_model_schema=MyPydanticModel` → `history.structured_output`
-- **Cloud SDK Python:** `output_schema=MyModel` → `result.output` (typed)
+- **Cloud SDK Python:** `output_schema=MyPydanticModel` → `result.output` (typed)
 - **Cloud SDK TypeScript:** `{ schema: ZodSchema }` → `result.output` (typed)
 - **Cloud REST:** `"structuredOutput": "<json-schema-string>"` → `output` in response
 
 ### Error handling
 
 ```python
-# Local
-agent = Agent(task=task, llm=llm, max_failures=5, fallback_llm=backup_llm)
-history = await agent.run()
-if not history.is_successful():
-    errors = history.errors()
+from browser_use_sdk import AsyncBrowserUse, BrowserUseError
 
-# Cloud SDK
 try:
     result = await client.run(task, max_cost_usd=0.10)
 except TimeoutError:
@@ -268,18 +226,16 @@ except BrowserUseError as e:
 
 ### Cost control
 
-- **Local:** `max_steps=50`, `calculate_cost=True` → check `history.usage`
 - **Cloud v2:** Per-step pricing. Use `max_steps` to limit.
 - **Cloud v3:** `max_cost_usd=0.10` caps spending. Check `result.total_cost_usd`.
 
 ### Cleanup
 
-Always close resources in `try/finally`:
+Always stop sessions when done:
 ```python
-browser = Browser(keep_alive=True)
+session = await client.sessions.create(proxy_country_code="us")
 try:
-    agent = Agent(task=task, llm=llm, browser=browser)
-    await agent.run()
+    result = await client.run(task, session_id=str(session.id))
 finally:
-    await browser.close()
+    await client.sessions.stop(str(session.id))
 ```
