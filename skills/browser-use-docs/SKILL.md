@@ -38,7 +38,8 @@ Read the relevant reference file based on what the user needs.
 | Topic | Read |
 |-------|------|
 | Setup, first task, pricing, FAQ | `references/cloud/quickstart.md` |
-| REST endpoints (v2), SDK methods, v3, schemas | `references/cloud/api.md` |
+| v2 REST API: all 30 endpoints, cURL examples, schemas | `references/cloud/api-v2.md` |
+| v3 BU Agent API: sessions, messages, files, workspaces | `references/cloud/api-v3.md` |
 | Sessions, profiles, auth strategies, 1Password | `references/cloud/sessions.md` |
 | CDP direct access, Playwright/Puppeteer/Selenium | `references/cloud/browser-api.md` |
 | Proxies, webhooks, workspaces, skills, MCP, live view | `references/cloud/features.md` |

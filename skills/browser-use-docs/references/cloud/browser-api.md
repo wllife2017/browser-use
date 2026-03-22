@@ -13,10 +13,15 @@ Connect directly to Browser Use stealth browsers via Chrome DevTools Protocol.
 
 ## WebSocket Connection
 
-Single URL with all config as query params. Browser auto-stops on disconnect.
+Single URL with all config as query params. Browser **auto-starts on connect** and **auto-stops on disconnect** — no REST calls needed to start or stop.
 
 ```
-wss://connect.browser-use.com/?apiKey=YOUR_KEY&proxyCountryCode=us&timeout=30
+wss://connect.browser-use.com?apiKey=YOUR_KEY&proxyCountryCode=us&timeout=30
+```
+
+CDP discovery is also available over HTTPS (for tools that use HTTP auto-discovery):
+```
+https://connect.browser-use.com/json/version?apiKey=YOUR_API_KEY
 ```
 
 ### Query Parameters
