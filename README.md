@@ -92,7 +92,7 @@ Check out the [library docs](https://docs.browser-use.com/open-source/introducti
 
 <br/>
 
-# LLM Leaderboard
+# Open Source vs Cloud
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_light.png">
@@ -100,18 +100,21 @@ Check out the [library docs](https://docs.browser-use.com/open-source/introducti
   <img alt="BU Bench V1 - LLM Success Rates" src="https://raw.githubusercontent.com/browser-use/benchmark/main/official_plots/accuracy_by_model_light.png" width="100%">
 </picture>
 
-We regularly benchmark which LLMs perform best with Browser Use across 100 real-world browser tasks. Our benchmark is fully open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
+We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
 
-**BU Max** is our most capable model, available exclusively on [Browser Use Cloud](https://cloud.browser-use.com).
+**Use Open Source**
+- You need [custom tools](https://docs.browser-use.com/customize/tools/basics) or deep code-level integration
+- You want to self-host and deploy browser agents on your own machines
 
-**When to use open source:**
-- You need [custom tools](https://docs.browser-use.com/customize/tools/basics) or deep integration
-- You want to deploy browser agents on your own machines
+**Use [Cloud](https://cloud.browser-use.com) (recommended)**
+- Much better agent for complex tasks (see plot above)
+- Easiest way to start and scale
+- Best stealth with proxy rotation and captcha solving
+- 1000+ integrations (Gmail, Slack, Notion, and more)
+- Persistent filesystem and memory
 
-**When to use [Cloud](https://cloud.browser-use.com):**
-- You want to get started right away with no setup
-- You want to use our most capable BU Max model
-- You need scalability and advanced stealth options
+**Use Both**
+- Use the open-source library with your [custom tools](https://docs.browser-use.com/customize/tools/basics) while running our [cloud browsers](https://docs.browser-use.com/open-source/customize/browser/remote) and [ChatBrowserUse model](https://docs.browser-use.com/open-source/supported-models)
 
 <br/>
 
