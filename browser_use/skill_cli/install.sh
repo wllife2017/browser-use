@@ -453,11 +453,12 @@ validate() {
 # =============================================================================
 
 print_next_steps() {
-	# Detect shell for source command
-	local shell_rc=".bashrc"
-	if [ "$(basename "$SHELL")" = "zsh" ]; then
-		shell_rc=".zshrc"
-	fi
+	# Detect shell for source command (must match configure_path logic)
+	case "$(basename "$SHELL")" in
+		zsh)  local shell_rc=".zshrc" ;;
+		bash) local shell_rc=".bashrc" ;;
+		*)    local shell_rc=".profile" ;;
+	esac
 
 	echo ""
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
