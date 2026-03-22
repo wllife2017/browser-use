@@ -52,10 +52,12 @@ from browser_use import Agent, Browser, ChatBrowserUse
 
 async def run_task(task: str, index: int):
     browser = Browser(user_data_dir=f'./temp-profile-{index}')
-    agent = Agent(task=task, llm=ChatBrowserUse(), browser=browser)
-    result = await agent.run()
-    await browser.close()
-    return result
+    try:
+        agent = Agent(task=task, llm=ChatBrowserUse(), browser=browser)
+        result = await agent.run()
+        return result
+    finally:
+        await browser.close()
 
 async def main():
     tasks = [
@@ -145,30 +147,35 @@ proc = subprocess.Popen([
     'google-chrome', '--remote-debugging-port=9222', '--user-data-dir=/tmp/chrome-debug'
 ])
 
-# 2. Connect Playwright
-pw = await async_playwright().start()
-pw_browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
-pw_page = pw_browser.contexts[0].pages[0]
+try:
+    # 2. Connect Playwright
+    pw = await async_playwright().start()
+    pw_browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
+    pw_page = pw_browser.contexts[0].pages[0]
 
-# 3. Connect Browser-Use to same Chrome
-browser = Browser(cdp_url="http://localhost:9222")
+    # 3. Connect Browser-Use to same Chrome
+    browser = Browser(cdp_url="http://localhost:9222")
 
-# 4. Custom tools using Playwright
-tools = Tools()
+    # 4. Custom tools using Playwright
+    tools = Tools()
 
-@tools.action(description='Fill form field using Playwright selector')
-async def pw_fill(selector: str, value: str) -> str:
-    await pw_page.fill(selector, value)
-    return f'Filled {selector}'
+    @tools.action(description='Fill form field using Playwright selector')
+    async def pw_fill(selector: str, value: str) -> str:
+        await pw_page.fill(selector, value)
+        return f'Filled {selector}'
 
-@tools.action(description='Take Playwright screenshot')
-async def pw_screenshot() -> str:
-    await pw_page.screenshot(path='screenshot.png')
-    return 'Screenshot saved'
+    @tools.action(description='Take Playwright screenshot')
+    async def pw_screenshot() -> str:
+        await pw_page.screenshot(path='screenshot.png')
+        return 'Screenshot saved'
 
-# 5. Agent orchestrates using both
-agent = Agent(task="Fill out the form", llm=ChatBrowserUse(), browser=browser, tools=tools)
-await agent.run()
+    # 5. Agent orchestrates using both
+    agent = Agent(task="Fill out the form", llm=ChatBrowserUse(), browser=browser, tools=tools)
+    await agent.run()
+finally:
+    await pw.stop()
+    proc.terminate()
+    proc.wait()
 ```
 
 Both Playwright and Browser-Use operate on the same pages through the shared CDP connection.

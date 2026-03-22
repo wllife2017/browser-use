@@ -38,7 +38,7 @@ async def main():
 - `output_model_schema`: Pydantic model class for structured output validation
 
 ### Vision & Processing
-- `use_vision` (default: `"auto"`): `"auto"` includes screenshot tool but only uses vision when requested, `True` always includes screenshots, `False` never
+- `use_vision` (default: `True`): `True` always includes screenshots, `"auto"` includes screenshot tool but only uses vision when requested, `False` never
 - `vision_detail_level` (default: `'auto'`): `'low'`, `'high'`, or `'auto'`
 - `page_extraction_llm`: Separate LLM for page content extraction (default: same as `llm`)
 
@@ -47,8 +47,8 @@ async def main():
 
 ### Actions & Behavior
 - `initial_actions`: Actions to run before main task without LLM
-- `max_actions_per_step` (default: `4`): Max actions per step (e.g., fill 4 form fields at once)
-- `max_failures` (default: `3`): Max retries for steps with errors
+- `max_actions_per_step` (default: `5`): Max actions per step (e.g., fill 5 form fields at once)
+- `max_failures` (default: `5`): Max retries for steps with errors
 - `final_response_after_failure` (default: `True`): Force one final model call after max_failures
 - `use_thinking` (default: `True`): Enable explicit reasoning steps
 - `flash_mode` (default: `False`): Fast mode — skips evaluation, next goal, thinking; uses memory only. Overrides `use_thinking`
@@ -69,8 +69,8 @@ async def main():
 
 ### Performance & Limits
 - `max_history_items`: Max steps to keep in LLM memory (`None` = all)
-- `llm_timeout` (default: `90`): Seconds for LLM calls
-- `step_timeout` (default: `120`): Seconds for each step
+- `llm_timeout` (default: `60`, auto-detected: 30s for Gemini, 90s for o3): Seconds for LLM calls
+- `step_timeout` (default: `180`): Seconds for each step
 - `directly_open_url` (default: `True`): Auto-open URLs detected in task
 
 ### Advanced

@@ -85,13 +85,14 @@ curl -X POST https://api.browser-use.com/api/v2/files/sessions/<session-id>/pres
   -H "Content-Type: application/json" \
   -d '{"fileName": "input.pdf", "contentType": "application/pdf", "sizeBytes": 102400}'
 
-# 2. Upload via PUT to the returned URL
-curl -X PUT "<presigned-url>" \
-  -H "Content-Type: application/pdf" \
-  --data-binary @input.pdf
+# 2. Upload via multipart POST using the returned URL and fields (S3-style presigned POST)
+curl -X POST "<presigned-url>" \
+  -F "key=<fields.key>" \
+  -F "Content-Type=application/pdf" \
+  -F "file=@input.pdf"
 ```
 
-Presigned URLs expire after **120 seconds**. Max file size: **10 MB**.
+The v2 presigned URL response includes `fields` for a multipart POST form upload (S3-style). Presigned URLs expire after **120 seconds**. Max file size: **10 MB**.
 
 ---
 
@@ -208,7 +209,7 @@ Errors: 400 (unsupported type), 404, 500.
 Response: `{ id: uuid, fileName: string, downloadUrl: string }`
 Errors: 404, 500.
 
-**Upload flow:** Get presigned URL → PUT file with Content-Type header → URL expires in 120s → Max 10 MB.
+**Upload flow:** Get presigned URL → POST multipart form with returned `fields` + file → URL expires in 120s → Max 10 MB.
 
 ---
 

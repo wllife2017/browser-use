@@ -100,15 +100,18 @@ client = AsyncBrowserUse()
 # Create workspace
 workspace = await client.workspaces.create(name="my-data")
 
+# Create a session
+session = await client.sessions.create()
+
 # Upload files before task
 await client.sessions.upload_files(
-    session_id,
+    session.id,
     workspace_id=workspace.id,
     files=[open("input.pdf", "rb")]
 )
 
 # Download files after task
-files = await client.sessions.files(session_id)
+files = await client.sessions.files(session.id)
 for f in files:
     url = f.download_url  # Presigned URL (60s expiry)
 

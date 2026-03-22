@@ -52,7 +52,7 @@ Read the relevant reference file based on what the user needs.
 - `Browser` is an alias for `BrowserSession` — same class
 - Use `uv` for dependency management, never `pip`
 - Install: `uv pip install browser-use` then `uvx browser-use install`
-- Cloud SDK: `pip install browser-use-sdk`
+- Cloud SDK: `uv pip install browser-use-sdk`
 - Cloud API base URL: `https://api.browser-use.com/api/v2/`
 - Cloud API auth: `X-Browser-Use-API-Key: <key>` header
 - Get API key: https://cloud.browser-use.com/new-api-key

@@ -135,12 +135,16 @@ Proxy to multiple providers with automatic fallback:
 ```python
 from browser_use import ChatVercel
 llm = ChatVercel(
-    model='anthropic:claude-sonnet-4-20250514',
-    provider='order: ["vertex", "anthropic"]',  # Fallback order
+    model='anthropic/claude-sonnet-4',
+    provider_options={
+        'gateway': {
+            'order': ['vertex', 'anthropic'],  # Fallback order
+        }
+    },
 )
 ```
 
-**Env:** `VERCEL_API_KEY`
+**Env:** `AI_GATEWAY_API_KEY` (or `VERCEL_OIDC_TOKEN` on Vercel)
 
 ## OpenAI-Compatible APIs
 

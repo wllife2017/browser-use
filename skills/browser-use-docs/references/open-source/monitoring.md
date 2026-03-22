@@ -17,7 +17,7 @@ history = await agent.run()
 # Access usage data
 usage = history.usage
 # Or via service
-summary = agent.token_cost_service.get_usage_summary()
+summary = await agent.token_cost_service.get_usage_summary()
 ```
 
 ## Laminar

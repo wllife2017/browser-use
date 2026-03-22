@@ -173,7 +173,7 @@ Read-only docs access (no browser automation):
 
 **Claude Code:**
 ```bash
-claude mcp add --transport http browser-use https://docs.browser-use.com/mcp
+claude mcp add --transport http browser-use-docs https://docs.browser-use.com/mcp
 ```
 
 **Cursor** (`~/.cursor/mcp.json`):
