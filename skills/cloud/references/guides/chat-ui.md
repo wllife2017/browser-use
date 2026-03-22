@@ -221,7 +221,6 @@ async def main():
         await asyncio.sleep(2)
 
 asyncio.run(main())
-    await asyncio.sleep(2)
 ```
 
 ## SDK Methods Summary
