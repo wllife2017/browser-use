@@ -1021,6 +1021,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.step_start_time = time.time()
 
+		# Clear previous step state to prevent stale data from being recorded
+		# in history if the step is cancelled (e.g., by timeout) before
+		# _get_next_action or _execute_actions set new values.
+		self.state.last_model_output = None
+		self.state.last_result = None
+
 		browser_state_summary = None
 
 		try:
@@ -2440,6 +2446,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			await self._demo_mode_log(error_msg, 'error', {'step': step + 1})
 			self.state.consecutive_failures += 1
 			self.state.last_result = [ActionResult(error=error_msg)]
+			# Ensure step counter advances on timeout — _finalize() may have
+			# been skipped or returned early due to the cancellation.
+			if self.state.n_steps == step + 1:
+				self.state.n_steps += 1
 
 		if on_step_end is not None:
 			await on_step_end(self)
