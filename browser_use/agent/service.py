@@ -1021,12 +1021,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.step_start_time = time.time()
 
-		# Clear previous step state to prevent stale data from being recorded
-		# in history if the step is cancelled (e.g., by timeout) before
-		# _get_next_action or _execute_actions set new values.
-		self.state.last_model_output = None
-		self.state.last_result = None
-
 		browser_state_summary = None
 
 		try:
@@ -1051,6 +1045,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# Phase 1: Prepare context and timing
 			browser_state_summary = await self._prepare_context(step_info)
+
+			# Clear previous step state after context preparation (which needs
+			# them for the "previous action result" prompt) but before the LLM
+			# call, so a timeout during _get_next_action or _execute_actions
+			# won't leave stale data from the previous step.
+			self.state.last_model_output = None
+			self.state.last_result = None
 
 			# Phase 2: Get model output and execute actions
 			await self._get_next_action(browser_state_summary)
