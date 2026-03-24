@@ -107,7 +107,7 @@ We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is 
 - You want to self-host and deploy browser agents on your own machines
 
 **Use [Cloud](https://cloud.browser-use.com) (recommended)**
-- Our most capable models BU Ultra and BU Max (see plot above)
+- Much better agent for complex tasks (see plot above)
 - Easiest way to start and scale
 - Best stealth with proxy rotation and captcha solving
 - 1000+ integrations (Gmail, Slack, Notion, and more)
