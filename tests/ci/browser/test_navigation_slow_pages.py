@@ -9,6 +9,7 @@ Usage:
 """
 
 import asyncio
+import os
 import time
 
 import pytest
@@ -63,6 +64,13 @@ def heavy_page_server():
 	server.expect_request('/quick-page').respond_with_data(
 		'<html><body><h1>Quick Page</h1></body></html>', content_type='text/html'
 	)
+
+	# Very slow server for testing env var timeout control (22s > default 20s)
+	def very_slow_response(request):
+		time.sleep(22)
+		return Response(HEAVY_PDP_HTML, content_type='text/html')
+
+	server.expect_request('/very-slow-22s').respond_with_handler(very_slow_response)
 
 	yield server
 	server.stop()
@@ -186,3 +194,47 @@ class TestHeavyPageNavigation:
 		event = NavigateToUrlEvent(url='http://example.com')
 		assert event.event_timeout is not None
 		assert event.event_timeout >= 30.0, f'event_timeout={event.event_timeout}s is too low for heavy pages (need >= 30s)'
+
+	async def test_timeout_env_var_controls_cdp_navigation(self, browser_session, heavy_base_url):
+		"""TIMEOUT_NavigateToUrlEvent env var should control the CDP Page.navigate() timeout.
+
+		This test verifies the fix for: https://github.com/browser-use/browser-use/issues/XXX
+		Previously, the env var only controlled the outer event timeout, but the CDP navigation
+		call had a hardcoded 20s timeout that would fire first.
+
+		Server delays 22 seconds (> default 20s, < env var 35s).
+		Without the fix, CDP would timeout at 20s (before server responds).
+		With the fix, CDP waits 35s, so server response at 22s succeeds.
+		"""
+		# Set env var to 35 seconds (> 22s server delay, > 20s default, leaves room for lifecycle polling)
+		old_value = os.environ.get('TIMEOUT_NavigateToUrlEvent')
+		try:
+			os.environ['TIMEOUT_NavigateToUrlEvent'] = '35.0'
+
+			url = f'{heavy_base_url}/very-slow-22s'
+			agent = Agent(
+				task=f'Navigate to {url}',
+				llm=create_mock_llm(actions=_nav_actions(url, 'Navigated successfully despite 22s delay')),
+				browser_session=browser_session,
+			)
+
+			start = time.time()
+			history = await asyncio.wait_for(agent.run(max_steps=3), timeout=90)
+			elapsed = time.time() - start
+
+			# Verify navigation succeeded
+			assert len(history) > 0, 'Agent should have completed at least one step'
+			assert history.final_result() is not None, 'Agent should return a final result'
+
+			# The key test: navigation succeeded despite 22s delay (would fail at default 20s)
+			# Agent navigates twice: once from URL in task, once from step 1
+			# Each navigation takes ~22s, plus agent overhead
+			assert elapsed >= 40, f'Should have navigated twice (~22s each), only took {elapsed:.1f}s'
+			# Without the fix, this test would fail with "Page.navigate() timed out after 20.0s"
+
+		finally:
+			# Restore original env var value
+			if old_value is None:
+				os.environ.pop('TIMEOUT_NavigateToUrlEvent', None)
+			else:
+				os.environ['TIMEOUT_NavigateToUrlEvent'] = old_value
