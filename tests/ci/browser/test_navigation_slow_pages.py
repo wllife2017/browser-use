@@ -214,12 +214,14 @@ class TestHeavyPageNavigation:
 			# Verify default 30s timeout is used when no env var is set
 			mock_nav.assert_called_once()
 			call_args = mock_nav.call_args
-			assert call_args.kwargs['nav_timeout'] == 30.0, f'Default nav_timeout should be 30.0s, got {call_args.kwargs["nav_timeout"]}'
+			assert call_args.kwargs['nav_timeout'] == 30.0, (
+				f'Default nav_timeout should be 30.0s, got {call_args.kwargs["nav_timeout"]}'
+			)
 		
 		# Test 2: Env var override behavior
 		old_value = os.environ.get('TIMEOUT_NavigateToUrlEvent')
 		try:
-			os.environ['TIMEOUT_NavigateToUrlEvent'] = '35.0'
+			os.environ['TIMEOUT_NavigateToUrlEvent'] = '40.0'
 			
 			# Reset the mock for second test
 			with unittest.mock.patch.object(browser_session, '_navigate_and_wait') as mock_nav:
@@ -230,7 +232,9 @@ class TestHeavyPageNavigation:
 				# Verify env var value is passed as nav_timeout
 				mock_nav.assert_called_once()
 				call_args = mock_nav.call_args
-				assert call_args.kwargs['nav_timeout'] == 35.0, f'nav_timeout should be 35.0s from env var, got {call_args.kwargs["nav_timeout"]}'
+				assert call_args.kwargs['nav_timeout'] == 40.0, (
+					f'nav_timeout should be 40.0s from env var, got {call_args.kwargs["nav_timeout"]}'
+				)
 		
 		finally:
 			# Restore original env var value
