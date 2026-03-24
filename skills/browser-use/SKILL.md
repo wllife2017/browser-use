@@ -18,22 +18,31 @@ For setup details, see https://github.com/browser-use/browser-use/blob/main/brow
 
 ## Core Workflow
 
-1. **Navigate**: `browser-use open <url>` — starts browser if needed
-2. **Inspect**: `browser-use state` — returns clickable elements with indices
-3. **Interact**: use indices from state (`browser-use click 5`, `browser-use input 3 "text"`)
-4. **Verify**: `browser-use state` or `browser-use screenshot` to confirm
-5. **Repeat**: browser stays open between commands
-6. **Cleanup**: `browser-use close` when done
+**Default: connect to the user's existing Chrome browser.** This preserves their logins, cookies, and open tabs.
+
+1. **Register**: `INDEX=$(browser-use register)` — get an agent index (once per session)
+2. **Navigate**: `browser-use --connect $INDEX open <url>` — opens in a new tab in the user's Chrome
+3. **Inspect**: `browser-use --connect $INDEX state` — returns clickable elements with indices
+4. **Interact**: use indices from state (`browser-use --connect $INDEX click 5`, `browser-use --connect $INDEX input 3 "text"`)
+5. **Verify**: `browser-use --connect $INDEX state` or `browser-use --connect $INDEX screenshot` to confirm
+6. **Repeat**: browser stays open between commands
+
+If `--connect` fails (Chrome not running with remote debugging), fall back to `browser-use --headed open <url>` which launches a fresh Chromium.
 
 ## Browser Modes
 
 ```bash
-browser-use open <url>                         # Default: headless Chromium
-browser-use --headed open <url>                # Visible window
-browser-use --profile "Default" open <url>      # Real Chrome with Default profile (existing logins/cookies)
-browser-use --profile "Profile 1" open <url>   # Real Chrome with named profile
-browser-use --connect open <url>               # Auto-discover running Chrome via CDP
-browser-use --cdp-url ws://localhost:9222/... open <url>  # Connect via CDP URL
+# Preferred: connect to user's existing Chrome (requires remote debugging enabled)
+INDEX=$(browser-use register)
+browser-use --connect $INDEX open <url>        # Connect to running Chrome with agent index
+
+# Fallback: launch a new browser
+browser-use --headed open <url>                # Visible Chromium window
+browser-use open <url>                         # Headless Chromium
+
+# Other modes
+browser-use --profile "Default" open <url>      # Real Chrome with Default profile
+browser-use --cdp-url ws://localhost:9222/... open <url>  # Connect via explicit CDP URL
 ```
 
 `--connect`, `--cdp-url`, and `--profile` are mutually exclusive.
@@ -157,7 +166,8 @@ browser-use --profile "Default" open https://github.com  # Already logged in
 ### Connecting to Existing Chrome
 
 ```bash
-browser-use --connect open https://example.com     # Auto-discovers Chrome's CDP endpoint
+INDEX=$(browser-use register)                      # Get agent index first
+browser-use --connect $INDEX open https://example.com  # Connect with agent index
 ```
 
 Requires Chrome with remote debugging enabled. Falls back to probing ports 9222/9229.
@@ -169,13 +179,33 @@ browser-use tunnel 3000                            # → https://abc.trycloudfla
 browser-use open https://abc.trycloudflare.com     # Browse the tunnel
 ```
 
+## Multi-Agent (--connect mode)
+
+Multiple agents can share one Chrome browser via `--connect`. Each agent gets its own tab — other agents can't interfere.
+
+**Setup**: Register once, then pass the index with every `--connect` command:
+
+```bash
+INDEX=$(browser-use register)                    # → prints "1"
+browser-use --connect $INDEX open <url>          # Navigate in agent's own tab
+browser-use --connect $INDEX state               # Get state from agent's tab
+browser-use --connect $INDEX click <element>     # Click in agent's tab
+```
+
+- **Tab locking**: When an agent mutates a tab (click, type, navigate), that tab is locked to it. Other agents get an error if they try to mutate the same tab.
+- **Read-only access**: `state`, `screenshot`, `get`, and `wait` commands work on any tab regardless of locks.
+- **Pre-existing tabs**: Tabs already open in Chrome start unlocked — any agent can claim them.
+- **Agent sessions expire** after 5 minutes of inactivity. Run `browser-use register` again to get a new index.
+- **If you get "Tab is currently in use by another agent"**: do NOT close sessions or force it. Just use `open` to navigate your own tab to the URL you need.
+- **Never run `browser-use close --all`** when other agents are sharing the browser — it kills everything.
+
 ## Global Options
 
 | Option | Description |
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
-| `--connect` | Auto-discover running Chrome via CDP |
+| `--connect INDEX` | Connect to running Chrome via CDP with agent index (run `browser-use register` first) |
 | `--cdp-url <url>` | Connect via CDP URL (`http://` or `ws://`) |
 | `--session NAME` | Target a named session (default: "default") |
 | `--json` | Output as JSON |

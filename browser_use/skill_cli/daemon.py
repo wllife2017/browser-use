@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
 	from browser_use.skill_cli.sessions import SessionInfo
+	from browser_use.skill_cli.tab_ownership import TabOwnershipManager
 
 # Configure logging before imports
 logging.basicConfig(
@@ -59,39 +60,78 @@ class Daemon:
 		self._session: SessionInfo | None = None
 		self._shutdown_task: asyncio.Task | None = None
 		self._browser_watchdog_task: asyncio.Task | None = None
+		self._agent_cleanup_task: asyncio.Task | None = None
+		self._tab_ownership: TabOwnershipManager | None = None
+		self._session_lock = asyncio.Lock()
 
 	async def _get_or_create_session(self) -> SessionInfo:
 		"""Lazy-create the single session on first command."""
 		if self._session is not None:
 			return self._session
 
-		from browser_use.skill_cli.sessions import SessionInfo, create_browser_session
+		async with self._session_lock:
+			# Double-check after acquiring lock
+			if self._session is not None:
+				return self._session
 
-		logger.info(
-			f'Creating session (headed={self.headed}, profile={self.profile}, cdp_url={self.cdp_url}, use_cloud={self.use_cloud})'
-		)
+			from browser_use.skill_cli.sessions import SessionInfo, create_browser_session
 
-		bs = await create_browser_session(
-			self.headed,
-			self.profile,
-			self.cdp_url,
-			use_cloud=self.use_cloud,
-			cloud_timeout=self.cloud_timeout,
-			cloud_proxy_country_code=self.cloud_proxy_country_code,
-			cloud_profile_id=self.cloud_profile_id,
-		)
-		await bs.start()
+			logger.info(
+				f'Creating session (headed={self.headed}, profile={self.profile}, cdp_url={self.cdp_url}, use_cloud={self.use_cloud})'
+			)
 
-		self._session = SessionInfo(
-			name=self.session,
-			headed=self.headed,
-			profile=self.profile,
-			cdp_url=self.cdp_url,
-			browser_session=bs,
-			use_cloud=self.use_cloud,
-		)
-		self._browser_watchdog_task = asyncio.create_task(self._watch_browser())
-		return self._session
+			bs = await create_browser_session(
+				self.headed,
+				self.profile,
+				self.cdp_url,
+				use_cloud=self.use_cloud,
+				cloud_timeout=self.cloud_timeout,
+				cloud_proxy_country_code=self.cloud_proxy_country_code,
+				cloud_profile_id=self.cloud_profile_id,
+			)
+			await bs.start()
+
+			# Wait for Chrome to stabilize after CDP setup before accepting commands
+			try:
+				await bs.get_browser_state_summary()
+			except Exception:
+				pass
+
+			self._session = SessionInfo(
+				name=self.session,
+				headed=self.headed,
+				profile=self.profile,
+				cdp_url=self.cdp_url,
+				browser_session=bs,
+				use_cloud=self.use_cloud,
+			)
+			self._browser_watchdog_task = asyncio.create_task(self._watch_browser())
+
+			# Initialize tab ownership for multi-agent isolation
+			from browser_use.skill_cli.tab_ownership import TabOwnershipManager
+			from browser_use.skill_cli.utils import get_home_dir
+
+			self._tab_ownership = TabOwnershipManager(bs)
+			self._tab_ownership.set_agents_file(get_home_dir() / 'agents.json')
+
+			# Listen for tab lifecycle events to track ownership
+			from browser_use.browser.events import TabClosedEvent, TabCreatedEvent
+
+			def _on_tab_created(event: TabCreatedEvent) -> None:
+				assert self._tab_ownership is not None
+				self._tab_ownership.on_tab_created(event.target_id)
+
+			def _on_tab_closed(event: TabClosedEvent) -> None:
+				assert self._tab_ownership is not None
+				self._tab_ownership.on_tab_closed(event.target_id)
+
+			bs.event_bus.on(TabCreatedEvent, _on_tab_created)
+			bs.event_bus.on(TabClosedEvent, _on_tab_closed)
+
+			# Start periodic agent cleanup
+			self._agent_cleanup_task = asyncio.create_task(self._cleanup_stale_agents())
+
+			return self._session
 
 	async def _watch_browser(self) -> None:
 		"""Poll BrowserSession.is_cdp_connected every 2s. Shutdown when browser dies."""
@@ -101,6 +141,16 @@ class Daemon:
 				logger.info('Browser disconnected, shutting down daemon')
 				await self.shutdown()
 				return
+
+	async def _cleanup_stale_agents(self) -> None:
+		"""Periodically clean up contexts for agents whose parent process is dead."""
+		while self.running:
+			await asyncio.sleep(30.0)
+			if self._tab_ownership:
+				try:
+					await self._tab_ownership.cleanup_stale_agents()
+				except Exception as e:
+					logger.debug(f'Agent cleanup error: {e}')
 
 	async def handle_connection(
 		self,
@@ -182,16 +232,79 @@ class Daemon:
 
 			from browser_use.skill_cli.commands import browser, python_exec
 
+			# Commands that mutate browser state — these acquire a tab lock
+			MUTATING_COMMANDS = {
+				'open', 'click', 'type', 'input', 'scroll', 'back',
+				'keys', 'select', 'upload', 'eval', 'dblclick', 'rightclick', 'hover',
+			}
+
 			# Get or create the single session
 			session = await self._get_or_create_session()
+			bs = session.browser_session
+			agent_id = request.get('agent_id', '__shared__')
+
+			# --- Tab locking: scope commands to the caller's focused tab ---
+			if self._tab_ownership:
+				ctx = await self._tab_ownership.ensure_caller_has_tab(agent_id)
+
+				# Pre-resolve tab indices for switch/close-tab (global indices)
+				if action == 'switch' and 'tab' in params:
+					resolved = self._tab_ownership.resolve_tab_index(params['tab'])
+					if resolved is None:
+						all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+						return {
+							'id': req_id,
+							'success': False,
+							'error': f'Invalid tab index {params["tab"]}. {len(all_targets)} tab(s) available (indices 0-{len(all_targets) - 1}).',
+						}
+					# Check lock before switching
+					lock_err = self._tab_ownership.check_lock(agent_id, resolved)
+					if lock_err:
+						return {'id': req_id, 'success': False, 'error': lock_err}
+					params['_resolved_target_id'] = resolved
+					# Update caller's focus to the switched tab
+					ctx.focused_target_id = resolved
+				elif action == 'close-tab' and params.get('tab') is not None:
+					resolved = self._tab_ownership.resolve_tab_index(params['tab'])
+					if resolved is None:
+						all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+						return {
+							'id': req_id,
+							'success': False,
+							'error': f'Invalid tab index {params["tab"]}. {len(all_targets)} tab(s) available (indices 0-{len(all_targets) - 1}).',
+						}
+					params['_resolved_target_id'] = resolved
+
+				# For mutating commands, check lock on focused tab
+				if action in MUTATING_COMMANDS:
+					lock_err = self._tab_ownership.check_lock(agent_id, ctx.focused_target_id)
+					if lock_err:
+						return {'id': req_id, 'success': False, 'error': lock_err}
+					# Lock the tab for this caller
+					if ctx.focused_target_id:
+						self._tab_ownership.lock_tab(agent_id, ctx.focused_target_id)
+
+				# Swap focus and selector map to caller's tab
+				saved_focus = bs.agent_focus_target_id
+				saved_selector_map = bs._cached_selector_map
+				bs.agent_focus_target_id = ctx.focused_target_id
+				bs._cached_selector_map = ctx.cached_selector_map
 
 			# Dispatch to handler
-			if action in browser.COMMANDS:
-				result = await browser.handle(action, session, params)
-			elif action == 'python':
-				result = await python_exec.handle(session, params)
-			else:
-				return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
+			try:
+				if action in browser.COMMANDS:
+					result = await browser.handle(action, session, params)
+				elif action == 'python':
+					result = await python_exec.handle(session, params)
+				else:
+					return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
+			finally:
+				# Save caller's updated focus/selector map and restore previous
+				if self._tab_ownership:
+					ctx.focused_target_id = bs.agent_focus_target_id
+					ctx.cached_selector_map = bs._cached_selector_map
+					bs.agent_focus_target_id = saved_focus  # type: ignore[possibly-undefined]
+					bs._cached_selector_map = saved_selector_map  # type: ignore[possibly-undefined]
 
 			return {'id': req_id, 'success': True, 'data': result}
 
@@ -289,6 +402,9 @@ class Daemon:
 
 		if self._browser_watchdog_task:
 			self._browser_watchdog_task.cancel()
+
+		if self._agent_cleanup_task:
+			self._agent_cleanup_task.cancel()
 
 		if self._server:
 			self._server.close()

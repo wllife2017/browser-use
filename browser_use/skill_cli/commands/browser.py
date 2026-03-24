@@ -191,32 +191,38 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 	elif action == 'switch':
 		from browser_use.browser.events import SwitchTabEvent
 
-		tab_index = params['tab']
-		# Get target_id from tab index
-		page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-		if tab_index < 0 or tab_index >= len(page_targets):
-			return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
-		target_id = page_targets[tab_index].target_id
+		# Use pre-resolved target_id from tab ownership (scoped to caller's tabs)
+		if '_resolved_target_id' in params:
+			target_id = params['_resolved_target_id']
+		else:
+			tab_index = params['tab']
+			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+			if tab_index < 0 or tab_index >= len(page_targets):
+				return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
+			target_id = page_targets[tab_index].target_id
 		await bs.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
-		return {'switched': tab_index}
+		return {'switched': params.get('tab', 0)}
 
 	elif action == 'close-tab':
 		from browser_use.browser.events import CloseTabEvent
 
-		tab_index = params.get('tab')
-		# Get target_id from tab index
-		page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-		if tab_index is not None:
-			if tab_index < 0 or tab_index >= len(page_targets):
-				return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
-			target_id = page_targets[tab_index].target_id
+		# Use pre-resolved target_id from tab ownership (scoped to caller's tabs)
+		if '_resolved_target_id' in params:
+			target_id = params['_resolved_target_id']
 		else:
-			# Close current/focused tab
-			target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
-			if not target_id:
-				return {'error': 'No focused tab to close'}
+			tab_index = params.get('tab')
+			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+			if tab_index is not None:
+				if tab_index < 0 or tab_index >= len(page_targets):
+					return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
+				target_id = page_targets[tab_index].target_id
+			else:
+				# Close current/focused tab
+				target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
+				if not target_id:
+					return {'error': 'No focused tab to close'}
 		await bs.event_bus.dispatch(CloseTabEvent(target_id=target_id))
-		return {'closed': tab_index}
+		return {'closed': params.get('tab')}
 
 	elif action == 'keys':
 		from browser_use.browser.events import SendKeysEvent
