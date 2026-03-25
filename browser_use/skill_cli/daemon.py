@@ -275,6 +275,37 @@ class Daemon:
 						}
 					params['_resolved_target_id'] = resolved
 
+				# Handle tab subcommands
+				elif action == 'tab':
+					tab_cmd = params.get('tab_command')
+					if tab_cmd == 'list':
+						tab_list = self._tab_ownership.get_tab_list(agent_id)
+						lines = ['TAB  LOCKED    URL']
+						for t in tab_list:
+							lines.append(f'{t["index"]:<4} {t["locked"]:<9} {t["url"]}')
+						params['_tab_list'] = '\n'.join(lines)
+					elif tab_cmd == 'switch' and 'tab' in params:
+						resolved = self._tab_ownership.resolve_tab_index(params['tab'])
+						if resolved is None:
+							all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+							return {
+								'id': req_id,
+								'success': False,
+								'error': f'Invalid tab index {params["tab"]}. {len(all_targets)} tab(s) available (indices 0-{len(all_targets) - 1}).',
+							}
+						lock_err = self._tab_ownership.check_lock(agent_id, resolved)
+						if lock_err:
+							return {'id': req_id, 'success': False, 'error': lock_err}
+						params['_resolved_target_id'] = resolved
+						ctx.focused_target_id = resolved
+					elif tab_cmd == 'close':
+						# Pre-check locks for each tab the agent wants to close
+						all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+						for i in range(len(all_targets)):
+							lock_err = self._tab_ownership.check_lock(agent_id, all_targets[i].target_id)
+							if lock_err:
+								params[f'_lock_check_{i}'] = lock_err
+
 				# For mutating commands, check lock on focused tab
 				if action in MUTATING_COMMANDS:
 					lock_err = self._tab_ownership.check_lock(agent_id, ctx.focused_target_id)
@@ -301,10 +332,14 @@ class Daemon:
 			finally:
 				# Save caller's updated focus/selector map and restore previous
 				if self._tab_ownership:
-					ctx.focused_target_id = bs.agent_focus_target_id
+					new_focus = bs.agent_focus_target_id
+					ctx.focused_target_id = new_focus
 					ctx.cached_selector_map = bs._cached_selector_map
 					bs.agent_focus_target_id = saved_focus  # type: ignore[possibly-undefined]
 					bs._cached_selector_map = saved_selector_map  # type: ignore[possibly-undefined]
+					# If focus changed (e.g. tab new), lock the new tab
+					if new_focus and new_focus != saved_focus:  # type: ignore[possibly-undefined]
+						self._tab_ownership.lock_tab(agent_id, new_focus)
 
 			return {'id': req_id, 'success': True, 'data': result}
 

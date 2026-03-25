@@ -21,6 +21,7 @@ COMMANDS = {
 	'state',
 	'switch',
 	'close-tab',
+	'tab',
 	'keys',
 	'select',
 	'upload',
@@ -223,6 +224,78 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 					return {'error': 'No focused tab to close'}
 		await bs.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 		return {'closed': params.get('tab')}
+
+	elif action == 'tab':
+		tab_command = params.get('tab_command')
+
+		if tab_command == 'list':
+			# tab list — handled by daemon which injects _tab_list
+			if '_tab_list' in params:
+				return {'_raw_text': params['_tab_list']}
+			# Fallback without tab ownership (no --connect)
+			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+			lines = ['TAB  URL']
+			for i, t in enumerate(page_targets):
+				lines.append(f'{i:<4} {t.url}')
+			return {'_raw_text': '\n'.join(lines)}
+
+		elif tab_command == 'new':
+			url = params.get('url', 'about:blank')
+			target_id = await bs._cdp_create_new_page(url, background=True)
+			bs.agent_focus_target_id = target_id
+			return {'created': target_id[:8], 'url': url}
+
+		elif tab_command == 'switch':
+			# Just update internal focus — don't visually activate the tab in Chrome
+			# The daemon already sets ctx.focused_target_id and swaps agent_focus_target_id
+			if '_resolved_target_id' in params:
+				target_id = params['_resolved_target_id']
+			else:
+				tab_index = params['tab']
+				page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+				if tab_index < 0 or tab_index >= len(page_targets):
+					return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
+				target_id = page_targets[tab_index].target_id
+			bs.agent_focus_target_id = target_id
+			return {'switched': params.get('tab', 0)}
+
+		elif tab_command == 'close':
+			from browser_use.browser.events import CloseTabEvent
+
+			tab_indices = params.get('tabs', [])
+
+			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+
+			if not tab_indices:
+				# Close current/focused tab
+				target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
+				if not target_id:
+					return {'error': 'No focused tab to close'}
+				await bs.event_bus.dispatch(CloseTabEvent(target_id=target_id))
+				return {'closed': [0]}
+
+			# Close specific tabs
+			closed = []
+			errors = []
+			for idx in sorted(tab_indices, reverse=True):  # reverse to avoid index shift
+				if idx < 0 or idx >= len(page_targets):
+					errors.append(f'Tab {idx} out of range')
+					continue
+				lock_err = params.get(f'_lock_check_{idx}')
+				if lock_err:
+					errors.append(f'Tab {idx}: {lock_err}')
+					continue
+				try:
+					await bs.event_bus.dispatch(CloseTabEvent(target_id=page_targets[idx].target_id))
+					closed.append(idx)
+				except Exception as e:
+					errors.append(f'Tab {idx}: {e}')
+			result: dict[str, Any] = {'closed': closed}
+			if errors:
+				result['errors'] = errors
+			return result
+
+		return {'error': 'Invalid tab command. Use: list, switch, close'}
 
 	elif action == 'keys':
 		from browser_use.browser.events import SendKeysEvent

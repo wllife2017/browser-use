@@ -103,6 +103,26 @@ class TabOwnershipManager:
 			return None
 		return all_targets[index].target_id
 
+	def get_tab_list(self, agent_id: str) -> list[dict[str, Any]]:
+		"""Get all tabs with their lock status relative to the calling agent."""
+		all_targets = self._browser_session.session_manager.get_all_page_targets() if self._browser_session.session_manager else []
+		tabs = []
+		for i, target in enumerate(all_targets):
+			lock_holder = self._tab_locks.get(target.target_id)
+			if lock_holder is None:
+				locked = '-'
+			elif lock_holder == agent_id:
+				locked = 'you'
+			else:
+				locked = f'agent{lock_holder}'
+			tabs.append({
+				'index': i,
+				'locked': locked,
+				'url': target.url,
+				'title': target.title,
+			})
+		return tabs
+
 	async def ensure_caller_has_tab(self, agent_id: str) -> CallerContext:
 		"""Ensure an agent has a focused tab.
 

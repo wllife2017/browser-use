@@ -42,8 +42,10 @@ browser-use open <url>                    # Navigate to URL
 browser-use back                          # Go back in history
 browser-use scroll down                   # Scroll down (--amount N for pixels)
 browser-use scroll up                     # Scroll up
-browser-use switch <tab>                  # Switch to tab by index
-browser-use close-tab [tab]              # Close tab (current if no index)
+browser-use tab list                      # List all tabs with lock status
+browser-use tab new [url]                 # Open a new tab (blank or with URL)
+browser-use tab switch <index>            # Switch to tab by index
+browser-use tab close <index> [index...]  # Close one or more tabs
 
 # Page State — always run state first to get element indices
 browser-use state                         # URL, title, clickable elements with indices

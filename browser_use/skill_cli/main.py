@@ -485,12 +485,26 @@ Setup:
 	# state
 	subparsers.add_parser('state', help='Get browser state (URL, title, elements)')
 
-	# switch <tab>
-	p = subparsers.add_parser('switch', help='Switch to tab')
+	# tab (list, switch, close)
+	tab_p = subparsers.add_parser('tab', help='Tab management (list, switch, close)')
+	tab_sub = tab_p.add_subparsers(dest='tab_command')
+
+	tab_sub.add_parser('list', help='List all tabs with lock status')
+
+	p = tab_sub.add_parser('new', help='Open a new blank tab')
+	p.add_argument('url', nargs='?', default='about:blank', help='URL to open (default: about:blank)')
+
+	p = tab_sub.add_parser('switch', help='Switch to tab')
 	p.add_argument('tab', type=int, help='Tab index')
 
-	# close-tab [tab]
-	p = subparsers.add_parser('close-tab', help='Close tab')
+	p = tab_sub.add_parser('close', help='Close tab(s)')
+	p.add_argument('tabs', type=int, nargs='*', help='Tab indices to close (current if none)')
+
+	# Backward compat aliases
+	p = subparsers.add_parser('switch', help='Switch to tab (alias for tab switch)')
+	p.add_argument('tab', type=int, help='Tab index')
+
+	p = subparsers.add_parser('close-tab', help='Close tab (alias for tab close)')
 	p.add_argument('tab', type=int, nargs='?', help='Tab index (current if not specified)')
 
 	# keys <keys>
