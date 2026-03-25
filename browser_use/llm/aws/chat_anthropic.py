@@ -239,7 +239,7 @@ class ChatAnthropicBedrock(ChatAWSBedrock):
 											except json.JSONDecodeError:
 												pass
 							else:
-								raise e
+								raise
 							return ChatInvokeCompletion(
 								completion=output_format.model_validate(_input),
 								usage=usage,
