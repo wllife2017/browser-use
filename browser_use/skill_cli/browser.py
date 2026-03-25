@@ -1,8 +1,8 @@
 """Lightweight BrowserSession subclass for the CLI daemon.
 
-Skips watchdogs, event bus handlers, and auto-reconnect.
-Uses connect() directly for CDP setup. All inherited methods
-(get_element_by_index, take_screenshot, cdp_client_for_node, etc.)
+Skips watchdogs, event bus handlers, and auto-reconnect for ALL modes.
+Launches browser if needed, then calls connect() directly.
+All inherited methods (get_element_by_index, take_screenshot, etc.)
 work because this IS a BrowserSession.
 """
 
@@ -10,37 +10,78 @@ from __future__ import annotations
 
 import logging
 
+import psutil
+
 from browser_use.browser.session import BrowserSession
 
 logger = logging.getLogger('browser_use.skill_cli.browser')
 
 
 class CLIBrowserSession(BrowserSession):
-	"""BrowserSession that connects to CDP without loading watchdogs or event bus handlers.
+	"""BrowserSession that skips watchdogs and event bus for all modes.
 
-	Overrides start/stop/kill to be lightweight:
-	- start() calls connect() directly (no attach_all_watchdogs)
-	- stop() closes the websocket directly (no BrowserStopEvent chain)
-	- kill() sends Browser.close + closes websocket (no event bus)
+	For --connect: connects to existing Chrome via CDP URL.
+	For managed Chromium: launches browser, gets CDP URL, connects.
+	For cloud: provisions browser, gets CDP URL, connects.
+
+	All three modes converge at connect() — no watchdogs, no event bus.
 	"""
 
+	_browser_process: psutil.Process | None = None  # type: ignore[assignment]
+
 	async def start(self) -> None:
-		"""Connect CDP without watchdogs or event bus handlers."""
+		"""Launch/provision browser if needed, then connect lightweight."""
+		if self.cdp_url:
+			# --connect or --cdp-url: CDP URL already known
+			pass
+		elif self.browser_profile.use_cloud:
+			# Cloud: provision browser via API
+			await self._provision_cloud_browser()
+		else:
+			# Managed Chromium: launch browser process
+			await self._launch_local_browser()
+
+		# All modes: lightweight CDP connection (no watchdogs)
 		await self.connect()
-		# Prevent monitoring on future tabs (existing tabs already got it during connect)
+
+		# Prevent heavy monitoring on future tabs
 		if self.session_manager:
 
 			async def _noop(cdp_session: object) -> None:
 				pass
 
 			self.session_manager._enable_page_monitoring = _noop  # type: ignore[assignment]
+
 		# Disable auto-reconnect — daemon should die when CDP drops
 		self._intentional_stop = True
+
+	async def _launch_local_browser(self) -> None:
+		"""Launch Chromium using LocalBrowserWatchdog's launch logic."""
+		from bubus import EventBus
+
+		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
+
+		# Instantiate watchdog as plain object — NOT registered on event bus
+		launcher = LocalBrowserWatchdog(event_bus=EventBus(), browser_session=self)
+		process, cdp_url = await launcher._launch_browser()
+		self._browser_process = process
+		self.browser_profile.cdp_url = cdp_url
+		logger.info(f'Launched browser (PID {process.pid}), CDP: {cdp_url}')
+
+	async def _provision_cloud_browser(self) -> None:
+		"""Provision a cloud browser and set the CDP URL."""
+		from browser_use.browser.cloud.views import CreateBrowserRequest
+
+		cloud_params = self.browser_profile.cloud_browser_params or CreateBrowserRequest()
+		cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
+		self.browser_profile.cdp_url = cloud_response.cdpUrl
+		self.browser_profile.is_local = False
+		logger.info(f'Cloud browser provisioned, CDP: {cloud_response.cdpUrl}')
 
 	async def stop(self) -> None:
 		"""Close the websocket without the BrowserStopEvent chain.
 
-		For --connect mode: Chrome stays alive, we just disconnect.
+		Chrome/cloud browser stays alive, we just disconnect.
 		"""
 		self._intentional_stop = True
 		if self._cdp_client_root:
@@ -59,9 +100,9 @@ class CLIBrowserSession(BrowserSession):
 		self._cached_selector_map.clear()
 
 	async def kill(self) -> None:
-		"""Send Browser.close to kill the browser process, then disconnect.
+		"""Send Browser.close to kill the browser, then disconnect.
 
-		For managed Chromium: kills the browser and cleans up.
+		For managed Chromium: sends Browser.close CDP command + terminates process.
 		"""
 		if self._cdp_client_root:
 			try:
@@ -69,3 +110,27 @@ class CLIBrowserSession(BrowserSession):
 			except Exception:
 				pass
 		await self.stop()
+		# Force kill the process if we launched it and it's still alive
+		if self._browser_process:
+			try:
+				if self._browser_process.is_running():
+					self._browser_process.terminate()
+					self._browser_process.wait(timeout=5)
+			except Exception:
+				try:
+					self._browser_process.kill()
+				except Exception:
+					pass
+			self._browser_process = None
+
+	@property
+	def is_cdp_connected(self) -> bool:
+		"""Check if CDP WebSocket connection is alive."""
+		if self._cdp_client_root is None or self._cdp_client_root.ws is None:
+			return False
+		try:
+			from websockets.protocol import State
+
+			return self._cdp_client_root.ws.state is State.OPEN
+		except Exception:
+			return False
