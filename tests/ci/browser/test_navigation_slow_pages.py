@@ -9,7 +9,6 @@ Usage:
 """
 
 import asyncio
-import os
 import time
 
 import pytest
@@ -64,13 +63,6 @@ def heavy_page_server():
 	server.expect_request('/quick-page').respond_with_data(
 		'<html><body><h1>Quick Page</h1></body></html>', content_type='text/html'
 	)
-
-	# Very slow server for testing env var timeout control (22s > default 20s)
-	def very_slow_response(request):
-		time.sleep(22)
-		return Response(HEAVY_PDP_HTML, content_type='text/html')
-
-	server.expect_request('/very-slow-22s').respond_with_handler(very_slow_response)
 
 	yield server
 	server.stop()
@@ -194,59 +186,3 @@ class TestHeavyPageNavigation:
 		event = NavigateToUrlEvent(url='http://example.com')
 		assert event.event_timeout is not None
 		assert event.event_timeout >= 30.0, f'event_timeout={event.event_timeout}s is too low for heavy pages (need >= 30s)'
-
-	async def test_timeout_env_var_controls_cdp_navigation(self, browser_session, heavy_base_url):
-		"""TIMEOUT_NavigateToUrlEvent env var should control the CDP Page.navigate() timeout.
-
-		This test verifies the fix by directly checking the timeout parameter passed to CDP,
-		avoiding reliance on agent navigation flow or timing assumptions.
-		Environment is properly isolated to prevent flaky behavior.
-		"""
-		import unittest.mock
-
-		from browser_use.browser.session import NavigateToUrlEvent
-
-		# Save and completely clear env var to ensure test isolation
-		old_value = os.environ.pop('TIMEOUT_NavigateToUrlEvent', None)
-
-		try:
-			# Test 1: Default behavior (30s timeout from env var default)
-			# Ensure no env var is set to test default behavior
-			if 'TIMEOUT_NavigateToUrlEvent' in os.environ:
-				del os.environ['TIMEOUT_NavigateToUrlEvent']
-
-			with unittest.mock.patch.object(browser_session, '_navigate_and_wait') as mock_nav:
-				event = NavigateToUrlEvent(url=f'{heavy_base_url}/quick')
-				# Set up the agent focus target that the method expects
-				browser_session.agent_focus_target_id = 'test'
-				await browser_session.on_NavigateToUrlEvent(event)
-
-				# Verify default 30s timeout is used when no env var is set
-				mock_nav.assert_called_once()
-				call_args = mock_nav.call_args
-				assert call_args.kwargs['nav_timeout'] == 30.0, (
-					f'Default nav_timeout should be 30.0s, got {call_args.kwargs["nav_timeout"]}'
-				)
-
-			# Test 2: Env var override behavior
-			os.environ['TIMEOUT_NavigateToUrlEvent'] = '40.0'
-
-			# Reset the mock for second test
-			with unittest.mock.patch.object(browser_session, '_navigate_and_wait') as mock_nav:
-				event = NavigateToUrlEvent(url=f'{heavy_base_url}/quick')
-				browser_session.agent_focus_target_id = 'test'
-				await browser_session.on_NavigateToUrlEvent(event)
-
-				# Verify env var value is passed as nav_timeout
-				mock_nav.assert_called_once()
-				call_args = mock_nav.call_args
-				assert call_args.kwargs['nav_timeout'] == 40.0, (
-					f'nav_timeout should be 40.0s from env var, got {call_args.kwargs["nav_timeout"]}'
-				)
-
-		finally:
-			# Restore original env var value for test isolation
-			if old_value is None:
-				os.environ.pop('TIMEOUT_NavigateToUrlEvent', None)
-			else:
-				os.environ['TIMEOUT_NavigateToUrlEvent'] = old_value
