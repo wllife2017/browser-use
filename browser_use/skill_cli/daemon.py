@@ -97,12 +97,18 @@ class Daemon:
 			except Exception:
 				pass
 
+			# Create action handler for direct command execution (no event bus)
+			from browser_use.skill_cli.actions import ActionHandler
+
+			actions = ActionHandler(bs)
+
 			self._session = SessionInfo(
 				name=self.session,
 				headed=self.headed,
 				profile=self.profile,
 				cdp_url=self.cdp_url,
 				browser_session=bs,
+				actions=actions,
 				use_cloud=self.use_cloud,
 			)
 			self._browser_watchdog_task = asyncio.create_task(self._watch_browser())

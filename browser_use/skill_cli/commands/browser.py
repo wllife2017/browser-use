@@ -83,6 +83,7 @@ async def _get_element_center(session: SessionInfo, node: Any) -> tuple[float, f
 async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> Any:
 	"""Handle browser control command."""
 	bs = session.browser_session
+	actions = session.actions
 
 	if action == 'open':
 		url = params['url']
@@ -90,9 +91,12 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		if not url.startswith(('http://', 'https://', 'file://')):
 			url = 'https://' + url
 
-		from browser_use.browser.events import NavigateToUrlEvent
+		if actions:
+			await actions.navigate(url)
+		else:
+			from browser_use.browser.events import NavigateToUrlEvent
 
-		await bs.event_bus.dispatch(NavigateToUrlEvent(url=url))
+			await bs.event_bus.dispatch(NavigateToUrlEvent(url=url))
 		result: dict[str, Any] = {'url': url}
 		# Add live preview URL for cloud browsers
 		if bs.browser_profile.use_cloud and bs.cdp_url:
@@ -105,20 +109,26 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		args = params.get('args', [])
 		if len(args) == 2:
 			# Coordinate click: browser-use click <x> <y>
-			from browser_use.browser.events import ClickCoordinateEvent
-
 			x, y = args
-			await bs.event_bus.dispatch(ClickCoordinateEvent(coordinate_x=x, coordinate_y=y))
+			if actions:
+				await actions.click_coordinate(x, y)
+			else:
+				from browser_use.browser.events import ClickCoordinateEvent
+
+				await bs.event_bus.dispatch(ClickCoordinateEvent(coordinate_x=x, coordinate_y=y))
 			return {'clicked_coordinate': {'x': x, 'y': y}}
 		elif len(args) == 1:
 			# Index click: browser-use click <index>
-			from browser_use.browser.events import ClickElementEvent
-
 			index = args[0]
 			node = await bs.get_element_by_index(index)
 			if node is None:
 				return {'error': f'Element index {index} not found - page may have changed'}
-			await bs.event_bus.dispatch(ClickElementEvent(node=node))
+			if actions:
+				await actions.click_element(node)
+			else:
+				from browser_use.browser.events import ClickElementEvent
+
+				await bs.event_bus.dispatch(ClickElementEvent(node=node))
 			return {'clicked': index}
 		else:
 			return {'error': 'Usage: click <index> or click <x> <y>'}
@@ -136,30 +146,39 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		return {'typed': text}
 
 	elif action == 'input':
-		from browser_use.browser.events import ClickElementEvent, TypeTextEvent
-
 		index = params['index']
 		text = params['text']
-		# Look up node from selector map
 		node = await bs.get_element_by_index(index)
 		if node is None:
 			return {'error': f'Element index {index} not found - page may have changed'}
-		await bs.event_bus.dispatch(ClickElementEvent(node=node))
-		await bs.event_bus.dispatch(TypeTextEvent(node=node, text=text))
+		if actions:
+			await actions.click_element(node)
+			await actions.type_text(node, text)
+		else:
+			from browser_use.browser.events import ClickElementEvent, TypeTextEvent
+
+			await bs.event_bus.dispatch(ClickElementEvent(node=node))
+			await bs.event_bus.dispatch(TypeTextEvent(node=node, text=text))
 		return {'input': text, 'element': index}
 
 	elif action == 'scroll':
-		from browser_use.browser.events import ScrollEvent
-
 		direction = params.get('direction', 'down')
 		amount = params.get('amount', 500)
-		await bs.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount))
+		if actions:
+			await actions.scroll(direction, amount)
+		else:
+			from browser_use.browser.events import ScrollEvent
+
+			await bs.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount))
 		return {'scrolled': direction, 'amount': amount}
 
 	elif action == 'back':
-		from browser_use.browser.events import GoBackEvent
+		if actions:
+			await actions.go_back()
+		else:
+			from browser_use.browser.events import GoBackEvent
 
-		await bs.event_bus.dispatch(GoBackEvent())
+			await bs.event_bus.dispatch(GoBackEvent())
 		return {'back': True}
 
 	elif action == 'screenshot':
@@ -175,7 +194,10 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 
 	elif action == 'state':
 		# Return the LLM representation with viewport info for coordinate clicking
-		state = await bs.get_browser_state_summary()
+		if actions:
+			state = await actions.get_state()
+		else:
+			state = await bs.get_browser_state_summary()
 		assert state.dom_state is not None
 		state_text = state.dom_state.llm_representation()
 
@@ -298,27 +320,30 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		return {'error': 'Invalid tab command. Use: list, switch, close'}
 
 	elif action == 'keys':
-		from browser_use.browser.events import SendKeysEvent
-
 		keys = params['keys']
-		await bs.event_bus.dispatch(SendKeysEvent(keys=keys))
+		if actions:
+			await actions.send_keys(keys)
+		else:
+			from browser_use.browser.events import SendKeysEvent
+
+			await bs.event_bus.dispatch(SendKeysEvent(keys=keys))
 		return {'sent': keys}
 
 	elif action == 'select':
-		from browser_use.browser.events import SelectDropdownOptionEvent
-
 		index = params['index']
 		value = params['value']
-		# Look up node from selector map
 		node = await bs.get_element_by_index(index)
 		if node is None:
 			return {'error': f'Element index {index} not found - page may have changed'}
-		await bs.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=value))
+		if actions:
+			await actions.select_dropdown(node, value)
+		else:
+			from browser_use.browser.events import SelectDropdownOptionEvent
+
+			await bs.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text=value))
 		return {'selected': value, 'element': index}
 
 	elif action == 'upload':
-		from browser_use.browser.events import UploadFileEvent
-
 		index = params['index']
 		file_path = params['path']
 
@@ -340,7 +365,6 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		file_input_node = bs.find_file_input_near_element(node)
 
 		if file_input_node is None:
-			# Scan selector map for file inputs and suggest them
 			selector_map = await bs.get_selector_map()
 			file_input_indices = [idx for idx, el in selector_map.items() if bs.is_file_input(el)]
 			if file_input_indices:
@@ -349,7 +373,12 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 				hint = ' No file input found on the page.'
 			return {'error': f'Element {index} is not a file input.{hint}'}
 
-		await bs.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=file_path))
+		if actions:
+			await actions.upload_file(file_input_node, file_path)
+		else:
+			from browser_use.browser.events import UploadFileEvent
+
+			await bs.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=file_path))
 		return {'uploaded': file_path, 'element': index}
 
 	elif action == 'eval':

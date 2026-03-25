@@ -1,10 +1,16 @@
 """Session data — SessionInfo dataclass and browser session factory."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from browser_use.browser.session import BrowserSession
+from browser_use.skill_cli.browser import CLIBrowserSession
 from browser_use.skill_cli.python_session import PythonSession
+
+if TYPE_CHECKING:
+	from browser_use.skill_cli.actions import ActionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +23,8 @@ class SessionInfo:
 	headed: bool
 	profile: str | None
 	cdp_url: str | None
-	browser_session: BrowserSession
+	browser_session: CLIBrowserSession
+	actions: ActionHandler | None = None
 	python_session: PythonSession = field(default_factory=PythonSession)
 	use_cloud: bool = False
 
@@ -30,7 +37,7 @@ async def create_browser_session(
 	cloud_timeout: int | None = None,
 	cloud_proxy_country_code: str | None = None,
 	cloud_profile_id: str | None = None,
-) -> BrowserSession:
+) -> CLIBrowserSession:
 	"""Create BrowserSession based on connection mode.
 
 	- CDP URL: Connect to existing browser (cdp_url takes precedence)
@@ -39,7 +46,7 @@ async def create_browser_session(
 	- No profile: Playwright-managed Chromium (default)
 	"""
 	if cdp_url is not None:
-		return BrowserSession(cdp_url=cdp_url)
+		return CLIBrowserSession(cdp_url=cdp_url)  # type: ignore[call-arg]
 
 	if use_cloud:
 		kwargs: dict = {'use_cloud': True}
@@ -49,12 +56,10 @@ async def create_browser_session(
 			kwargs['cloud_proxy_country_code'] = cloud_proxy_country_code
 		if cloud_profile_id is not None:
 			kwargs['cloud_profile_id'] = cloud_profile_id
-		return BrowserSession(**kwargs)
+		return CLIBrowserSession(**kwargs)  # type: ignore[call-arg]
 
 	if profile is None:
-		return BrowserSession(
-			headless=not headed,
-		)
+		return CLIBrowserSession(headless=not headed)  # type: ignore[call-arg]
 
 	from browser_use.skill_cli.utils import find_chrome_executable, get_chrome_profile_path, list_chrome_profiles
 
@@ -94,9 +99,4 @@ async def create_browser_session(
 				lines.append(f'  "{p["name"]}" ({p["directory"]})')
 			raise RuntimeError('\n'.join(lines))
 
-	return BrowserSession(
-		executable_path=chrome_path,
-		user_data_dir=user_data_dir,
-		profile_directory=profile_directory,
-		headless=not headed,
-	)
+	return CLIBrowserSession(executable_path=chrome_path, user_data_dir=user_data_dir, profile_directory=profile_directory, headless=not headed)  # type: ignore[call-arg]
