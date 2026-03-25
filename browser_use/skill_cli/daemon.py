@@ -13,7 +13,6 @@ import json
 import logging
 import os
 import signal
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -347,17 +346,19 @@ def main() -> None:
 		session=args.session,
 	)
 
+	exit_code = 0
 	try:
 		asyncio.run(daemon.run())
 	except KeyboardInterrupt:
 		logger.info('Interrupted')
 	except Exception as e:
 		logger.exception(f'Daemon error: {e}')
-		sys.exit(1)
+		exit_code = 1
 	finally:
-		# Force-exit to prevent daemon from becoming an orphan
+		# asyncio.run() may hang trying to cancel lingering tasks
+		# Force-exit to prevent the daemon from becoming an orphan
 		logger.info('Daemon process exiting')
-		os._exit(0)
+		os._exit(exit_code)
 
 
 if __name__ == '__main__':
