@@ -120,19 +120,10 @@ class Daemon:
 			self._tab_ownership = TabOwnershipManager(bs)
 			self._tab_ownership.set_agents_file(get_home_dir() / 'agents.json')
 
-			# Listen for tab lifecycle events to track ownership
-			from browser_use.browser.events import TabClosedEvent, TabCreatedEvent
-
-			def _on_tab_created(event: TabCreatedEvent) -> None:
-				assert self._tab_ownership is not None
-				self._tab_ownership.on_tab_created(event.target_id)
-
-			def _on_tab_closed(event: TabClosedEvent) -> None:
-				assert self._tab_ownership is not None
-				self._tab_ownership.on_tab_closed(event.target_id)
-
-			bs.event_bus.on(TabCreatedEvent, _on_tab_created)
-			bs.event_bus.on(TabClosedEvent, _on_tab_closed)
+			# Register initial tabs with tab ownership (no event bus)
+			if bs.session_manager:
+				for target in bs.session_manager.get_all_page_targets():
+					self._tab_ownership.on_tab_created(target.target_id)
 
 			# Start periodic agent cleanup
 			self._agent_cleanup_task = asyncio.create_task(self._cleanup_stale_agents())

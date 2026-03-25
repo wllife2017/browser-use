@@ -55,6 +55,43 @@ class CLIBrowserSession(BrowserSession):
 		# Disable auto-reconnect — daemon should die when CDP drops
 		self._intentional_stop = True
 
+		# Register popup/dialog handler so JS alerts don't freeze Chrome
+		await self._register_dialog_handler()
+
+	async def _register_dialog_handler(self) -> None:
+		"""Register CDP handler to auto-dismiss JS dialogs (alert, confirm, prompt).
+
+		Without this, any JS dialog freezes all CDP commands until manually dismissed.
+		Messages are stored in _closed_popup_messages for inclusion in state output.
+		"""
+		import asyncio as _asyncio
+
+		if not self._cdp_client_root:
+			return
+
+		async def handle_dialog(event_data: dict, session_id: str | None = None) -> None:
+			try:
+				dialog_type = event_data.get('type', 'alert')
+				message = event_data.get('message', '')
+				if message:
+					self._closed_popup_messages.append(f'[{dialog_type}] {message}')
+				# Accept alerts/confirms/beforeunload, dismiss prompts
+				should_accept = dialog_type in ('alert', 'confirm', 'beforeunload')
+				logger.info(f'Auto-{"accepting" if should_accept else "dismissing"} {dialog_type}: {message[:100]}')
+				if not self._cdp_client_root:
+					return
+				await _asyncio.wait_for(
+					self._cdp_client_root.send.Page.handleJavaScriptDialog(
+						params={'accept': should_accept},
+						session_id=session_id,
+					),
+					timeout=0.5,
+				)
+			except Exception:
+				pass
+
+		self._cdp_client_root.register.Page.javascriptDialogOpening(handle_dialog)  # type: ignore[arg-type]
+
 	async def _launch_local_browser(self) -> None:
 		"""Launch Chromium using LocalBrowserWatchdog's launch logic."""
 		from bubus import EventBus

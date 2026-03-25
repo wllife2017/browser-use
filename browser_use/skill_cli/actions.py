@@ -173,4 +173,5 @@ class ActionHandler:
 			tabs=tabs,
 			screenshot=screenshot_b64,
 			page_info=page_info,
+			closed_popup_messages=self.bs._closed_popup_messages.copy(),
 		)
