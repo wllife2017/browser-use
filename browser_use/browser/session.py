@@ -408,7 +408,7 @@ class BrowserSession(BaseModel):
 				'Could not detect Chrome profile directory for your platform.\n'
 				'Expected locations:\n'
 				'  macOS: ~/Library/Application Support/Google/Chrome\n'
-				'  Linux: ~/.config/google-chrome\n'
+				'  Linux: ~/.config/google-chrome or ~/.config/chromium\n'
 				'  Windows: %LocalAppData%\\Google\\Chrome\\User Data'
 			)
 
@@ -909,6 +909,7 @@ class BrowserSession(BaseModel):
 				target_id,
 				timeout=event.timeout_ms / 1000 if event.timeout_ms is not None else None,
 				wait_until=event.wait_until,
+				nav_timeout=event.event_timeout,
 			)
 
 			# Close any extension options pages that might have opened
@@ -952,11 +953,13 @@ class BrowserSession(BaseModel):
 		target_id: str,
 		timeout: float | None = None,
 		wait_until: str = 'load',
+		nav_timeout: float | None = None,
 	) -> None:
 		"""Navigate to URL and wait for page readiness using CDP lifecycle events.
 
 		Polls stored lifecycle events (registered once per session in SessionManager).
 		wait_until controls the minimum acceptable signal: 'commit', 'domcontentloaded', 'load', 'networkidle'.
+		nav_timeout controls the timeout for the CDP Page.navigate() call itself (defaults to 20.0s).
 		"""
 		cdp_session = await self.get_or_create_cdp_session(target_id, focus=False)
 
@@ -973,7 +976,9 @@ class BrowserSession(BaseModel):
 		nav_start_time = asyncio.get_event_loop().time()
 
 		# Wrap Page.navigate() with timeout — heavy sites can block here for 10s+
-		nav_timeout = 20.0
+		# Use nav_timeout parameter if provided, otherwise default to 20.0
+		if nav_timeout is None:
+			nav_timeout = 20.0
 		try:
 			nav_result = await asyncio.wait_for(
 				cdp_session.cdp_client.send.Page.navigate(
