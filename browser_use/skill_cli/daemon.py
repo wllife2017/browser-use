@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -94,12 +95,23 @@ class Daemon:
 		return self._session
 
 	async def _watch_browser(self) -> None:
-		"""Poll BrowserSession.is_cdp_connected every 2s. Shutdown when browser dies."""
+		"""Poll BrowserSession.is_cdp_connected every 2s. Shutdown when browser dies.
+
+		Skips checks while the BrowserSession is reconnecting. If reconnection fails,
+		next poll will see is_cdp_connected=False and trigger shutdown.
+		"""
 		while self.running:
 			await asyncio.sleep(2.0)
-			if self._session and not self._session.browser_session.is_cdp_connected:
+			if not self._session:
+				continue
+			bs = self._session.browser_session
+			# Don't shut down while a reconnection attempt is in progress
+			if bs.is_reconnecting:
+				continue
+			if not bs.is_cdp_connected:
 				logger.info('Browser disconnected, shutting down daemon')
-				await self.shutdown()
+				if not self._shutdown_task or self._shutdown_task.done():
+					self._shutdown_task = asyncio.create_task(self.shutdown())
 				return
 
 	async def handle_connection(
@@ -208,8 +220,6 @@ class Daemon:
 		Stale sockets are cleaned up by is_daemon_alive() and by the next
 		daemon's startup (unlink before bind).
 		"""
-		import os
-
 		from browser_use.skill_cli.utils import get_pid_path, get_socket_path
 
 		# Setup signal handlers
@@ -297,10 +307,13 @@ class Daemon:
 			try:
 				# Only kill the browser if the daemon launched it.
 				# For external connections (--connect, --cdp-url, cloud), just disconnect.
+				# Timeout ensures daemon exits even if CDP calls hang on a dead connection
 				if self.cdp_url or self.use_cloud:
-					await self._session.browser_session.stop()
+					await asyncio.wait_for(self._session.browser_session.stop(), timeout=10.0)
 				else:
-					await self._session.browser_session.kill()
+					await asyncio.wait_for(self._session.browser_session.kill(), timeout=10.0)
+			except TimeoutError:
+				logger.warning('Browser cleanup timed out after 10s, forcing exit')
 			except Exception as e:
 				logger.warning(f'Error closing session: {e}')
 			self._session = None
@@ -341,6 +354,10 @@ def main() -> None:
 	except Exception as e:
 		logger.exception(f'Daemon error: {e}')
 		sys.exit(1)
+	finally:
+		# Force-exit to prevent daemon from becoming an orphan
+		logger.info('Daemon process exiting')
+		os._exit(0)
 
 
 if __name__ == '__main__':
