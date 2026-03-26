@@ -63,6 +63,9 @@ class Daemon:
 		self._agent_cleanup_task: asyncio.Task | None = None
 		self._tab_ownership: TabOwnershipManager | None = None
 		self._session_lock = asyncio.Lock()
+		self._last_command_time: float = 0.0
+		self._idle_timeout: float = 30 * 60.0  # 30 minutes
+		self._idle_watchdog_task: asyncio.Task | None = None
 
 	async def _get_or_create_session(self) -> SessionInfo:
 		"""Lazy-create the single session on first command."""
@@ -128,6 +131,9 @@ class Daemon:
 			# Start periodic agent cleanup
 			self._agent_cleanup_task = asyncio.create_task(self._cleanup_stale_agents())
 
+			# Start idle timeout watchdog
+			self._idle_watchdog_task = asyncio.create_task(self._watch_idle())
+
 			return self._session
 
 	async def _watch_browser(self) -> None:
@@ -138,6 +144,19 @@ class Daemon:
 				logger.info('Browser disconnected, shutting down daemon')
 				await self.shutdown()
 				return
+
+	async def _watch_idle(self) -> None:
+		"""Shutdown daemon after idle_timeout seconds of no commands."""
+		while self.running:
+			await asyncio.sleep(60.0)
+			if self._last_command_time > 0:
+				import time
+
+				idle = time.monotonic() - self._last_command_time
+				if idle >= self._idle_timeout:
+					logger.info(f'Daemon idle for {idle:.0f}s, shutting down')
+					await self.shutdown()
+					return
 
 	async def _cleanup_stale_agents(self) -> None:
 		"""Periodically clean up contexts for agents whose parent process is dead."""
@@ -189,6 +208,10 @@ class Daemon:
 
 	async def dispatch(self, request: dict) -> dict:
 		"""Route to command handlers."""
+		import time
+
+		self._last_command_time = time.monotonic()
+
 		action = request.get('action', '')
 		params = request.get('params', {})
 		req_id = request.get('id', '')
@@ -438,6 +461,9 @@ class Daemon:
 		if self._agent_cleanup_task:
 			self._agent_cleanup_task.cancel()
 
+		if self._idle_watchdog_task:
+			self._idle_watchdog_task.cancel()
+
 		if self._server:
 			self._server.close()
 
@@ -452,6 +478,24 @@ class Daemon:
 			except Exception as e:
 				logger.warning(f'Error closing session: {e}')
 			self._session = None
+
+		# Clean up PID file before exiting — the finally block in run() won't
+		# execute because os._exit() bypasses it.
+		import os
+
+		from browser_use.skill_cli.utils import get_pid_path
+
+		pid_path = get_pid_path(self.session)
+		try:
+			if pid_path.exists() and pid_path.read_text().strip() == str(os.getpid()):
+				pid_path.unlink(missing_ok=True)
+		except (OSError, ValueError):
+			pass
+
+		# Force exit — the asyncio server's __aexit__ hangs waiting for the
+		# handle_connection() call that triggered this shutdown to return.
+		logger.info('Daemon process exiting')
+		os._exit(0)
 
 
 def main() -> None:
