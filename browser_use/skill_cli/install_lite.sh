@@ -239,6 +239,10 @@ install_uv() {
 	fi
 
 	# Use official uv installer
+	if ! command -v curl &> /dev/null; then
+		log_error "curl is required but not found. Install curl and try again."
+		exit 1
+	fi
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 
 	if command -v uv &> /dev/null; then
@@ -280,22 +284,14 @@ install_browser_use() {
 	local tmp_dir=$(mktemp -d)
 	git clone --depth 1 --branch "$BROWSER_USE_BRANCH" "https://github.com/$BROWSER_USE_REPO.git" "$tmp_dir"
 	uv pip install "$tmp_dir" --no-deps
-	rm -rf "$tmp_dir"
 
 	# Install only the dependencies the CLI actually needs (~10 packages).
+	# The list lives in requirements-cli.txt so it's discoverable and testable.
 	# Transitive deps (e.g. websockets via cdp-use) are resolved automatically.
 	log_info "Installing minimal CLI dependencies..."
-	uv pip install \
-		"aiohttp==3.13.3" \
-		"bubus==1.5.6" \
-		"cdp-use==1.4.5" \
-		"httpx==0.28.1" \
-		"psutil==7.2.2" \
-		"pydantic==2.12.5" \
-		"pydantic-settings==2.12.0" \
-		"python-dotenv==1.2.1" \
-		"typing-extensions==4.15.0" \
-		"uuid7==0.1.0"
+	uv pip install -r "$tmp_dir/browser_use/skill_cli/requirements-cli.txt"
+
+	rm -rf "$tmp_dir"
 
 	log_success "browser-use CLI installed (lightweight)"
 }
@@ -493,8 +489,8 @@ main() {
 	# Step 7: Configure PATH
 	configure_path
 
-	# Step 8: Validate
-	validate
+	# Step 8: Validate (non-fatal — warnings shouldn't block next-step instructions)
+	validate || true
 
 	# Step 9: Print next steps
 	print_next_steps
