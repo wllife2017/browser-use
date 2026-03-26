@@ -239,6 +239,10 @@ install_uv() {
 	fi
 
 	# Use official uv installer
+	if ! command -v curl &> /dev/null; then
+		log_error "curl is required but not found. Install curl and try again."
+		exit 1
+	fi
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 
 	if command -v uv &> /dev/null; then
@@ -485,8 +489,8 @@ main() {
 	# Step 7: Configure PATH
 	configure_path
 
-	# Step 8: Validate
-	validate
+	# Step 8: Validate (non-fatal — warnings shouldn't block next-step instructions)
+	validate || true
 
 	# Step 9: Print next steps
 	print_next_steps
