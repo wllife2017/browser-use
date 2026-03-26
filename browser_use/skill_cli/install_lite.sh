@@ -286,6 +286,7 @@ install_browser_use() {
 	# Transitive deps (e.g. websockets via cdp-use) are resolved automatically.
 	log_info "Installing minimal CLI dependencies..."
 	uv pip install \
+		"aiohttp==3.13.3" \
 		"bubus==1.5.6" \
 		"cdp-use==1.4.5" \
 		"httpx==0.28.1" \
