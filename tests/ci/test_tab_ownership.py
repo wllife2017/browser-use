@@ -285,46 +285,41 @@ def test_two_agents_lock_different_tabs():
 # ---------------------------------------------------------------------------
 
 
+def _run_register(tmp_path) -> int:
+	"""Run the real `browser-use register` command and return the assigned index."""
+	import os
+	import subprocess
+	import sys
+
+	env = {**os.environ, 'BROWSER_USE_HOME': str(tmp_path)}
+	result = subprocess.run(
+		[sys.executable, '-m', 'browser_use.skill_cli.main', 'register'],
+		capture_output=True,
+		text=True,
+		env=env,
+		timeout=10,
+	)
+	assert result.returncode == 0, f'register failed: {result.stderr}'
+	return int(result.stdout.strip())
+
+
 def test_register_assigns_sequential_indices(tmp_path):
 	"""Test that register assigns 1, 2, 3 etc."""
-	agents_file = tmp_path / 'agents.json'
-
-	# First register
-	agents = {}
-	now = time.time()
-	next_idx = 1
-	while str(next_idx) in agents:
-		next_idx += 1
-	agents[str(next_idx)] = {'last_active': now}
-	agents_file.write_text(json.dumps(agents))
-	assert next_idx == 1
-
-	# Second register
-	agents = json.loads(agents_file.read_text())
-	next_idx = 1
-	while str(next_idx) in agents:
-		next_idx += 1
-	agents[str(next_idx)] = {'last_active': now}
-	agents_file.write_text(json.dumps(agents))
-	assert next_idx == 2
+	assert _run_register(tmp_path) == 1
+	assert _run_register(tmp_path) == 2
+	assert _run_register(tmp_path) == 3
 
 
 def test_register_reclaims_expired_indices(tmp_path):
 	"""Test that expired indices get reclaimed."""
 	agents_file = tmp_path / 'agents.json'
 	now = time.time()
+	# Pre-populate: index 1 expired, index 2 active
 	agents = {
-		'1': {'last_active': now - AGENT_EXPIRY_SECONDS - 1},  # expired
-		'2': {'last_active': now},  # active
+		'1': {'last_active': now - AGENT_EXPIRY_SECONDS - 1},
+		'2': {'last_active': now},
 	}
 	agents_file.write_text(json.dumps(agents))
 
-	# Clean expired and find next
-	agents = json.loads(agents_file.read_text())
-	agents = {k: v for k, v in agents.items() if now - v.get('last_active', 0) < AGENT_EXPIRY_SECONDS}
-	next_idx = 1
-	while str(next_idx) in agents:
-		next_idx += 1
-
-	# Should reclaim index 1
-	assert next_idx == 1
+	# Should reclaim expired index 1
+	assert _run_register(tmp_path) == 1
