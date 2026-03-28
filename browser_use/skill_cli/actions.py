@@ -69,9 +69,14 @@ class ActionHandler:
 		return await self._watchdog.on_TypeTextEvent(event)
 
 	async def scroll(self, direction: str, amount: int) -> None:
-		"""Scroll the page."""
-		event = ScrollEvent(direction=direction, amount=amount)  # type: ignore[arg-type]
-		await self._watchdog.on_ScrollEvent(event)
+		"""Scroll the page using JS (CDP gesture doesn't work in --connect mode)."""
+		pixels = amount if direction == 'down' else -amount
+		cdp_session = await self.bs.get_or_create_cdp_session()
+		assert cdp_session is not None, 'No CDP session for scroll'
+		await cdp_session.cdp_client.send.Runtime.evaluate(
+			params={'expression': f'window.scrollBy(0, {pixels})', 'awaitPromise': False},
+			session_id=cdp_session.session_id,
+		)
 
 	async def go_back(self) -> None:
 		"""Go back in history."""
