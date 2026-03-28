@@ -63,6 +63,7 @@ class Daemon:
 		self._agent_cleanup_task: asyncio.Task | None = None
 		self._tab_ownership: TabOwnershipManager | None = None
 		self._session_lock = asyncio.Lock()
+		self._dispatch_lock = asyncio.Lock()
 		self._last_command_time: float = 0.0
 		self._idle_timeout: float = 30 * 60.0  # 30 minutes
 		self._idle_watchdog_task: asyncio.Task | None = None
@@ -346,31 +347,42 @@ class Daemon:
 					if ctx.focused_target_id:
 						self._tab_ownership.lock_tab(agent_id, ctx.focused_target_id)
 
-				# Swap focus and selector map to caller's tab
-				saved_focus = bs.agent_focus_target_id
-				saved_selector_map = bs._cached_selector_map
-				bs.agent_focus_target_id = ctx.focused_target_id
-				bs._cached_selector_map = ctx.cached_selector_map
+				# Serialize focus swap + command execution so concurrent agents
+				# don't corrupt each other's focus state on the shared BrowserSession.
+				async with self._dispatch_lock:
+					# Swap focus and selector map to caller's tab
+					saved_focus = bs.agent_focus_target_id
+					saved_selector_map = bs._cached_selector_map
+					bs.agent_focus_target_id = ctx.focused_target_id
+					bs._cached_selector_map = ctx.cached_selector_map
 
-			# Dispatch to handler
-			try:
+					# Dispatch to handler
+					try:
+						if action in browser.COMMANDS:
+							result = await browser.handle(action, session, params)
+						elif action == 'python':
+							result = await python_exec.handle(session, params)
+						else:
+							return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
+					finally:
+						# Save caller's updated focus/selector map and restore previous
+						new_focus = bs.agent_focus_target_id
+						ctx.focused_target_id = new_focus
+						ctx.cached_selector_map = bs._cached_selector_map
+						bs.agent_focus_target_id = saved_focus
+						bs._cached_selector_map = saved_selector_map
+						# If focus changed (e.g. tab new), lock the new tab
+						if new_focus and new_focus != saved_focus:
+							self._tab_ownership.lock_tab(agent_id, new_focus)
+
+			else:
+				# No tab ownership — single agent mode, no lock needed
 				if action in browser.COMMANDS:
 					result = await browser.handle(action, session, params)
 				elif action == 'python':
 					result = await python_exec.handle(session, params)
 				else:
 					return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
-			finally:
-				# Save caller's updated focus/selector map and restore previous
-				if self._tab_ownership:
-					new_focus = bs.agent_focus_target_id
-					ctx.focused_target_id = new_focus
-					ctx.cached_selector_map = bs._cached_selector_map
-					bs.agent_focus_target_id = saved_focus  # type: ignore[possibly-undefined]
-					bs._cached_selector_map = saved_selector_map  # type: ignore[possibly-undefined]
-					# If focus changed (e.g. tab new), lock the new tab
-					if new_focus and new_focus != saved_focus:  # type: ignore[possibly-undefined]
-						self._tab_ownership.lock_tab(agent_id, new_focus)
 
 			return {'id': req_id, 'success': True, 'data': result}
 
