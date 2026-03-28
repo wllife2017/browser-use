@@ -69,14 +69,18 @@ def _write_config(data: dict) -> None:
 		pass
 
 
-def _get_api_key() -> str:
-	"""Return API key from env var or config file. Exits with error if missing."""
+def _get_api_key_or_none() -> str | None:
+	"""Return API key from env var or CLI config file, or None if not found."""
 	key = os.environ.get('BROWSER_USE_API_KEY')
 	if key:
 		return key
-
 	config = _read_config()
-	key = config.get('api_key')
+	return config.get('api_key')
+
+
+def _get_api_key() -> str:
+	"""Return API key from env var or config file. Exits with error if missing."""
+	key = _get_api_key_or_none()
 	if key:
 		return key
 

@@ -307,6 +307,16 @@ def ensure_daemon(
 	# Set up environment
 	env = os.environ.copy()
 
+	# For cloud mode, ensure the daemon has the API key from CLI config (~/.browser-use/config.json).
+	# CloudBrowserClient checks BROWSER_USE_API_KEY env var first, so injecting it here
+	# prevents the library from falling back to ~/.config/browseruse/cloud_auth.json.
+	if use_cloud and 'BROWSER_USE_API_KEY' not in env:
+		from browser_use.skill_cli.commands.cloud import _get_api_key_or_none
+
+		cli_api_key = _get_api_key_or_none()
+		if cli_api_key:
+			env['BROWSER_USE_API_KEY'] = cli_api_key
+
 	# Start daemon as background process
 	if sys.platform == 'win32':
 		subprocess.Popen(
