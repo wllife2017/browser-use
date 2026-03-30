@@ -801,6 +801,12 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 
 		sessions.append(entry)
 
+	# Sweep orphaned sockets that have no corresponding live PID file
+	live_names = {s['name'] for s in sessions}
+	for sock_file in home_dir.glob('*.sock'):
+		if sock_file.stem not in live_names:
+			sock_file.unlink(missing_ok=True)
+
 	if args.json:
 		print(json.dumps({'sessions': sessions}))
 	else:
