@@ -742,13 +742,6 @@ Setup:
 	p = tab_sub.add_parser('close', help='Close tab(s)')
 	p.add_argument('tabs', type=int, nargs='*', help='Tab indices to close (current if none)')
 
-	# Backward compat aliases
-	p = subparsers.add_parser('switch', help='Switch to tab (alias for tab switch)')
-	p.add_argument('tab', type=int, help='Tab index')
-
-	p = subparsers.add_parser('close-tab', help='Close tab (alias for tab close)')
-	p.add_argument('tab', type=int, nargs='?', help='Tab index (current if not specified)')
-
 	# keys <keys>
 	p = subparsers.add_parser('keys', help='Send keyboard keys')
 	p.add_argument('keys', help='Keys to send (e.g., "Enter", "Control+a")')

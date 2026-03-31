@@ -19,8 +19,6 @@ COMMANDS = {
 	'back',
 	'screenshot',
 	'state',
-	'switch',
-	'close-tab',
 	'tab',
 	'keys',
 	'select',
@@ -177,42 +175,6 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 			bs._closed_popup_messages.clear()
 
 		return {'_raw_text': state_text}
-
-	elif action == 'switch':
-		# Backward compat alias — just update internal focus, no visual activation
-		if '_resolved_target_id' in params:
-			target_id = params['_resolved_target_id']
-		else:
-			tab_index = params['tab']
-			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-			if tab_index < 0 or tab_index >= len(page_targets):
-				return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
-			target_id = page_targets[tab_index].target_id
-		bs.agent_focus_target_id = target_id
-		return {'switched': params.get('tab', 0)}
-
-	elif action == 'close-tab':
-		# Backward compat alias — close via direct CDP
-		if '_resolved_target_id' in params:
-			target_id = params['_resolved_target_id']
-		else:
-			tab_index = params.get('tab')
-			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-			if tab_index is not None:
-				if tab_index < 0 or tab_index >= len(page_targets):
-					return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
-				target_id = page_targets[tab_index].target_id
-			else:
-				# Use caller's logical focus, not Chrome's global focus
-				target_id = bs.agent_focus_target_id
-				if not target_id:
-					target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
-				if not target_id:
-					return {'error': 'No focused tab to close'}
-		cdp_session = await bs.get_or_create_cdp_session(target_id=None, focus=False)
-		if cdp_session:
-			await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': target_id})
-		return {'closed': params.get('tab')}
 
 	elif action == 'tab':
 		tab_command = params.get('tab_command')

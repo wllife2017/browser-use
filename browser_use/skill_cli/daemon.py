@@ -336,36 +336,8 @@ class Daemon:
 			if self._tab_ownership:
 				ctx = await self._tab_ownership.ensure_caller_has_tab(agent_id)
 
-				# Pre-resolve tab indices for switch/close-tab (global indices)
-				if action == 'switch' and 'tab' in params:
-					resolved = self._tab_ownership.resolve_tab_index(params['tab'])
-					if resolved is None:
-						all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-						return {
-							'id': req_id,
-							'success': False,
-							'error': f'Invalid tab index {params["tab"]}. {len(all_targets)} tab(s) available (indices 0-{len(all_targets) - 1}).',
-						}
-					# Check lock before switching
-					lock_err = self._tab_ownership.check_lock(agent_id, resolved)
-					if lock_err:
-						return {'id': req_id, 'success': False, 'error': lock_err}
-					params['_resolved_target_id'] = resolved
-					# Update caller's focus to the switched tab
-					ctx.focused_target_id = resolved
-				elif action == 'close-tab' and params.get('tab') is not None:
-					resolved = self._tab_ownership.resolve_tab_index(params['tab'])
-					if resolved is None:
-						all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-						return {
-							'id': req_id,
-							'success': False,
-							'error': f'Invalid tab index {params["tab"]}. {len(all_targets)} tab(s) available (indices 0-{len(all_targets) - 1}).',
-						}
-					params['_resolved_target_id'] = resolved
-
 				# Handle tab subcommands
-				elif action == 'tab':
+				if action == 'tab':
 					tab_cmd = params.get('tab_command')
 					if tab_cmd == 'list':
 						tab_list = self._tab_ownership.get_tab_list(agent_id)
