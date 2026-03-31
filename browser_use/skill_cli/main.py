@@ -432,6 +432,8 @@ def ensure_daemon(
 	explicit_config: bool = False,
 	use_cloud: bool = False,
 	cloud_profile_id: str | None = None,
+	cloud_proxy_country_code: str | None = None,
+	cloud_timeout: int | None = None,
 ) -> None:
 	"""Start daemon if not running. Uses state file for phase-aware decisions."""
 	probe = _probe_session(session)
@@ -520,6 +522,10 @@ def ensure_daemon(
 		cmd.append('--use-cloud')
 	if cloud_profile_id is not None:
 		cmd.extend(['--cloud-profile-id', cloud_profile_id])
+	if cloud_proxy_country_code is not None:
+		cmd.extend(['--cloud-proxy-country', cloud_proxy_country_code])
+	if cloud_timeout is not None:
+		cmd.extend(['--cloud-timeout', str(cloud_timeout)])
 
 	# Set up environment
 	env = os.environ.copy()
@@ -533,6 +539,7 @@ def ensure_daemon(
 		cli_api_key = _get_api_key_or_none()
 		if cli_api_key:
 			env['BROWSER_USE_API_KEY'] = cli_api_key
+
 
 	# Start daemon as background process
 	if sys.platform == 'win32':
@@ -918,8 +925,8 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 		print('Error: --profile and cloud connect are mutually exclusive', file=sys.stderr)
 		return 1
 
-	# Auto-manage cloud profile (creates on first use, validates on reuse)
-	from browser_use.skill_cli.commands.cloud import _ensure_cloud_profile
+	# Auto-manage cloud profile and read config-driven settings
+	from browser_use.skill_cli.commands.cloud import _ensure_cloud_profile, _get_cloud_connect_proxy, _get_cloud_connect_timeout
 
 	cloud_profile_id = _ensure_cloud_profile()
 
@@ -931,6 +938,8 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 		explicit_config=True,
 		use_cloud=True,
 		cloud_profile_id=cloud_profile_id,
+		cloud_proxy_country_code=_get_cloud_connect_proxy(),
+		cloud_timeout=_get_cloud_connect_timeout(),
 	)
 
 	# Send connect command to force immediate session creation

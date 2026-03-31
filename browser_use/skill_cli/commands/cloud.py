@@ -130,6 +130,17 @@ def _ensure_cloud_profile() -> str:
 	return new_id
 
 
+def _get_cloud_connect_proxy() -> str | None:
+	"""Return the cloud connect proxy country code from config, or None."""
+	return _read_config().get('cloud_connect_proxy')
+
+
+def _get_cloud_connect_timeout() -> int | None:
+	"""Return the cloud connect timeout (minutes) from config, or None."""
+	val = _read_config().get('cloud_connect_timeout')
+	return int(val) if val is not None else None
+
+
 def _save_api_key(key: str) -> None:
 	config = _read_config()
 	config['api_key'] = key

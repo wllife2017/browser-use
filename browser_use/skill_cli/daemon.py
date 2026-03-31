@@ -39,6 +39,8 @@ class Daemon:
 		cdp_url: str | None = None,
 		use_cloud: bool = False,
 		cloud_profile_id: str | None = None,
+		cloud_proxy_country_code: str | None = None,
+		cloud_timeout: int | None = None,
 		session: str = 'default',
 	) -> None:
 		from browser_use.skill_cli.utils import validate_session_name
@@ -50,6 +52,8 @@ class Daemon:
 		self.cdp_url = cdp_url
 		self.use_cloud = use_cloud
 		self.cloud_profile_id = cloud_profile_id
+		self.cloud_proxy_country_code = cloud_proxy_country_code
+		self.cloud_timeout = cloud_timeout
 		self.running = True
 		self._server: asyncio.Server | None = None
 		self._shutdown_event = asyncio.Event()
@@ -124,6 +128,8 @@ class Daemon:
 				self.cdp_url,
 				use_cloud=self.use_cloud,
 				cloud_profile_id=self.cloud_profile_id,
+				cloud_proxy_country_code=self.cloud_proxy_country_code,
+				cloud_timeout=self.cloud_timeout,
 			)
 
 			try:
@@ -559,6 +565,8 @@ def main() -> None:
 	parser.add_argument('--cdp-url', help='CDP URL to connect to')
 	parser.add_argument('--use-cloud', action='store_true', help='Use cloud browser')
 	parser.add_argument('--cloud-profile-id', help='Cloud browser profile ID')
+	parser.add_argument('--cloud-proxy-country', help='Cloud browser proxy country code')
+	parser.add_argument('--cloud-timeout', type=int, help='Cloud browser timeout in minutes')
 	args = parser.parse_args()
 
 	logger.info(
@@ -571,6 +579,8 @@ def main() -> None:
 		cdp_url=args.cdp_url,
 		use_cloud=args.use_cloud,
 		cloud_profile_id=args.cloud_profile_id,
+		cloud_proxy_country_code=args.cloud_proxy_country,
+		cloud_timeout=args.cloud_timeout,
 		session=args.session,
 	)
 

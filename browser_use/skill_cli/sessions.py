@@ -35,6 +35,8 @@ async def create_browser_session(
 	cdp_url: str | None = None,
 	use_cloud: bool = False,
 	cloud_profile_id: str | None = None,
+	cloud_proxy_country_code: str | None = None,
+	cloud_timeout: int | None = None,
 ) -> CLIBrowserSession:
 	"""Create BrowserSession based on connection mode.
 
@@ -50,6 +52,10 @@ async def create_browser_session(
 		kwargs: dict = {'use_cloud': True}
 		if cloud_profile_id is not None:
 			kwargs['cloud_profile_id'] = cloud_profile_id
+		if cloud_proxy_country_code is not None:
+			kwargs['cloud_proxy_country_code'] = cloud_proxy_country_code
+		if cloud_timeout is not None:
+			kwargs['cloud_timeout'] = cloud_timeout
 		return CLIBrowserSession(**kwargs)  # type: ignore[call-arg]
 
 	if profile is None:
