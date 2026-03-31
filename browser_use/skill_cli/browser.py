@@ -116,11 +116,18 @@ class CLIBrowserSession(BrowserSession):
 		logger.info(f'Cloud browser provisioned, CDP: {cloud_response.cdpUrl}')
 
 	async def stop(self) -> None:
-		"""Close the websocket without the BrowserStopEvent chain.
+		"""Disconnect from the browser.
 
-		Chrome/cloud browser stays alive, we just disconnect.
+		For --connect/--cdp-url: just close the websocket (we don't own the browser).
+		For cloud: stop the remote browser via API before disconnecting.
 		"""
 		self._intentional_stop = True
+		# Stop cloud browser if we provisioned one
+		if self.browser_profile.use_cloud and self._cloud_browser_client.current_session_id:
+			try:
+				await self._cloud_browser_client.stop_browser()
+			except Exception as e:
+				logger.debug(f'Error stopping cloud browser: {e}')
 		if self._cdp_client_root:
 			try:
 				await self._cdp_client_root.stop()

@@ -67,6 +67,42 @@ class Daemon:
 		self._last_command_time: float = 0.0
 		self._idle_timeout: float = 30 * 60.0  # 30 minutes
 		self._idle_watchdog_task: asyncio.Task | None = None
+		self._is_shutting_down: bool = False
+
+	def _write_state(self, phase: str) -> None:
+		"""Atomically write session state file for CLI observability."""
+		import time
+
+		from browser_use.skill_cli.utils import get_home_dir
+
+		state = {
+			'phase': phase,
+			'pid': os.getpid(),
+			'updated_at': time.time(),
+			'config': {
+				'headed': self.headed,
+				'profile': self.profile,
+				'cdp_url': self.cdp_url,
+				'use_cloud': self.use_cloud,
+			},
+		}
+		state_path = get_home_dir() / f'{self.session}.state.json'
+		tmp_path = state_path.with_suffix('.state.json.tmp')
+		try:
+			with open(tmp_path, 'w') as f:
+				json.dump(state, f)
+				f.flush()
+				os.fsync(f.fileno())
+			os.replace(tmp_path, state_path)
+		except OSError as e:
+			logger.debug(f'Failed to write state file: {e}')
+
+	def _request_shutdown(self) -> None:
+		"""Request shutdown exactly once. Safe from any context."""
+		if self._is_shutting_down:
+			return
+		self._is_shutting_down = True
+		self._shutdown_task = asyncio.create_task(self._shutdown())
 
 	async def _get_or_create_session(self) -> SessionInfo:
 		"""Lazy-create the single session on first command."""
@@ -84,6 +120,8 @@ class Daemon:
 				f'Creating session (headed={self.headed}, profile={self.profile}, cdp_url={self.cdp_url}, use_cloud={self.use_cloud})'
 			)
 
+			self._write_state('starting')
+
 			bs = await create_browser_session(
 				self.headed,
 				self.profile,
@@ -93,48 +131,67 @@ class Daemon:
 				cloud_proxy_country_code=self.cloud_proxy_country_code,
 				cloud_profile_id=self.cloud_profile_id,
 			)
-			await bs.start()
 
-			# Wait for Chrome to stabilize after CDP setup before accepting commands
 			try:
-				await bs.get_browser_state_summary()
+				await bs.start()
+				self._write_state('starting')  # refresh updated_at after bs.start() returns
+
+				# Wait for Chrome to stabilize after CDP setup before accepting commands
+				try:
+					await bs.get_browser_state_summary()
+				except Exception:
+					pass
+
+				# Create action handler for direct command execution (no event bus)
+				from browser_use.skill_cli.actions import ActionHandler
+
+				actions = ActionHandler(bs)
+
+				self._session = SessionInfo(
+					name=self.session,
+					headed=self.headed,
+					profile=self.profile,
+					cdp_url=self.cdp_url,
+					browser_session=bs,
+					actions=actions,
+					use_cloud=self.use_cloud,
+				)
+				self._browser_watchdog_task = asyncio.create_task(self._watch_browser())
+
+				# Initialize tab ownership for multi-agent isolation
+				from browser_use.skill_cli.tab_ownership import TabOwnershipManager
+				from browser_use.skill_cli.utils import get_home_dir
+
+				self._tab_ownership = TabOwnershipManager(bs)
+				self._tab_ownership.set_agents_file(get_home_dir() / 'agents.json')
+
+				# Register initial tabs with tab ownership (no event bus)
+				if bs.session_manager:
+					for target in bs.session_manager.get_all_page_targets():
+						self._tab_ownership.on_tab_created(target.target_id)
+
+				# Start periodic agent cleanup
+				self._agent_cleanup_task = asyncio.create_task(self._cleanup_stale_agents())
+
+				# Start idle timeout watchdog
+				self._idle_watchdog_task = asyncio.create_task(self._watch_idle())
+
 			except Exception:
-				pass
+				# Startup failed — rollback browser resources
+				logger.exception('Session startup failed, rolling back')
+				self._write_state('failed')
+				try:
+					if self.use_cloud and hasattr(bs, '_cloud_browser_client') and bs._cloud_browser_client.current_session_id:
+						await asyncio.wait_for(bs._cloud_browser_client.stop_browser(), timeout=10.0)
+					elif not self.cdp_url and not self.use_cloud:
+						await asyncio.wait_for(bs.kill(), timeout=10.0)
+					else:
+						await asyncio.wait_for(bs.stop(), timeout=10.0)
+				except Exception as cleanup_err:
+					logger.debug(f'Rollback cleanup error: {cleanup_err}')
+				raise
 
-			# Create action handler for direct command execution (no event bus)
-			from browser_use.skill_cli.actions import ActionHandler
-
-			actions = ActionHandler(bs)
-
-			self._session = SessionInfo(
-				name=self.session,
-				headed=self.headed,
-				profile=self.profile,
-				cdp_url=self.cdp_url,
-				browser_session=bs,
-				actions=actions,
-				use_cloud=self.use_cloud,
-			)
-			self._browser_watchdog_task = asyncio.create_task(self._watch_browser())
-
-			# Initialize tab ownership for multi-agent isolation
-			from browser_use.skill_cli.tab_ownership import TabOwnershipManager
-			from browser_use.skill_cli.utils import get_home_dir
-
-			self._tab_ownership = TabOwnershipManager(bs)
-			self._tab_ownership.set_agents_file(get_home_dir() / 'agents.json')
-
-			# Register initial tabs with tab ownership (no event bus)
-			if bs.session_manager:
-				for target in bs.session_manager.get_all_page_targets():
-					self._tab_ownership.on_tab_created(target.target_id)
-
-			# Start periodic agent cleanup
-			self._agent_cleanup_task = asyncio.create_task(self._cleanup_stale_agents())
-
-			# Start idle timeout watchdog
-			self._idle_watchdog_task = asyncio.create_task(self._watch_idle())
-
+			self._write_state('running')
 			return self._session
 
 	async def _watch_browser(self) -> None:
@@ -153,8 +210,7 @@ class Daemon:
 				continue
 			if not bs.is_cdp_connected:
 				logger.info('Browser disconnected, shutting down daemon')
-				if not self._shutdown_task or self._shutdown_task.done():
-					self._shutdown_task = asyncio.create_task(self.shutdown())
+				self._request_shutdown()
 				return
 
 	async def _watch_idle(self) -> None:
@@ -167,7 +223,7 @@ class Daemon:
 				idle = time.monotonic() - self._last_command_time
 				if idle >= self._idle_timeout:
 					logger.info(f'Daemon idle for {idle:.0f}s, shutting down')
-					await self.shutdown()
+					self._request_shutdown()
 					return
 
 	async def _cleanup_stale_agents(self) -> None:
@@ -205,7 +261,7 @@ class Daemon:
 			await writer.drain()
 
 			if request.get('action') == 'shutdown':
-				await self.shutdown()
+				self._request_shutdown()
 
 		except TimeoutError:
 			logger.debug('Connection timeout')
@@ -242,6 +298,7 @@ class Daemon:
 					'success': True,
 					'data': {
 						'session': self.session,
+						'pid': os.getpid(),
 						'headed': self.headed,
 						'profile': self.profile,
 						'cdp_url': self.cdp_url,
@@ -401,12 +458,13 @@ class Daemon:
 		"""
 		from browser_use.skill_cli.utils import get_pid_path, get_socket_path
 
+		self._write_state('initializing')
+
 		# Setup signal handlers
 		loop = asyncio.get_running_loop()
 
 		def signal_handler():
-			if not self._shutdown_task or self._shutdown_task.done():
-				self._shutdown_task = asyncio.create_task(self.shutdown())
+			self._request_shutdown()
 
 		for sig in (signal.SIGINT, signal.SIGTERM):
 			try:
@@ -447,6 +505,7 @@ class Daemon:
 		# Write PID file after server is bound
 		my_pid = str(os.getpid())
 		pid_path.write_text(my_pid)
+		self._write_state('ready')
 
 		try:
 			async with self._server:
@@ -465,14 +524,15 @@ class Daemon:
 				pass
 			logger.info('Daemon stopped')
 
-	async def shutdown(self) -> None:
-		"""Graceful shutdown.
+	async def _shutdown(self) -> None:
+		"""Graceful shutdown. Only called via _request_shutdown().
 
 		Order matters: close the server first to release the socket/port
 		immediately, so a replacement daemon can bind without waiting for
 		browser cleanup. Then kill the browser session.
 		"""
 		logger.info('Shutting down daemon...')
+		self._write_state('shutting_down')
 		self.running = False
 		self._shutdown_event.set()
 
@@ -515,6 +575,8 @@ class Daemon:
 				pid_path.unlink(missing_ok=True)
 		except (OSError, ValueError):
 			pass
+
+		self._write_state('stopped')
 
 		# Force exit — the asyncio server's __aexit__ hangs waiting for the
 		# handle_connection() call that triggered this shutdown to return.
@@ -559,6 +621,12 @@ def main() -> None:
 		logger.exception(f'Daemon error: {e}')
 		exit_code = 1
 	finally:
+		# Write failed state if we crashed without a clean shutdown
+		if not daemon._is_shutting_down:
+			try:
+				daemon._write_state('failed')
+			except Exception:
+				pass
 		# asyncio.run() may hang trying to cancel lingering tasks
 		# Force-exit to prevent the daemon from becoming an orphan
 		logger.info('Daemon process exiting')
