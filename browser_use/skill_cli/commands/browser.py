@@ -203,7 +203,10 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 					return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
 				target_id = page_targets[tab_index].target_id
 			else:
-				target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
+				# Use caller's logical focus, not Chrome's global focus
+				target_id = bs.agent_focus_target_id
+				if not target_id:
+					target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
 				if not target_id:
 					return {'error': 'No focused tab to close'}
 		cdp_session = await bs.get_or_create_cdp_session(target_id=None, focus=False)
@@ -256,7 +259,10 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 					await cdp_session.cdp_client.send.Target.closeTarget(params={'targetId': tid})
 
 			if not tab_indices:
-				target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
+				# Use caller's logical focus, not Chrome's global focus
+				target_id = bs.agent_focus_target_id
+				if not target_id:
+					target_id = bs.session_manager.get_focused_target().target_id if bs.session_manager else None
 				if not target_id:
 					return {'error': 'No focused tab to close'}
 				await _close_target(target_id)

@@ -558,11 +558,20 @@ def ensure_daemon(
 			stderr=subprocess.DEVNULL,
 		)
 
-	# Wait for daemon to be ready
-	for _ in range(100):  # 5 seconds max
-		if _is_daemon_alive(session):
+	# Wait for daemon to be ready — use state file for phase-aware waiting
+	deadline = time.time() + 15
+	while time.time() < deadline:
+		probe = _probe_session(session)
+		if probe.socket_reachable:
 			return
-		time.sleep(0.05)
+		# Daemon wrote state and PID is alive — still booting, keep waiting
+		if probe.pid_alive and probe.phase in ('initializing', 'ready', 'starting', 'running'):
+			time.sleep(0.2)
+			continue
+		# Daemon wrote terminal state — startup failed
+		if probe.phase in ('failed', 'stopped'):
+			break
+		time.sleep(0.2)
 
 	print('Error: Failed to start daemon', file=sys.stderr)
 	sys.exit(1)
