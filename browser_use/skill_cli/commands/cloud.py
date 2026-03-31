@@ -28,14 +28,23 @@ _DEFAULT_BASE_URL = 'https://api.browser-use.com/api'
 _AUTH_HEADER = 'X-Browser-Use-API-Key'
 
 
+def _get_base() -> str:
+	return os.environ.get('BROWSER_USE_CLOUD_BASE_URL', _DEFAULT_BASE_URL).rstrip('/')
+
+
 def _base_url(version: str) -> str:
-	env_key = f'BROWSER_USE_CLOUD_BASE_URL_{version.upper()}'
-	return os.environ.get(env_key, f'{_DEFAULT_BASE_URL}/{version}')
+	# Per-version override takes precedence (used by tests), then base override, then default
+	per_version = os.environ.get(f'BROWSER_USE_CLOUD_BASE_URL_{version.upper()}')
+	if per_version:
+		return per_version
+	return f'{_get_base()}/{version}'
 
 
 def _spec_url(version: str) -> str:
-	env_key = f'BROWSER_USE_OPENAPI_SPEC_URL_{version.upper()}'
-	return os.environ.get(env_key, f'{_DEFAULT_BASE_URL}/{version}/openapi.json')
+	per_version = os.environ.get(f'BROWSER_USE_OPENAPI_SPEC_URL_{version.upper()}')
+	if per_version:
+		return per_version
+	return f'{_get_base()}/{version}/openapi.json'
 
 
 # ---------------------------------------------------------------------------
