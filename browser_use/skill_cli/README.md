@@ -145,9 +145,10 @@ browser-use --cdp-url ws://localhost:9222/devtools/browser/... state
 ### Tabs
 | Command | Description |
 |---------|-------------|
-| `switch <tab>` | Switch to tab by index |
-| `close-tab` | Close current tab |
-| `close-tab <tab>` | Close specific tab |
+| `tab list` | List all tabs |
+| `tab new [url]` | Open new tab |
+| `tab switch <index>` | Switch to tab by index |
+| `tab close [index...]` | Close tab(s) (current if no index) |
 
 ### Cookies
 | Command | Description |
@@ -383,6 +384,7 @@ All CLI-managed files live under `~/.browser-use/` (override with `BROWSER_USE_H
 ├── tunnels/
 │   ├── {port}.json      # Tunnel metadata
 │   └── {port}.log       # Tunnel logs
+├── default.state.json   # Daemon lifecycle state (phase, PID, config)
 ├── default.sock         # Daemon socket (ephemeral)
 ├── default.pid          # Daemon PID (ephemeral)
 └── cli.log              # Daemon log
