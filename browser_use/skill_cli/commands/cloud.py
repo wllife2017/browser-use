@@ -130,9 +130,15 @@ def _ensure_cloud_profile() -> str:
 	return new_id
 
 
+_VALID_PROXY_CODES = {'us', 'uk', 'fr', 'it', 'jp', 'au', 'de', 'fi', 'ca', 'in'}
+
+
 def _get_cloud_connect_proxy() -> str | None:
-	"""Return the cloud connect proxy country code from config, or None."""
-	return _read_config().get('cloud_connect_proxy')
+	"""Return the cloud connect proxy country code. Defaults to 'us'."""
+	val = _read_config().get('cloud_connect_proxy', 'us')
+	if isinstance(val, str) and val.lower() in _VALID_PROXY_CODES:
+		return val.lower()
+	return None
 
 
 def _get_cloud_connect_timeout() -> int | None:
