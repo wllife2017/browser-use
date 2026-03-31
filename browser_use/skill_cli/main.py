@@ -11,6 +11,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -1070,10 +1071,27 @@ def main() -> int:
 			except Exception:
 				print('Browser closed')
 		else:
+			# Socket unreachable — check if a PID file references a live process
+			# (orphaned daemon that lost its socket). Kill it directly.
+			pid_path = Path(_get_home_dir()) / f'{session}.pid'
+			killed = False
+			if pid_path.exists():
+				try:
+					pid = int(pid_path.read_text().strip())
+					os.kill(pid, 0)  # Check alive
+					os.kill(pid, signal.SIGTERM)
+					killed = True
+				except (OSError, ProcessLookupError, ValueError):
+					pass
+				pid_path.unlink(missing_ok=True)
+
 			if args.json:
 				print(json.dumps({'success': True, 'data': {'shutdown': True}}))
 			else:
-				print('No active browser session')
+				if killed:
+					print('Browser closed')
+				else:
+					print('No active browser session')
 		return 0
 
 	# Resolve --connect to agent_id + CDP URL

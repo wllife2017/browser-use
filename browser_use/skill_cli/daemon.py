@@ -503,8 +503,8 @@ class Daemon:
 				logger.warning(f'Error closing session: {e}')
 			self._session = None
 
-		# Clean up PID file before exiting — the finally block in run() won't
-		# execute because os._exit() bypasses it.
+		# Delete PID file last, right before exit. If browser cleanup hangs above,
+		# the PID file still exists so `sessions` can discover the orphaned daemon.
 		import os
 
 		from browser_use.skill_cli.utils import get_pid_path
