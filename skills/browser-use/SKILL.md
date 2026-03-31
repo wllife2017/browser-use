@@ -110,6 +110,16 @@ browser-use close --all                   # Close all sessions
 
 The Python `browser` object provides: `browser.url`, `browser.title`, `browser.html`, `browser.goto(url)`, `browser.back()`, `browser.click(index)`, `browser.type(text)`, `browser.input(index, text)`, `browser.keys(keys)`, `browser.upload(index, path)`, `browser.screenshot(path)`, `browser.scroll(direction, amount)`, `browser.wait(seconds)`.
 
+### Raw CDP / Python session
+
+The CLI commands handle most browser interactions. Use `browser-use python` with raw CDP access when you need to:
+- Control which tab the user sees in Chrome (activate/focus a tab)
+- Manipulate page internals the CLI doesn't expose (network, DOM, device emulation)
+- Work with Chrome target IDs instead of element indices
+- Chain multiple async browser operations in one call
+
+Read `references/cdp-python.md` for the `browser._run()` pattern and copy-pasteable CDP recipes.
+
 ## Cloud API
 
 ```bash
