@@ -246,17 +246,27 @@ def _is_pid_alive(pid: int) -> bool:
 
 
 def _is_daemon_process(pid: int) -> bool:
-	"""Check if the process at PID is a browser-use daemon."""
+	"""Check if the process at PID is a browser-use daemon. Cross-platform."""
+	_marker = 'browser_use.skill_cli.daemon'
 	try:
 		if sys.platform == 'linux':
 			cmdline = Path(f'/proc/{pid}/cmdline').read_bytes().decode(errors='replace')
-			return 'browser_use.skill_cli.daemon' in cmdline
+			return _marker in cmdline
+		elif sys.platform == 'win32':
+			# Use wmic to get the command line on Windows
+			import subprocess as _sp
+
+			result = _sp.run(
+				['wmic', 'process', 'where', f'ProcessId={pid}', 'get', 'CommandLine', '/format:list'],
+				capture_output=True, text=True, timeout=5,
+			)
+			return _marker in result.stdout
 		else:
 			# macOS and other POSIX
 			import subprocess as _sp
 
 			result = _sp.run(['ps', '-p', str(pid), '-o', 'command='], capture_output=True, text=True, timeout=5)
-			return 'browser_use.skill_cli.daemon' in result.stdout
+			return _marker in result.stdout
 	except Exception:
 		return False
 
@@ -357,24 +367,11 @@ def _probe_session(session: str) -> _SessionProbe:
 		except (OSError, ValueError):
 			pass
 
-	# 3. Reconcile PIDs
-	if state_pid and _is_pid_alive(state_pid):
-		probe.pid = state_pid
-		probe.pid_alive = True
-	elif pid_file_pid and _is_pid_alive(pid_file_pid):
-		probe.pid = pid_file_pid
-		probe.pid_alive = True
-	else:
-		# Both dead or missing — use whichever we have for cleanup reference
-		probe.pid = state_pid or pid_file_pid
-		probe.pid_alive = False
-
-	# 4. Try socket connect + ping for PID
+	# 3. Try socket connect + ping for PID (before reconciliation)
 	try:
 		sock = _connect_to_daemon(timeout=0.5, session=session)
 		sock.close()
 		probe.socket_reachable = True
-		# Quick ping to get daemon PID
 		try:
 			resp = send_command('ping', {}, session=session)
 			if resp.get('success'):
@@ -383,6 +380,31 @@ def _probe_session(session: str) -> _SessionProbe:
 			pass
 	except OSError:
 		probe.socket_reachable = False
+
+	# 4. Reconcile PIDs
+	state_alive = bool(state_pid and _is_pid_alive(state_pid))
+	pidfile_alive = bool(pid_file_pid and _is_pid_alive(pid_file_pid))
+
+	if state_alive and pidfile_alive and state_pid != pid_file_pid:
+		# Split-brain: both PIDs alive but different.
+		# Use socket_pid to break the tie.
+		if probe.socket_pid == state_pid:
+			probe.pid = state_pid
+		elif probe.socket_pid == pid_file_pid:
+			probe.pid = pid_file_pid
+		else:
+			# Socket unreachable or answers with unknown PID — can't resolve
+			probe.pid = pid_file_pid  # .pid file is written later, so prefer it
+		probe.pid_alive = True
+	elif state_alive:
+		probe.pid = state_pid
+		probe.pid_alive = True
+	elif pidfile_alive:
+		probe.pid = pid_file_pid
+		probe.pid_alive = True
+	else:
+		probe.pid = state_pid or pid_file_pid
+		probe.pid_alive = False
 
 	return probe
 
@@ -413,10 +435,13 @@ def ensure_daemon(
 	cloud_proxy_country_code: str | None = None,
 	cloud_profile_id: str | None = None,
 ) -> None:
-	"""Start daemon if not running. Errors on config mismatch."""
-	if _is_daemon_alive(session):
+	"""Start daemon if not running. Uses state file for phase-aware decisions."""
+	probe = _probe_session(session)
+
+	# Socket reachable — daemon is alive and responding
+	if probe.socket_reachable:
 		if not explicit_config:
-			return  # Daemon is alive, user didn't request specific config — reuse it
+			return  # Reuse it
 
 		# User explicitly set --headed/--profile/--cdp-url — check config matches
 		try:
@@ -441,6 +466,43 @@ def ensure_daemon(
 			return  # Ping returned failure — daemon alive but can't verify config, reuse it
 		except Exception:
 			return  # Daemon alive but not responsive — reuse it, can't safely restart
+
+	# Socket unreachable but process alive — phase-aware decisions
+	if probe.pid_alive and probe.phase:
+		now = time.time()
+		age = now - probe.updated_at if probe.updated_at else float('inf')
+
+		if probe.phase == 'initializing' and age < 15:
+			# Daemon is booting, wait for socket
+			for _ in range(30):
+				time.sleep(0.5)
+				if _is_daemon_alive(session):
+					return
+			# Still not reachable — fall through to error
+
+		elif probe.phase in ('starting', 'ready', 'running') and age < 60:
+			# Daemon is alive but socket broke, or starting browser
+			print(
+				f'Error: Session {session!r} is alive (phase={probe.phase}) but socket unreachable.\n'
+				f'Run `browser-use{" --session " + session if session != "default" else ""} close` first.',
+				file=sys.stderr,
+			)
+			sys.exit(1)
+
+		elif probe.phase == 'shutting_down' and age < 15:
+			# Daemon is shutting down, wait for it to finish
+			for _ in range(30):
+				time.sleep(0.5)
+				if not probe.pid or not _is_pid_alive(probe.pid):
+					break
+			# Fall through to spawn
+
+		# Stale phase — daemon stuck or crashed without terminal state
+		elif probe.pid and _is_daemon_process(probe.pid):
+			_terminate_pid(probe.pid)
+
+	# Clean up stale files before spawning
+	_clean_session_files(session)
 
 	# Build daemon command
 	cmd = [
@@ -922,10 +984,13 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 			_clean_session_files(name)
 			continue
 
-		# Terminal states with dead PID already handled above
+		# Terminal state + dead PID already handled above.
+		# If phase is terminal but PID is alive, the daemon restarted and
+		# the stale state file belongs to a previous instance — only clean
+		# the state file, not the PID/socket which the live daemon owns.
 		if probe.phase in ('stopped', 'failed'):
-			_clean_session_files(name)
-			continue
+			_get_state_path(name).unlink(missing_ok=True)
+			# Fall through to show the live session
 
 		entry: dict = {'name': name, 'pid': probe.pid or 0, 'phase': probe.phase or '?'}
 
@@ -972,28 +1037,34 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 
 
 def _close_session(session: str) -> bool:
-	"""Close a single session. Returns True if something was closed/killed."""
+	"""Close a single session. Returns True if something was closed/killed.
+
+	Only cleans up files after the daemon process is confirmed dead.
+	"""
 	probe = _probe_session(session)
 
 	if probe.socket_reachable:
 		try:
 			send_command('shutdown', {}, session=session)
-			# Poll for PID disappearance (up to 15s: 10s browser cleanup + margin)
-			if probe.pid:
-				for _ in range(150):
-					time.sleep(0.1)
-					if not _is_pid_alive(probe.pid):
-						break
-			_clean_session_files(session)
-			return True
 		except Exception:
+			pass  # Shutdown may have been accepted even if response failed
+		# Poll for PID disappearance (up to 15s: 10s browser cleanup + margin)
+		confirmed_dead = not probe.pid  # No PID to check = assume success
+		if probe.pid:
+			for _ in range(150):
+				time.sleep(0.1)
+				if not _is_pid_alive(probe.pid):
+					confirmed_dead = True
+					break
+		if confirmed_dead:
 			_clean_session_files(session)
-			return True
+		return True
 
 	if probe.pid_alive and probe.pid and _is_daemon_process(probe.pid):
-		_terminate_pid(probe.pid)
-		_clean_session_files(session)
-		return True
+		dead = _terminate_pid(probe.pid)
+		if dead:
+			_clean_session_files(session)
+		return dead
 
 	# Nothing alive — clean up stale files if any exist
 	if probe.pid or probe.phase:
