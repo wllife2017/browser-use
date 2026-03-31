@@ -90,6 +90,37 @@ def _get_api_key() -> str:
 	sys.exit(1)
 
 
+def _ensure_cloud_profile() -> str:
+	"""Return the default cloud connect profile ID, creating one if needed."""
+	config = _read_config()
+	profile_id = config.get('cloud_connect_profile_id')
+	api_key = _get_api_key()
+
+	# Validate existing profile
+	if profile_id:
+		status, _ = _http_request('GET', f'{_base_url("v2")}/profiles/{profile_id}', None, api_key)
+		if status == 200:
+			return profile_id
+		# Profile was deleted — fall through to create
+
+	# Create new profile
+	body = json.dumps({'name': 'Browser Use CLI'}).encode()
+	status, resp = _http_request('POST', f'{_base_url("v2")}/profiles', body, api_key)
+	if status >= 400:
+		print(f'Error creating cloud profile: HTTP {status}', file=sys.stderr)
+		_print_json(resp, file=sys.stderr)
+		sys.exit(1)
+
+	data = json.loads(resp)
+	new_id = data['id']
+
+	# Save to config
+	config['cloud_connect_profile_id'] = new_id
+	_write_config(config)
+
+	return new_id
+
+
 def _save_api_key(key: str) -> None:
 	config = _read_config()
 	config['api_key'] = key

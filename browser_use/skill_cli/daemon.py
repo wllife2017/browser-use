@@ -38,8 +38,6 @@ class Daemon:
 		profile: str | None,
 		cdp_url: str | None = None,
 		use_cloud: bool = False,
-		cloud_timeout: int | None = None,
-		cloud_proxy_country_code: str | None = None,
 		cloud_profile_id: str | None = None,
 		session: str = 'default',
 	) -> None:
@@ -51,8 +49,6 @@ class Daemon:
 		self.profile = profile
 		self.cdp_url = cdp_url
 		self.use_cloud = use_cloud
-		self.cloud_timeout = cloud_timeout
-		self.cloud_proxy_country_code = cloud_proxy_country_code
 		self.cloud_profile_id = cloud_profile_id
 		self.running = True
 		self._server: asyncio.Server | None = None
@@ -127,8 +123,6 @@ class Daemon:
 				self.profile,
 				self.cdp_url,
 				use_cloud=self.use_cloud,
-				cloud_timeout=self.cloud_timeout,
-				cloud_proxy_country_code=self.cloud_proxy_country_code,
 				cloud_profile_id=self.cloud_profile_id,
 			)
 
@@ -564,8 +558,6 @@ def main() -> None:
 	parser.add_argument('--profile', help='Chrome profile (triggers real Chrome mode)')
 	parser.add_argument('--cdp-url', help='CDP URL to connect to')
 	parser.add_argument('--use-cloud', action='store_true', help='Use cloud browser')
-	parser.add_argument('--cloud-timeout', type=int, help='Cloud browser timeout in seconds')
-	parser.add_argument('--cloud-proxy-country', help='Cloud browser proxy country code')
 	parser.add_argument('--cloud-profile-id', help='Cloud browser profile ID')
 	args = parser.parse_args()
 
@@ -578,8 +570,6 @@ def main() -> None:
 		profile=args.profile,
 		cdp_url=args.cdp_url,
 		use_cloud=args.use_cloud,
-		cloud_timeout=args.cloud_timeout,
-		cloud_proxy_country_code=args.cloud_proxy_country,
 		cloud_profile_id=args.cloud_profile_id,
 		session=args.session,
 	)

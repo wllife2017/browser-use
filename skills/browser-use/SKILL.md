@@ -123,8 +123,7 @@ Read `references/cdp-python.md` for the `browser._run()` pattern and copy-pastea
 ## Cloud API
 
 ```bash
-browser-use cloud connect                 # Provision cloud browser and connect
-browser-use cloud connect --timeout 120 --proxy-country US  # With options
+browser-use cloud connect                 # Provision cloud browser and connect (zero-config)
 browser-use cloud login <api-key>         # Save API key (or set BROWSER_USE_API_KEY)
 browser-use cloud logout                  # Remove API key
 browser-use cloud v2 GET /browsers        # REST passthrough (v2 or v3)
@@ -133,7 +132,7 @@ browser-use cloud v2 poll <task-id>       # Poll task until done
 browser-use cloud v2 --help               # Show API endpoints
 ```
 
-`cloud connect` provisions a cloud browser, connects via CDP, and prints a live URL. `browser-use close` disconnects AND stops the cloud browser.
+`cloud connect` provisions a cloud browser with a persistent profile (auto-created on first use), connects via CDP, and prints a live URL. `browser-use close` disconnects AND stops the cloud browser. For custom browser settings (proxy, timeout, specific profile), use `cloud v2 POST /browsers` directly with the desired parameters.
 
 ## Tunnels
 

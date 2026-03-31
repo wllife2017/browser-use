@@ -205,10 +205,7 @@ Generic REST passthrough to the Browser-Use Cloud API, plus cloud browser provis
 
 | Command | Description |
 |---------|-------------|
-| `cloud connect` | Provision cloud browser and connect |
-| `cloud connect --timeout 120` | Cloud browser with custom timeout |
-| `cloud connect --proxy-country US` | Cloud browser with proxy |
-| `cloud connect --profile-id <id>` | Cloud browser with profile |
+| `cloud connect` | Provision cloud browser and connect (zero-config, auto-manages profile) |
 | `cloud login <api-key>` | Save API key |
 | `cloud logout` | Remove API key |
 | `cloud v2 GET <path>` | GET request to API v2 |

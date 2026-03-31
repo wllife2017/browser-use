@@ -431,8 +431,6 @@ def ensure_daemon(
 	session: str = 'default',
 	explicit_config: bool = False,
 	use_cloud: bool = False,
-	cloud_timeout: int | None = None,
-	cloud_proxy_country_code: str | None = None,
 	cloud_profile_id: str | None = None,
 ) -> None:
 	"""Start daemon if not running. Uses state file for phase-aware decisions."""
@@ -520,10 +518,6 @@ def ensure_daemon(
 		cmd.extend(['--cdp-url', cdp_url])
 	if use_cloud:
 		cmd.append('--use-cloud')
-	if cloud_timeout is not None:
-		cmd.extend(['--cloud-timeout', str(cloud_timeout)])
-	if cloud_proxy_country_code is not None:
-		cmd.extend(['--cloud-proxy-country', cloud_proxy_country_code])
 	if cloud_profile_id is not None:
 		cmd.extend(['--cloud-profile-id', cloud_profile_id])
 
@@ -912,14 +906,7 @@ Setup:
 
 
 def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, session: str) -> int:
-	"""Handle `browser-use cloud connect` — provision cloud browser and connect."""
-	# Parse connect-specific args
-	connect_parser = argparse.ArgumentParser(prog='browser-use cloud connect', add_help=False)
-	connect_parser.add_argument('--timeout', type=int, default=None, help='Cloud browser timeout in seconds')
-	connect_parser.add_argument('--proxy-country', default=None, help='Cloud browser proxy country code')
-	connect_parser.add_argument('--profile-id', default=None, help='Cloud browser profile ID')
-	connect_args, _ = connect_parser.parse_known_args(cloud_args)
-
+	"""Handle `browser-use cloud connect` — zero-config cloud browser provisioning."""
 	# Mutual exclusivity checks
 	if getattr(args, 'connect', False):
 		print('Error: --connect and cloud connect are mutually exclusive', file=sys.stderr)
@@ -931,6 +918,11 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 		print('Error: --profile and cloud connect are mutually exclusive', file=sys.stderr)
 		return 1
 
+	# Auto-manage cloud profile (creates on first use, validates on reuse)
+	from browser_use.skill_cli.commands.cloud import _ensure_cloud_profile
+
+	cloud_profile_id = _ensure_cloud_profile()
+
 	# Start daemon with cloud config
 	ensure_daemon(
 		args.headed,
@@ -938,9 +930,7 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 		session=session,
 		explicit_config=True,
 		use_cloud=True,
-		cloud_timeout=connect_args.timeout,
-		cloud_proxy_country_code=connect_args.proxy_country,
-		cloud_profile_id=connect_args.profile_id,
+		cloud_profile_id=cloud_profile_id,
 	)
 
 	# Send connect command to force immediate session creation
