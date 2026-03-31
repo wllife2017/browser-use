@@ -227,18 +227,178 @@ def _connect_to_daemon(timeout: float = 60.0, session: str = 'default') -> socke
 	return sock
 
 
-def _is_daemon_alive(session: str = 'default') -> bool:
-	"""Check if daemon is alive by attempting socket connect."""
+def _is_pid_alive(pid: int) -> bool:
+	"""Check if a process with the given PID exists. Cross-platform."""
+	if sys.platform == 'win32':
+		import ctypes
+
+		_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+		handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+		if handle:
+			ctypes.windll.kernel32.CloseHandle(handle)
+			return True
+		return False
+	try:
+		os.kill(pid, 0)
+		return True
+	except (OSError, ProcessLookupError):
+		return False
+
+
+def _is_daemon_process(pid: int) -> bool:
+	"""Check if the process at PID is a browser-use daemon."""
+	try:
+		if sys.platform == 'linux':
+			cmdline = Path(f'/proc/{pid}/cmdline').read_bytes().decode(errors='replace')
+			return 'browser_use.skill_cli.daemon' in cmdline
+		else:
+			# macOS and other POSIX
+			import subprocess as _sp
+
+			result = _sp.run(['ps', '-p', str(pid), '-o', 'command='], capture_output=True, text=True, timeout=5)
+			return 'browser_use.skill_cli.daemon' in result.stdout
+	except Exception:
+		return False
+
+
+def _terminate_pid(pid: int) -> bool:
+	"""Best-effort terminate a process. Returns True if confirmed dead.
+
+	POSIX: SIGTERM, poll 5s, escalate to SIGKILL.
+	Windows: TerminateProcess (hard kill, skips all daemon cleanup).
+	"""
+	if sys.platform == 'win32':
+		import ctypes
+
+		_PROCESS_TERMINATE = 0x0001
+		handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_TERMINATE, False, pid)
+		if handle:
+			ctypes.windll.kernel32.TerminateProcess(handle, 1)
+			ctypes.windll.kernel32.CloseHandle(handle)
+		return not _is_pid_alive(pid)
+
+	try:
+		os.kill(pid, signal.SIGTERM)
+	except (OSError, ProcessLookupError):
+		return True
+
+	# Poll for exit
+	for _ in range(50):  # 5s at 100ms intervals
+		time.sleep(0.1)
+		if not _is_pid_alive(pid):
+			return True
+
+	# Escalate to SIGKILL
+	try:
+		os.kill(pid, signal.SIGKILL)
+	except (OSError, ProcessLookupError):
+		return True
+	time.sleep(0.2)
+	return not _is_pid_alive(pid)
+
+
+def _read_session_state(session: str) -> dict | None:
+	"""Read session state file. Returns None if missing or corrupt."""
+	state_path = _get_home_dir() / f'{session}.state.json'
+	if not state_path.exists():
+		return None
+	try:
+		return json.loads(state_path.read_text())
+	except (json.JSONDecodeError, OSError):
+		return None
+
+
+def _get_state_path(session: str) -> Path:
+	return _get_home_dir() / f'{session}.state.json'
+
+
+class _SessionProbe:
+	"""Snapshot of a session's health. Never deletes anything — callers decide cleanup."""
+
+	__slots__ = ('name', 'phase', 'updated_at', 'pid', 'pid_alive', 'socket_reachable', 'socket_pid')
+
+	def __init__(
+		self,
+		name: str,
+		phase: str | None = None,
+		updated_at: float | None = None,
+		pid: int | None = None,
+		pid_alive: bool = False,
+		socket_reachable: bool = False,
+		socket_pid: int | None = None,
+	):
+		self.name = name
+		self.phase = phase
+		self.updated_at = updated_at
+		self.pid = pid
+		self.pid_alive = pid_alive
+		self.socket_reachable = socket_reachable
+		self.socket_pid = socket_pid
+
+
+def _probe_session(session: str) -> _SessionProbe:
+	"""Non-destructive probe of a session's state. Never deletes files."""
+	probe = _SessionProbe(name=session)
+
+	# 1. Read state file
+	state = _read_session_state(session)
+	state_pid: int | None = None
+	if state:
+		probe.phase = state.get('phase')
+		probe.updated_at = state.get('updated_at')
+		state_pid = state.get('pid')
+
+	# 2. Read PID file
+	pid_file_pid: int | None = None
+	pid_path = _get_pid_path(session)
+	if pid_path.exists():
+		try:
+			pid_file_pid = int(pid_path.read_text().strip())
+		except (OSError, ValueError):
+			pass
+
+	# 3. Reconcile PIDs
+	if state_pid and _is_pid_alive(state_pid):
+		probe.pid = state_pid
+		probe.pid_alive = True
+	elif pid_file_pid and _is_pid_alive(pid_file_pid):
+		probe.pid = pid_file_pid
+		probe.pid_alive = True
+	else:
+		# Both dead or missing — use whichever we have for cleanup reference
+		probe.pid = state_pid or pid_file_pid
+		probe.pid_alive = False
+
+	# 4. Try socket connect + ping for PID
 	try:
 		sock = _connect_to_daemon(timeout=0.5, session=session)
 		sock.close()
-		return True
+		probe.socket_reachable = True
+		# Quick ping to get daemon PID
+		try:
+			resp = send_command('ping', {}, session=session)
+			if resp.get('success'):
+				probe.socket_pid = resp.get('data', {}).get('pid')
+		except Exception:
+			pass
 	except OSError:
-		# Clean up stale socket on Unix
-		sock_path = _get_socket_path(session)
-		if not sock_path.startswith('tcp://'):
-			Path(sock_path).unlink(missing_ok=True)
-		return False
+		probe.socket_reachable = False
+
+	return probe
+
+
+def _clean_session_files(session: str) -> None:
+	"""Remove all files for a session (state, PID, socket)."""
+	_get_state_path(session).unlink(missing_ok=True)
+	_get_pid_path(session).unlink(missing_ok=True)
+	sock_path = _get_socket_path(session)
+	if not sock_path.startswith('tcp://'):
+		Path(sock_path).unlink(missing_ok=True)
+
+
+def _is_daemon_alive(session: str = 'default') -> bool:
+	"""Check if daemon is alive by socket reachability."""
+	return _probe_session(session).socket_reachable
 
 
 def ensure_daemon(
@@ -744,65 +904,55 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 	home_dir = _get_home_dir()
 	sessions: list[dict] = []
 
-	for pid_file in sorted(home_dir.glob('*.pid')):
-		name = pid_file.stem
-		if not name:
-			continue
+	# Discover sessions from union of PID files + state files
+	session_names: set[str] = set()
+	for pid_file in home_dir.glob('*.pid'):
+		if pid_file.stem:
+			session_names.add(pid_file.stem)
+	for state_file in home_dir.glob('*.state.json'):
+		name = state_file.name.removesuffix('.state.json')
+		if name:
+			session_names.add(name)
 
-		try:
-			pid = int(pid_file.read_text().strip())
-		except (OSError, ValueError):
-			pid_file.unlink(missing_ok=True)
-			continue
+	for name in sorted(session_names):
+		probe = _probe_session(name)
 
-		# Check if process is alive (os.kill(pid, 0) terminates on Windows, use OpenProcess instead)
-		if sys.platform == 'win32':
-			import ctypes
-
-			_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-			_handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-			if _handle:
-				ctypes.windll.kernel32.CloseHandle(_handle)
-				_alive = True
-			else:
-				_alive = False
-		else:
-			try:
-				os.kill(pid, 0)
-				_alive = True
-			except (OSError, ProcessLookupError):
-				_alive = False
-		if not _alive:
+		if not probe.pid_alive:
 			# Dead — clean up stale files
-			pid_file.unlink(missing_ok=True)
-			sock_path = _get_socket_path(name)
-			if not sock_path.startswith('tcp://'):
-				Path(sock_path).unlink(missing_ok=True)
+			_clean_session_files(name)
 			continue
 
-		entry: dict = {'name': name, 'pid': pid}
+		# Terminal states with dead PID already handled above
+		if probe.phase in ('stopped', 'failed'):
+			_clean_session_files(name)
+			continue
+
+		entry: dict = {'name': name, 'pid': probe.pid or 0, 'phase': probe.phase or '?'}
 
 		# Try to ping for config info
-		try:
-			resp = send_command('ping', {}, session=name)
-			if resp.get('success'):
-				data = resp.get('data', {})
-				config_parts = []
-				if data.get('headed'):
-					config_parts.append('headed')
-				if data.get('profile'):
-					config_parts.append(f'profile={data["profile"]}')
-				if data.get('cdp_url'):
-					config_parts.append('cdp')
-				if data.get('use_cloud'):
-					config_parts.append('cloud')
-				entry['config'] = ', '.join(config_parts) if config_parts else 'headless'
-		except Exception:
+		if probe.socket_reachable:
+			try:
+				resp = send_command('ping', {}, session=name)
+				if resp.get('success'):
+					data = resp.get('data', {})
+					config_parts = []
+					if data.get('headed'):
+						config_parts.append('headed')
+					if data.get('profile'):
+						config_parts.append(f'profile={data["profile"]}')
+					if data.get('cdp_url'):
+						config_parts.append('cdp')
+					if data.get('use_cloud'):
+						config_parts.append('cloud')
+					entry['config'] = ', '.join(config_parts) if config_parts else 'headless'
+			except Exception:
+				entry['config'] = '?'
+		else:
 			entry['config'] = '?'
 
 		sessions.append(entry)
 
-	# Sweep orphaned sockets that have no corresponding live PID file
+	# Sweep orphaned sockets that have no corresponding live session
 	live_names = {s['name'] for s in sessions}
 	for sock_file in home_dir.glob('*.sock'):
 		if sock_file.stem not in live_names:
@@ -812,33 +962,63 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 		print(json.dumps({'sessions': sessions}))
 	else:
 		if sessions:
-			print(f'{"SESSION":<16} {"PID":<8} CONFIG')
+			print(f'{"SESSION":<16} {"PHASE":<14} {"PID":<8} CONFIG')
 			for s in sessions:
-				print(f'{s["name"]:<16} {s["pid"]:<8} {s.get("config", "")}')
+				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", "")}')
 		else:
 			print('No active sessions')
 
 	return 0
 
 
+def _close_session(session: str) -> bool:
+	"""Close a single session. Returns True if something was closed/killed."""
+	probe = _probe_session(session)
+
+	if probe.socket_reachable:
+		try:
+			send_command('shutdown', {}, session=session)
+			# Poll for PID disappearance (up to 15s: 10s browser cleanup + margin)
+			if probe.pid:
+				for _ in range(150):
+					time.sleep(0.1)
+					if not _is_pid_alive(probe.pid):
+						break
+			_clean_session_files(session)
+			return True
+		except Exception:
+			_clean_session_files(session)
+			return True
+
+	if probe.pid_alive and probe.pid and _is_daemon_process(probe.pid):
+		_terminate_pid(probe.pid)
+		_clean_session_files(session)
+		return True
+
+	# Nothing alive — clean up stale files if any exist
+	if probe.pid or probe.phase:
+		_clean_session_files(session)
+	return False
+
+
 def _handle_close_all(args: argparse.Namespace) -> int:
 	"""Close all active sessions."""
 	home_dir = _get_home_dir()
-	# Snapshot the list first to avoid mutating during iteration
-	pid_files = list(home_dir.glob('*.pid'))
+
+	# Discover sessions from union of PID files + state files
+	session_names: set[str] = set()
+	for pid_file in home_dir.glob('*.pid'):
+		if pid_file.stem:
+			session_names.add(pid_file.stem)
+	for state_file in home_dir.glob('*.state.json'):
+		name = state_file.name.removesuffix('.state.json')
+		if name:
+			session_names.add(name)
+
 	closed = 0
-
-	for pid_file in pid_files:
-		name = pid_file.stem
-		if not name:
-			continue
-
-		if _is_daemon_alive(name):
-			try:
-				send_command('shutdown', {}, session=name)
-				closed += 1
-			except Exception:
-				pass
+	for name in sorted(session_names):
+		if _close_session(name):
+			closed += 1
 
 	if args.json:
 		print(json.dumps({'closed': closed}))
@@ -1061,37 +1241,14 @@ def main() -> int:
 		if getattr(args, 'all', False):
 			return _handle_close_all(args)
 
-		if _is_daemon_alive(session):
-			try:
-				response = send_command('shutdown', {}, session=session)
-				if args.json:
-					print(json.dumps(response))
-				else:
-					print('Browser closed')
-			except Exception:
-				print('Browser closed')
+		closed = _close_session(session)
+		if args.json:
+			print(json.dumps({'success': True, 'data': {'shutdown': True}}))
 		else:
-			# Socket unreachable — check if a PID file references a live process
-			# (orphaned daemon that lost its socket). Kill it directly.
-			pid_path = Path(_get_home_dir()) / f'{session}.pid'
-			killed = False
-			if pid_path.exists():
-				try:
-					pid = int(pid_path.read_text().strip())
-					os.kill(pid, 0)  # Check alive
-					os.kill(pid, signal.SIGTERM)
-					killed = True
-				except (OSError, ProcessLookupError, ValueError):
-					pass
-				pid_path.unlink(missing_ok=True)
-
-			if args.json:
-				print(json.dumps({'success': True, 'data': {'shutdown': True}}))
+			if closed:
+				print('Browser closed')
 			else:
-				if killed:
-					print('Browser closed')
-				else:
-					print('No active browser session')
+				print('No active browser session')
 		return 0
 
 	# Resolve --connect to agent_id + CDP URL
