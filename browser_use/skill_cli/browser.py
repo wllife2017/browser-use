@@ -107,7 +107,14 @@ class CLIBrowserSession(BrowserSession):
 
 	async def _provision_cloud_browser(self) -> None:
 		"""Provision a cloud browser and set the CDP URL."""
+		import os
+
 		from browser_use.browser.cloud.views import CreateBrowserRequest
+
+		# Override cloud API base URL if set (CLI injects this into daemon env)
+		cloud_base = os.environ.get('BROWSER_USE_CLOUD_BASE_URL')
+		if cloud_base:
+			self._cloud_browser_client.api_base_url = cloud_base.rstrip('/')
 
 		cloud_params = self.browser_profile.cloud_browser_params or CreateBrowserRequest()
 		cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
