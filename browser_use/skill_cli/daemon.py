@@ -163,7 +163,7 @@ class Daemon:
 				from browser_use.skill_cli.utils import get_home_dir
 
 				self._tab_ownership = TabOwnershipManager(bs)
-				self._tab_ownership.set_agents_file(get_home_dir() / 'agents.json')
+				self._tab_ownership.set_agents_file(get_home_dir() / f'{self.session}.agents.json')
 
 				# Register initial tabs with tab ownership (no event bus)
 				if bs.session_manager:

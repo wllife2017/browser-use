@@ -20,32 +20,34 @@ For setup details, see https://github.com/browser-use/browser-use/blob/main/brow
 
 **Default: connect to the user's existing Chrome browser.** This preserves their logins, cookies, and open tabs.
 
-1. **Register**: `INDEX=$(browser-use register)` — get an agent index (once per session)
-2. **Navigate**: `browser-use --connect $INDEX open <url>` — opens in a new tab in the user's Chrome
-3. **Inspect**: `browser-use --connect $INDEX state` — returns clickable elements with indices
-4. **Interact**: use indices from state (`browser-use --connect $INDEX click 5`, `browser-use --connect $INDEX input 3 "text"`)
-5. **Verify**: `browser-use --connect $INDEX state` or `browser-use --connect $INDEX screenshot` to confirm
+1. **Connect**: `browser-use connect` — discover and connect to running Chrome (one-time)
+2. **Navigate**: `browser-use open <url>` — opens in a new tab
+3. **Inspect**: `browser-use state` — returns clickable elements with indices
+4. **Interact**: use indices from state (`browser-use click 5`, `browser-use input 3 "text"`)
+5. **Verify**: `browser-use state` or `browser-use screenshot` to confirm
 6. **Repeat**: browser stays open between commands
 
-If `--connect` fails (Chrome not running with remote debugging), fall back to `browser-use --headed open <url>` which launches a fresh Chromium.
+If `connect` fails (Chrome not running with remote debugging), fall back to `browser-use --headed open <url>` which launches a fresh Chromium.
 
 ## Browser Modes
 
 ```bash
-# Preferred: connect to user's existing Chrome (requires remote debugging enabled)
-INDEX=$(browser-use register)
-browser-use --connect $INDEX open <url>        # Connect to running Chrome with agent index
+# Preferred: connect to user's existing Chrome (one-time setup)
+browser-use connect                            # Discover and connect to running Chrome
 
-# Fallback: launch a new browser
+# Cloud browser (zero-config)
+browser-use cloud connect                      # Provision cloud browser
+
+# Launch a new browser
 browser-use --headed open <url>                # Visible Chromium window
 browser-use open <url>                         # Headless Chromium
 
 # Other modes
-browser-use --profile "Default" open <url>      # Real Chrome with Default profile
+browser-use --profile "Default" open <url>     # Real Chrome with Default profile
 browser-use --cdp-url ws://localhost:9222/... open <url>  # Connect via explicit CDP URL
 ```
 
-`--connect`, `--cdp-url`, and `--profile` are mutually exclusive.
+After connecting, all commands go to that browser — no flags needed. `--cdp-url` and `--profile` are mutually exclusive.
 
 ## Commands
 
@@ -186,8 +188,8 @@ browser-use --profile "Default" open https://github.com  # Already logged in
 ### Connecting to Existing Chrome
 
 ```bash
-INDEX=$(browser-use register)                      # Get agent index first
-browser-use --connect $INDEX open https://example.com  # Connect with agent index
+browser-use connect                                # Discover and connect (one-time)
+browser-use open https://example.com               # Then use normally
 ```
 
 Requires Chrome with remote debugging enabled. Falls back to probing ports 9222/9229.
@@ -199,22 +201,23 @@ browser-use tunnel 3000                            # → https://abc.trycloudfla
 browser-use open https://abc.trycloudflare.com     # Browse the tunnel
 ```
 
-## Multi-Agent (--connect mode)
+## Multi-Agent (--agent)
 
-Multiple agents can share one Chrome browser via `--connect`. Each agent gets its own tab — other agents can't interfere.
+Multiple agents can share one browser via `--agent`. Each agent gets its own tab — other agents can't interfere. Works with any browser mode (connect, cloud connect, profile, headless).
 
-**Setup**: Register once, then pass the index with every `--connect` command:
+**Setup**: Connect once, register agents, then pass `--agent` with every command:
 
 ```bash
+browser-use connect                              # or cloud connect, or --profile, etc.
 INDEX=$(browser-use register)                    # → prints "1"
-browser-use --connect $INDEX open <url>          # Navigate in agent's own tab
-browser-use --connect $INDEX state               # Get state from agent's tab
-browser-use --connect $INDEX click <element>     # Click in agent's tab
+browser-use --agent $INDEX open <url>            # Navigate in agent's own tab
+browser-use --agent $INDEX state                 # Get state from agent's tab
+browser-use --agent $INDEX click <element>       # Click in agent's tab
 ```
 
 - **Tab locking**: When an agent mutates a tab (click, type, navigate), that tab is locked to it. Other agents get an error if they try to mutate the same tab.
 - **Read-only access**: `state`, `screenshot`, `get`, and `wait` commands work on any tab regardless of locks.
-- **Pre-existing tabs**: Tabs already open in Chrome start unlocked — any agent can claim them.
+- **Pre-existing tabs**: Tabs already open start unlocked — any agent can claim them.
 - **Agent sessions expire** after 5 minutes of inactivity. Run `browser-use register` again to get a new index.
 - **If you get "Tab is currently in use by another agent"**: do NOT close sessions or force it. Just use `open` to navigate your own tab to the URL you need.
 - **Never run `browser-use close --all`** when other agents are sharing the browser — it kills everything.
@@ -254,7 +257,7 @@ Config stored in `~/.browser-use/config.json`.
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
-| `--connect INDEX` | Connect to running Chrome via CDP with agent index (run `browser-use register` first) |
+| `--agent INDEX` | Multi-agent mode with tab isolation (run `browser-use register` first) |
 | `--cdp-url <url>` | Connect via CDP URL (`http://` or `ws://`) |
 | `--session NAME` | Target a named session (default: "default") |
 | `--json` | Output as JSON |

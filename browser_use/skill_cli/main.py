@@ -100,12 +100,20 @@ if _get_subcommand() == 'init':
 	init_main()
 	sys.exit(0)
 
-# Handle 'register' command — assigns an agent index for multi-agent --connect mode
+# Handle 'register' command — assigns an agent index for multi-agent mode (per-session)
 if _get_subcommand() == 'register':
 	_home = os.environ.get('BROWSER_USE_HOME')
 	_home_dir = Path(_home).expanduser() if _home else Path.home() / '.browser-use'
 	_home_dir.mkdir(parents=True, exist_ok=True)
-	agents_file = _home_dir / 'agents.json'
+	# Resolve session name from --session flag or env
+	_session = 'default'
+	for i, arg in enumerate(sys.argv):
+		if arg == '--session' and i + 1 < len(sys.argv):
+			_session = sys.argv[i + 1]
+			break
+	if _session == 'default':
+		_session = os.environ.get('BROWSER_USE_SESSION', 'default')
+	agents_file = _home_dir / f'{_session}.agents.json'
 	agents = {}
 	if agents_file.exists():
 		try:
@@ -655,10 +663,16 @@ Setup:
 	)
 	parser.add_argument(
 		'--connect',
+		action='store_true',
+		default=False,
+		help='(Deprecated) Use "browser-use connect" instead',
+	)
+	parser.add_argument(
+		'--agent',
 		nargs=1,
-		metavar='AGENT_INDEX',
+		metavar='INDEX',
 		default=None,
-		help='Connect to running Chrome via CDP with agent index (run "browser-use register" first)',
+		help='Multi-agent mode with tab isolation (run "browser-use register" first)',
 	)
 	parser.add_argument('--session', default=None, help='Session name (default: "default")')
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
@@ -690,6 +704,9 @@ Setup:
 
 	# doctor
 	subparsers.add_parser('doctor', help='Check browser-use installation and dependencies')
+
+	# connect (to local Chrome)
+	subparsers.add_parser('connect', help='Connect to running Chrome via CDP')
 
 	# config
 	config_p = subparsers.add_parser('config', help='Manage CLI configuration')
@@ -1387,12 +1404,46 @@ def main() -> int:
 				print('No active browser session')
 		return 0
 
-	# Resolve --connect to agent_id + CDP URL
-	agent_id = '__shared__'
+	# Handle --connect deprecation
 	if args.connect:
-		agent_id = args.connect[0]
-		# Validate agent index against registry
-		agents_file = _get_home_dir() / 'agents.json'
+		print('Note: --connect has been replaced.', file=sys.stderr)
+		print('  To connect to Chrome: browser-use connect', file=sys.stderr)
+		print('  Then run commands:    browser-use open <url>', file=sys.stderr)
+		print('  For multi-agent:      browser-use --agent INDEX open <url>', file=sys.stderr)
+		return 1
+
+	# Handle connect command (discover local Chrome, start daemon)
+	if args.command == 'connect':
+		from browser_use.skill_cli.utils import discover_chrome_cdp_url
+
+		try:
+			cdp_url = discover_chrome_cdp_url()
+		except RuntimeError as e:
+			print(f'Error: {e}', file=sys.stderr)
+			return 1
+
+		ensure_daemon(args.headed, None, cdp_url=cdp_url, session=session, explicit_config=True)
+		response = send_command('connect', {}, session=session)
+
+		if args.json:
+			print(json.dumps(response))
+		else:
+			if response.get('success'):
+				data = response.get('data', {})
+				print(f'status: {data.get("status", "unknown")}')
+				if 'cdp_url' in data:
+					print(f'cdp_url: {data["cdp_url"]}')
+			else:
+				print(f'Error: {response.get("error")}', file=sys.stderr)
+				return 1
+		return 0
+
+	# Resolve --agent to agent_id
+	agent_id = '__shared__'
+	if args.agent:
+		agent_id = args.agent[0]
+		# Validate agent index against per-session registry
+		agents_file = _get_home_dir() / f'{session}.agents.json'
 		agents = {}
 		if agents_file.exists():
 			try:
@@ -1405,42 +1456,23 @@ def main() -> int:
 			print(f'Error: Agent {agent_id} not registered. Run \'browser-use register\' first.', file=sys.stderr)
 			return 1
 		if now - agent_entry.get('last_active', 0) > 300:
-			# Expired — remove it
 			agents.pop(agent_id, None)
 			agents_file.write_text(json.dumps(agents))
 			print(f'Error: Agent {agent_id} session expired. Run \'browser-use register\' to get a new agent ID.', file=sys.stderr)
 			return 1
-		# Update last_active
 		agent_entry['last_active'] = now
 		agents_file.write_text(json.dumps(agents))
 
-	# Mutual exclusivity: --connect, --cdp-url, and --profile
-	if args.connect and args.cdp_url:
-		print('Error: --connect and --cdp-url are mutually exclusive', file=sys.stderr)
-		return 1
-	if args.connect and args.profile:
-		print('Error: --connect and --profile are mutually exclusive', file=sys.stderr)
-		return 1
+	# Mutual exclusivity
 	if args.cdp_url and args.profile:
 		print('Error: --cdp-url and --profile are mutually exclusive', file=sys.stderr)
 		return 1
-
-	# Resolve --connect to a CDP URL
-	if args.connect:
-		from browser_use.skill_cli.utils import discover_chrome_cdp_url
-
-		try:
-			args.cdp_url = discover_chrome_cdp_url()
-		except RuntimeError as e:
-			print(f'Error: {e}', file=sys.stderr)
-			return 1
 
 	# One-time legacy migration
 	_migrate_legacy_files()
 
 	# Ensure daemon is running
-	# Only restart on config mismatch if the user explicitly passed config flags
-	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile', '--cdp-url', '--connect'))
+	explicit_config = any(flag in sys.argv for flag in ('--headed', '--profile', '--cdp-url'))
 	ensure_daemon(args.headed, args.profile, args.cdp_url, session=session, explicit_config=explicit_config)
 
 	# Build params from args
