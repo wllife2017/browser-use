@@ -439,18 +439,19 @@ class DomService:
 				params={
 					'expression': """
 					(() => {
-						// Skip on heavy pages — listener detection is too expensive
-						if (document.querySelectorAll('*').length > 10000) {
-							return null;
-						}
-
 						// getEventListeners is only available in DevTools context via includeCommandLineAPI
 						if (typeof getEventListeners !== 'function') {
 							return null;
 						}
 
-						const elementsWithListeners = [];
 						const allElements = document.querySelectorAll('*');
+
+						// Skip on heavy pages — listener detection is too expensive
+						if (allElements.length > 10000) {
+							return null;
+						}
+
+						const elementsWithListeners = [];
 
 						for (const el of allElements) {
 							try {
