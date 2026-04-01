@@ -426,125 +426,107 @@ class DomService:
 			self.logger.debug(f'Failed to get iframe scroll positions: {e}')
 		iframe_scroll_ms = (time.time() - start_iframe_scroll) * 1000
 
-		# Pre-check element count — used to skip expensive operations and adapt timeouts
-		page_element_count = 0
-		try:
-			element_count_result = await cdp_session.cdp_client.send.Runtime.evaluate(
-				params={
-					'expression': 'document.querySelectorAll("*").length',
-					'returnByValue': True,
-				},
-				session_id=cdp_session.session_id,
-			)
-			page_element_count = element_count_result.get('result', {}).get('value', 0) if element_count_result else 0
-		except Exception as e:
-			self.logger.debug(f'Failed to get element count: {e}')
-
 		# Detect elements with JavaScript click event listeners (without mutating DOM)
-		# NOTE: This is skipped on heavy pages (>10k elements) because:
-		# 1. The querySelectorAll('*') + getEventListeners() loop is O(n) in JS
-		# 2. Each listener-having element requires an individual DOM.describeNode CDP call
-		# 3. On pages with 20k+ elements (e.g. Stimulsoft designer), this alone can take 10s+
+		# Skipped on heavy pages (>10k elements) where the querySelectorAll('*') loop +
+		# per-element DOM.describeNode calls can take 10s+. Elements are still detected
+		# via the accessibility tree and ClickableElementDetector heuristics.
 		start_js_listener_detection = time.time()
 		js_click_listener_backend_ids: set[int] = set()
 		try:
+			# Quick check: skip on heavy pages
+			_el_count_r = await cdp_session.cdp_client.send.Runtime.evaluate(
+				params={'expression': 'document.querySelectorAll("*").length', 'returnByValue': True},
+				session_id=cdp_session.session_id,
+			)
+			_el_count = (_el_count_r.get('result', {}).get('value', 0) if _el_count_r else 0)
+			if _el_count > 10000:
+				self.logger.info(f'Skipping JS listener detection on heavy page ({_el_count} elements)')
+				raise StopIteration  # Jump to except block — clean skip
 
-			# Maximum number of DOM.describeNode calls to make in parallel per batch
-			_DESCRIBE_NODE_BATCH_SIZE = 50
+			# Step 1: Run JS to find elements with click listeners and return them by reference
+			js_listener_result = await cdp_session.cdp_client.send.Runtime.evaluate(
+				params={
+					'expression': """
+					(() => {
+						// getEventListeners is only available in DevTools context via includeCommandLineAPI
+						if (typeof getEventListeners !== 'function') {
+							return null;
+						}
 
-			if page_element_count > 10000:
-				self.logger.warning(
-					f'⚠️ Heavy page detected ({page_element_count} elements) — skipping JS listener detection to avoid timeout'
-				)
-			else:
-				# Step 1: Run JS to find elements with click listeners and return them by reference
-				js_listener_result = await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={
-						'expression': """
-						(() => {
-							// getEventListeners is only available in DevTools context via includeCommandLineAPI
-							if (typeof getEventListeners !== 'function') {
-								return null;
-							}
+						const elementsWithListeners = [];
+						const allElements = document.querySelectorAll('*');
 
-							const elementsWithListeners = [];
-							const allElements = document.querySelectorAll('*');
-
-							for (const el of allElements) {
-								try {
-									const listeners = getEventListeners(el);
-									// Check for click-related event listeners
-									if (listeners.click || listeners.mousedown || listeners.mouseup || listeners.pointerdown || listeners.pointerup) {
-										elementsWithListeners.push(el);
-									}
-								} catch (e) {
-									// Ignore errors for individual elements (e.g., cross-origin)
+						for (const el of allElements) {
+							try {
+								const listeners = getEventListeners(el);
+								// Check for click-related event listeners
+								if (listeners.click || listeners.mousedown || listeners.mouseup || listeners.pointerdown || listeners.pointerup) {
+									elementsWithListeners.push(el);
 								}
+							} catch (e) {
+								// Ignore errors for individual elements (e.g., cross-origin)
 							}
+						}
 
-							return elementsWithListeners;
-						})()
-						""",
-						'includeCommandLineAPI': True,  # enables getEventListeners()
-						'returnByValue': False,  # Return object references, not values
+						return elementsWithListeners;
+					})()
+					""",
+					'includeCommandLineAPI': True,  # enables getEventListeners()
+					'returnByValue': False,  # Return object references, not values
+				},
+				session_id=cdp_session.session_id,
+			)
+
+			result_object_id = js_listener_result.get('result', {}).get('objectId')
+			if result_object_id:
+				# Step 2: Get array properties to access each element
+				array_props = await cdp_session.cdp_client.send.Runtime.getProperties(
+					params={
+						'objectId': result_object_id,
+						'ownProperties': True,
 					},
 					session_id=cdp_session.session_id,
 				)
 
-				result_object_id = js_listener_result.get('result', {}).get('objectId')
-				if result_object_id:
-					# Step 2: Get array properties to access each element
-					array_props = await cdp_session.cdp_client.send.Runtime.getProperties(
-						params={
-							'objectId': result_object_id,
-							'ownProperties': True,
-						},
-						session_id=cdp_session.session_id,
-					)
+				# Step 3: For each element, get its backend node ID via DOM.describeNode
+				element_object_ids: list[str] = []
+				for prop in array_props.get('result', []):
+					# Array indices are numeric property names
+					prop_name = prop.get('name', '') if isinstance(prop, dict) else ''
+					if isinstance(prop_name, str) and prop_name.isdigit():
+						prop_value = prop.get('value', {}) if isinstance(prop, dict) else {}
+						if isinstance(prop_value, dict):
+							object_id = prop_value.get('objectId')
+							if object_id and isinstance(object_id, str):
+								element_object_ids.append(object_id)
 
-					# Step 3: For each element, get its backend node ID via DOM.describeNode
-					element_object_ids: list[str] = []
-					for prop in array_props.get('result', []):
-						# Array indices are numeric property names
-						prop_name = prop.get('name', '') if isinstance(prop, dict) else ''
-						if isinstance(prop_name, str) and prop_name.isdigit():
-							prop_value = prop.get('value', {}) if isinstance(prop, dict) else {}
-							if isinstance(prop_value, dict):
-								object_id = prop_value.get('objectId')
-								if object_id and isinstance(object_id, str):
-									element_object_ids.append(object_id)
-
-					# Batch resolve backend node IDs in chunks to avoid flooding the CDP connection.
-					# On heavy pages, firing 1000+ concurrent DOM.describeNode calls can saturate
-					# the WebSocket and cause timeouts on other concurrent CDP operations.
-					async def get_backend_node_id(object_id: str) -> int | None:
-						try:
-							node_info = await cdp_session.cdp_client.send.DOM.describeNode(
-								params={'objectId': object_id},
-								session_id=cdp_session.session_id,
-							)
-							return node_info.get('node', {}).get('backendNodeId')
-						except Exception:
-							return None
-
-					all_backend_ids: list[int | None] = []
-					for i in range(0, len(element_object_ids), _DESCRIBE_NODE_BATCH_SIZE):
-						batch = element_object_ids[i : i + _DESCRIBE_NODE_BATCH_SIZE]
-						batch_results = await asyncio.gather(*[get_backend_node_id(oid) for oid in batch])
-						all_backend_ids.extend(batch_results)
-
-					js_click_listener_backend_ids = {bid for bid in all_backend_ids if bid is not None}
-
-					# Release the array object to avoid memory leaks
+				# Batch resolve backend node IDs (run in parallel)
+				async def get_backend_node_id(object_id: str) -> int | None:
 					try:
-						await cdp_session.cdp_client.send.Runtime.releaseObject(
-							params={'objectId': result_object_id},
+						node_info = await cdp_session.cdp_client.send.DOM.describeNode(
+							params={'objectId': object_id},
 							session_id=cdp_session.session_id,
 						)
+						return node_info.get('node', {}).get('backendNodeId')
 					except Exception:
-						pass  # Best effort cleanup
+						return None
 
-					self.logger.debug(f'Detected {len(js_click_listener_backend_ids)} elements with JS click listeners')
+				# Resolve all element object IDs to backend node IDs in parallel
+				backend_ids = await asyncio.gather(*[get_backend_node_id(oid) for oid in element_object_ids])
+				js_click_listener_backend_ids = {bid for bid in backend_ids if bid is not None}
+
+				# Release the array object to avoid memory leaks
+				try:
+					await cdp_session.cdp_client.send.Runtime.releaseObject(
+						params={'objectId': result_object_id},
+						session_id=cdp_session.session_id,
+					)
+				except Exception:
+					pass  # Best effort cleanup
+
+				self.logger.debug(f'Detected {len(js_click_listener_backend_ids)} elements with JS click listeners')
+		except StopIteration:
+			pass  # Heavy page skip — not an error
 		except Exception as e:
 			self.logger.debug(f'Failed to detect JS event listeners: {e}')
 		js_listener_detection_ms = (time.time() - start_js_listener_detection) * 1000
@@ -577,22 +559,8 @@ class DomService:
 			'device_pixel_ratio': create_task_with_error_handling(self._get_viewport_ratio(target_id), name='get_viewport_ratio'),
 		}
 
-		# Adaptive timeouts: heavy pages (20k+ elements) need more time for
-		# DOMSnapshot.captureSnapshot and DOM.getDocument to serialize their huge trees.
-		# The default 10s is sufficient for typical pages but causes spurious timeouts
-		# on complex applications like Stimulsoft designer, heavy SPAs, etc.
-		if page_element_count > 15000:
-			cdp_timeout = 25.0
-			cdp_retry_timeout = 10.0
-		elif page_element_count > 5000:
-			cdp_timeout = 15.0
-			cdp_retry_timeout = 5.0
-		else:
-			cdp_timeout = 10.0
-			cdp_retry_timeout = 2.0
-
 		# Wait for all tasks with timeout
-		done, pending = await asyncio.wait(tasks.values(), timeout=cdp_timeout)
+		done, pending = await asyncio.wait(tasks.values(), timeout=10.0)
 
 		# Retry any failed or timed out tasks
 		if pending:
@@ -617,7 +585,7 @@ class DomService:
 					tasks[key] = retry_map[task]()
 
 			# Wait again with shorter timeout
-			done2, pending2 = await asyncio.wait([t for t in tasks.values() if not t.done()], timeout=cdp_retry_timeout)
+			done2, pending2 = await asyncio.wait([t for t in tasks.values() if not t.done()], timeout=2.0)
 
 			if pending2:
 				for task in pending2:
@@ -662,16 +630,7 @@ class DomService:
 				snapshot['documents'] = snapshot['documents'][: self.max_iframes]
 
 			total_nodes = sum(len(doc.get('nodes', [])) for doc in snapshot['documents'])
-
-			if total_nodes > 10000:
-				self.logger.warning(
-					f'⚠️ Heavy page: snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes '
-					f'(element count={page_element_count}, CDP calls took {cdp_calls_ms:.0f}ms, '
-					f'timeouts used: initial={cdp_timeout}s retry={cdp_retry_timeout}s). '
-					f'DOM tree construction and serialization may be slow.'
-				)
-			else:
-				self.logger.debug(f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes')
+			self.logger.debug(f'🔍 DEBUG: Snapshot contains {len(snapshot["documents"])} frames with {total_nodes} total nodes')
 			# Log iframe-specific info
 			for doc_idx, doc in enumerate(snapshot['documents']):
 				if doc_idx > 0:  # Not the main document
@@ -747,15 +706,6 @@ class DomService:
 		start_snapshot = time.time()
 		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio)
 		timing_info['build_snapshot_lookup_ms'] = (time.time() - start_snapshot) * 1000
-
-		# Pre-resolve the CDP session for this target ONCE before recursion.
-		# Previously get_or_create_cdp_session() was called inside _construct_enhanced_node
-		# for every single node — on a 20k-element page that's 20k+ async operations.
-		try:
-			_cached_cdp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
-			_cached_session_id = _cached_cdp_session.session_id
-		except ValueError:
-			_cached_session_id = None
 
 		async def _construct_enhanced_node(
 			node: Node,
@@ -839,6 +789,13 @@ class DomService:
 					height=snapshot_data.bounds.height,
 				)
 
+			try:
+				session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
+				session_id = session.session_id
+			except ValueError:
+				# Target may have detached during DOM construction
+				session_id = None
+
 			dom_tree_node = EnhancedDOMTreeNode(
 				node_id=node['nodeId'],
 				backend_node_id=node['backendNodeId'],
@@ -848,7 +805,7 @@ class DomService:
 				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
-				session_id=_cached_session_id,
+				session_id=session_id,
 				target_id=target_id,
 				content_document=None,
 				shadow_root_type=shadow_root_type,
