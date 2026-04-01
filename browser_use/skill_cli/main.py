@@ -1253,6 +1253,22 @@ def main() -> int:
 				print('✓ All checks passed!')
 			else:
 				print(f'⚠ {result.get("summary", "Some checks need attention")}')
+
+			# Show config state
+			from browser_use.skill_cli.config import CLI_DOCS_URL, get_config_display
+
+			entries = get_config_display()
+			print(f'\nConfig ({_get_home_dir() / "config.json"}):\n')
+			for entry in entries:
+				if entry['is_set']:
+					icon = '✓'
+					val = 'set' if entry['sensitive'] else entry['value']
+				else:
+					icon = '○'
+					val = entry['value'] if entry['value'] else 'not set'
+				print(f'  {icon} {entry["key"]}: {val}')
+			print(f'  Docs: {CLI_DOCS_URL}')
+
 		return 0
 
 	# Handle tunnel command - runs independently of browser session
