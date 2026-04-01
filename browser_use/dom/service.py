@@ -427,27 +427,23 @@ class DomService:
 		iframe_scroll_ms = (time.time() - start_iframe_scroll) * 1000
 
 		# Detect elements with JavaScript click event listeners (without mutating DOM)
-		# Skipped on heavy pages (>10k elements) where the querySelectorAll('*') loop +
-		# per-element DOM.describeNode calls can take 10s+. Elements are still detected
-		# via the accessibility tree and ClickableElementDetector heuristics.
+		# On heavy pages (>10k elements) the querySelectorAll('*') + getEventListeners()
+		# loop plus per-element DOM.describeNode CDP calls can take 10s+.
+		# The JS expression below bails out early if the page is too heavy.
+		# Elements are still detected via the accessibility tree and ClickableElementDetector.
 		start_js_listener_detection = time.time()
 		js_click_listener_backend_ids: set[int] = set()
 		try:
-			# Quick check: skip on heavy pages
-			_el_count_r = await cdp_session.cdp_client.send.Runtime.evaluate(
-				params={'expression': 'document.querySelectorAll("*").length', 'returnByValue': True},
-				session_id=cdp_session.session_id,
-			)
-			_el_count = _el_count_r.get('result', {}).get('value', 0) if _el_count_r else 0
-			if _el_count > 10000:
-				self.logger.info(f'Skipping JS listener detection on heavy page ({_el_count} elements)')
-				raise StopIteration  # Jump to except block — clean skip
-
 			# Step 1: Run JS to find elements with click listeners and return them by reference
 			js_listener_result = await cdp_session.cdp_client.send.Runtime.evaluate(
 				params={
 					'expression': """
 					(() => {
+						// Skip on heavy pages — listener detection is too expensive
+						if (document.querySelectorAll('*').length > 10000) {
+							return null;
+						}
+
 						// getEventListeners is only available in DevTools context via includeCommandLineAPI
 						if (typeof getEventListeners !== 'function') {
 							return null;
@@ -525,8 +521,6 @@ class DomService:
 					pass  # Best effort cleanup
 
 				self.logger.debug(f'Detected {len(js_click_listener_backend_ids)} elements with JS click listeners')
-		except StopIteration:
-			pass  # Heavy page skip — not an error
 		except Exception as e:
 			self.logger.debug(f'Failed to detect JS event listeners: {e}')
 		js_listener_detection_ms = (time.time() - start_js_listener_detection) * 1000

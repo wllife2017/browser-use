@@ -88,12 +88,13 @@ def build_snapshot_lookup(
 		# The raw CDP data uses List[int] which makes `index in list` O(n).
 		# Called once per node, this was O(n²) total — the #1 bottleneck.
 		# At 20k elements: 5,925ms (list) → 2ms (set) = 3,000x speedup.
-		is_clickable_set: set[int] = set(nodes['isClickable']['index']) if 'isClickable' in nodes else set()
+		has_clickable_data = 'isClickable' in nodes
+		is_clickable_set: set[int] = set(nodes['isClickable']['index']) if has_clickable_data else set()
 
 		# Build snapshot lookup for each backend node id
 		for backend_node_id, snapshot_index in backend_node_to_snapshot_index.items():
 			is_clickable = None
-			if is_clickable_set:
+			if has_clickable_data:
 				is_clickable = _parse_rare_boolean_data(is_clickable_set, snapshot_index)
 
 			# Find corresponding layout node
