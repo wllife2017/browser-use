@@ -83,6 +83,39 @@ def get_config_value(key: str) -> object:
 	return schema.get('default')
 
 
+def set_config_value(key: str, value: str) -> None:
+	"""Set a config value. Validates key and coerces type."""
+	schema = CONFIG_KEYS.get(key)
+	if schema is None:
+		raise ValueError(f'Unknown config key: {key}. Valid keys: {", ".join(CONFIG_KEYS)}')
+
+	# Coerce type
+	expected_type = schema.get('type', str)
+	try:
+		if expected_type == int:
+			coerced = int(value)
+		else:
+			coerced = str(value)
+	except (ValueError, TypeError):
+		raise ValueError(f'Invalid value for {key}: expected {expected_type.__name__}, got {value!r}')
+
+	config = read_config()
+	config[key] = coerced
+	write_config(config)
+
+
+def unset_config_value(key: str) -> None:
+	"""Remove a config key from the file."""
+	schema = CONFIG_KEYS.get(key)
+	if schema is None:
+		raise ValueError(f'Unknown config key: {key}. Valid keys: {", ".join(CONFIG_KEYS)}')
+
+	config = read_config()
+	if key in config:
+		del config[key]
+		write_config(config)
+
+
 def get_config_display() -> list[dict]:
 	"""Return config state for display (doctor, setup).
 

@@ -691,6 +691,18 @@ Setup:
 	# doctor
 	subparsers.add_parser('doctor', help='Check browser-use installation and dependencies')
 
+	# config
+	config_p = subparsers.add_parser('config', help='Manage CLI configuration')
+	config_sub = config_p.add_subparsers(dest='config_command')
+	p = config_sub.add_parser('set', help='Set a config value')
+	p.add_argument('key', help='Config key')
+	p.add_argument('value', help='Config value')
+	p = config_sub.add_parser('get', help='Get a config value')
+	p.add_argument('key', help='Config key')
+	config_sub.add_parser('list', help='List all config values')
+	p = config_sub.add_parser('unset', help='Remove a config value')
+	p.add_argument('key', help='Config key')
+
 	# -------------------------------------------------------------------------
 	# Browser Control Commands
 	# -------------------------------------------------------------------------
@@ -1249,6 +1261,50 @@ def main() -> int:
 
 			entries = get_config_display()
 			print(f'\nConfig ({_get_home_dir() / "config.json"}):\n')
+			for entry in entries:
+				if entry['is_set']:
+					icon = '✓'
+					val = 'set' if entry['sensitive'] else entry['value']
+				else:
+					icon = '○'
+					val = entry['value'] if entry['value'] else 'not set'
+				print(f'  {icon} {entry["key"]}: {val}')
+			print(f'  Docs: {CLI_DOCS_URL}')
+
+		return 0
+
+	# Handle config command
+	if args.command == 'config':
+		from browser_use.skill_cli.config import CLI_DOCS_URL, get_config_display, get_config_value, set_config_value, unset_config_value
+
+		config_cmd = getattr(args, 'config_command', None)
+
+		if config_cmd == 'set':
+			try:
+				set_config_value(args.key, args.value)
+				print(f'{args.key} = {args.value}')
+			except ValueError as e:
+				print(f'Error: {e}', file=sys.stderr)
+				return 1
+
+		elif config_cmd == 'get':
+			val = get_config_value(args.key)
+			if val is not None:
+				print(val)
+			else:
+				print(f'{args.key}: not set', file=sys.stderr)
+
+		elif config_cmd == 'unset':
+			try:
+				unset_config_value(args.key)
+				print(f'{args.key} removed')
+			except ValueError as e:
+				print(f'Error: {e}', file=sys.stderr)
+				return 1
+
+		elif config_cmd == 'list' or config_cmd is None:
+			entries = get_config_display()
+			print(f'Config ({_get_home_dir() / "config.json"}):')
 			for entry in entries:
 				if entry['is_set']:
 					icon = '✓'
