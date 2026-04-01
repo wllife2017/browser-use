@@ -1,0 +1,180 @@
+<html><head><title>Shadow+Iframe Combo</title></head><body><h1>Shadow DOM inside 10 iframes (100x20 per frame)</h1><div><iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe>
+<iframe srcdoc='<html><head>
+    <script>
+    document.addEventListener(&#39;DOMContentLoaded&#39;, () => {
+        for (let i = 0; i < 100; i++) {
+            const host = document.createElement(&#39;div&#39;);
+            host.className = &#39;shadow-host&#39;;
+            document.getElementById(&#39;c&#39;).appendChild(host);
+            const shadow = host.attachShadow({mode: &#39;open&#39;});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement(&#39;div&#39;);
+                el.innerHTML = &#39;<input type=&quot;text&quot; value=&quot;s&#39; + i + &#39;.&#39; + j + &#39;&quot; /><button onclick=&quot;this.textContent=\&#39;ok\&#39;&quot;>Go</button><a href=&quot;#&quot;>Link</a>&#39;;
+                el.addEventListener(&#39;click&#39;, () => {});
+                el.addEventListener(&#39;pointerdown&#39;, () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><div id=&quot;c&quot;></div></body></html>' style='width:400px;height:300px;border:1px solid red;'></iframe></div></body></html>

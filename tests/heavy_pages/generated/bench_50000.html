@@ -1,0 +1,15 @@
+<html><head><title>Bench 50,000</title></head>
+<body>
+<h1 id="title">Bench: 50,000 elements</h1>
+<div id="click-target" style="padding:20px;background:#eef;cursor:pointer;font-size:18px"
+     onclick="this.textContent='CLICKED OK'">CLICK ME</div>
+<input id="type-target" type="text" value="" style="padding:10px;width:300px" />
+<div id="result">waiting</div>
+<div id="bulk"></div>
+<script>
+const frag=document.createDocumentFragment();
+for(let i=0;i<50000;i++){const d=document.createElement('div');d.className='item';
+d.innerHTML='<span>'+i+'</span><input value=v'+i+' /><button>X</button>';frag.appendChild(d)}
+document.getElementById('bulk').appendChild(frag);
+document.getElementById('result').textContent='loaded '+document.querySelectorAll('*').length;
+</script></body></html>

@@ -438,7 +438,7 @@ class DomService:
 				params={'expression': 'document.querySelectorAll("*").length', 'returnByValue': True},
 				session_id=cdp_session.session_id,
 			)
-			_el_count = (_el_count_r.get('result', {}).get('value', 0) if _el_count_r else 0)
+			_el_count = _el_count_r.get('result', {}).get('value', 0) if _el_count_r else 0
 			if _el_count > 10000:
 				self.logger.info(f'Skipping JS listener detection on heavy page ({_el_count} elements)')
 				raise StopIteration  # Jump to except block — clean skip

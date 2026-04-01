@@ -1,0 +1,13 @@
+<html><head><title>100k Flat Elements</title>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const c = document.getElementById('bulk');
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < 33000; i++) {
+            const div = document.createElement('div');
+            div.innerHTML = '<span>' + i + '</span><input value="v' + i + '" /><button>X</button>';
+            frag.appendChild(div);
+        }
+        c.appendChild(frag);
+    });
+    </script></head><body><h1>~100k flat elements</h1><div id="bulk"></div></body></html>

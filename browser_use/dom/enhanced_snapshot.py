@@ -9,7 +9,6 @@ from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 from cdp_use.cdp.domsnapshot.types import (
 	LayoutTreeSnapshot,
 	NodeTreeSnapshot,
-	RareBooleanData,
 )
 
 from browser_use.dom.views import DOMRect, EnhancedSnapshotNode

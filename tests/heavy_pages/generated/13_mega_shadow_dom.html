@@ -1,0 +1,26 @@
+<html><head><title>Mega Shadow DOM (500x50)</title>
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const container = document.getElementById('mega-shadow');
+        for (let i = 0; i < 500; i++) {
+            const host = document.createElement('div');
+            host.id = 'sh-' + i;
+            container.appendChild(host);
+            const shadow = host.attachShadow({mode: 'open'});
+            shadow.innerHTML = '<style>:host { display: block; border: 1px solid #eee; margin: 1px; }</style>';
+            for (let j = 0; j < 50; j++) {
+                const el = document.createElement('div');
+                el.className = 'shadow-item';
+                el.innerHTML = `
+                    <span>S${i}.${j}</span>
+                    <input type="text" value="val-${i}-${j}" />
+                    <button>Act</button>
+                    <select><option>A</option><option>B</option><option>C</option></select>
+                    <a href="#" onclick="return false">Link-${i}-${j}</a>
+                `;
+                el.addEventListener('click', () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script></head><body><h1>Mega Shadow DOM ~150000 elements</h1><div id="mega-shadow"></div></body></html>
