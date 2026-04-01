@@ -302,6 +302,220 @@ def gen_page_ultimate_stress() -> str:
     )
 
 
+def gen_page_shadow_iframe_combo(n_hosts: int, children_per: int, n_iframes: int) -> str:
+    """Page 11: Shadow DOM hosts INSIDE iframes — worst of both worlds."""
+    shadow_script = f'''
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {{
+        for (let i = 0; i < {n_hosts}; i++) {{
+            const host = document.createElement('div');
+            host.className = 'shadow-host';
+            document.getElementById('c').appendChild(host);
+            const shadow = host.attachShadow({{mode: 'open'}});
+            for (let j = 0; j < {children_per}; j++) {{
+                const el = document.createElement('div');
+                el.innerHTML = '<input type="text" value="s' + i + '.' + j + '" /><button onclick="this.textContent=\\'ok\\'">Go</button><a href="#">Link</a>';
+                el.addEventListener('click', () => {{}});
+                el.addEventListener('pointerdown', () => {{}});
+                shadow.appendChild(el);
+            }}
+        }}
+    }});
+    </script>'''
+    iframe_body = f'<html><head>{shadow_script}</head><body><div id="c"></div></body></html>'
+    # Escape for srcdoc
+    iframe_body_escaped = iframe_body.replace("'", "&#39;").replace('"', "&quot;")
+    iframes = '\n'.join(
+        f"<iframe srcdoc='{iframe_body_escaped}' style='width:400px;height:300px;border:1px solid red;'></iframe>"
+        for _ in range(n_iframes)
+    )
+    return (
+        f'<html><head><title>Shadow+Iframe Combo</title></head>'
+        f'<body><h1>Shadow DOM inside {n_iframes} iframes ({n_hosts}x{children_per} per frame)</h1>'
+        f'<div>{iframes}</div></body></html>'
+    )
+
+
+def gen_page_overlapping_layers(n_layers: int, elements_per: int) -> str:
+    """Page 12: Many overlapping positioned elements — stress test for paint order."""
+    layers = []
+    for layer in range(n_layers):
+        items = ''.join(
+            f'<div class="item" style="position:absolute;left:{(i*30)%800}px;top:{(i*20)%600}px;'
+            f'width:100px;height:50px;background:rgba({layer*20%255},{i*10%255},100,0.7);'
+            f'z-index:{layer};"><span>L{layer}I{i}</span>'
+            f'<button onclick="alert({layer})">btn</button></div>'
+            for i in range(elements_per)
+        )
+        layers.append(
+            f'<div class="layer" style="position:relative;width:1000px;height:800px;">{items}</div>'
+        )
+    total = n_layers * elements_per * 3
+    return (
+        f'<html><head><title>Overlapping Layers ({n_layers}x{elements_per})</title></head>'
+        f'<body><h1>Overlapping layers ~{total} elements</h1>'
+        f'<div style="position:relative;">{"".join(layers)}</div></body></html>'
+    )
+
+
+def gen_page_mega_shadow_dom(n_hosts: int, children_per: int) -> str:
+    """Page 13: Massive shadow DOM — 500 hosts x 50 children = 25k shadow elements."""
+    script = f'''
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {{
+        const container = document.getElementById('mega-shadow');
+        for (let i = 0; i < {n_hosts}; i++) {{
+            const host = document.createElement('div');
+            host.id = 'sh-' + i;
+            container.appendChild(host);
+            const shadow = host.attachShadow({{mode: 'open'}});
+            shadow.innerHTML = '<style>:host {{ display: block; border: 1px solid #eee; margin: 1px; }}</style>';
+            for (let j = 0; j < {children_per}; j++) {{
+                const el = document.createElement('div');
+                el.className = 'shadow-item';
+                el.innerHTML = `
+                    <span>S${{i}}.${{j}}</span>
+                    <input type="text" value="val-${{i}}-${{j}}" />
+                    <button>Act</button>
+                    <select><option>A</option><option>B</option><option>C</option></select>
+                    <a href="#" onclick="return false">Link-${{i}}-${{j}}</a>
+                `;
+                el.addEventListener('click', () => {{}});
+                shadow.appendChild(el);
+            }}
+        }}
+    }});
+    </script>'''
+    total = n_hosts * children_per * 6  # div + span + input + button + select + a
+    return (
+        f'<html><head><title>Mega Shadow DOM ({n_hosts}x{children_per})</title>{script}</head>'
+        f'<body><h1>Mega Shadow DOM ~{total} elements</h1>'
+        f'<div id="mega-shadow"></div></body></html>'
+    )
+
+
+def gen_page_cross_origin_shadow_iframe() -> str:
+    """Page 14: Cross-origin iframes + shadow DOM + event listeners + forms + deep nesting — everything at once."""
+    # Cross-origin iframes
+    external_iframes = '\n'.join(
+        f'<iframe src="https://example.com" style="width:300px;height:200px;border:2px solid red;" sandbox="allow-scripts"></iframe>'
+        for _ in range(15)
+    )
+    # Same-origin iframes with shadow DOM inside
+    shadow_in_iframe_script = '''
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        for (let i = 0; i < 50; i++) {
+            const host = document.createElement('div');
+            document.body.appendChild(host);
+            const shadow = host.attachShadow({mode: 'open'});
+            for (let j = 0; j < 20; j++) {
+                const el = document.createElement('div');
+                el.innerHTML = '<input value="f' + i + '.' + j + '" /><button>X</button>';
+                el.addEventListener('click', () => {});
+                shadow.appendChild(el);
+            }
+        }
+    });
+    </script>'''
+    iframe_html = f'<html><head>{shadow_in_iframe_script}</head><body><h3>Iframe with Shadow DOM</h3></body></html>'
+    iframe_escaped = iframe_html.replace("'", "&#39;").replace('"', '&quot;')
+    same_origin_iframes = '\n'.join(
+        f"<iframe srcdoc='{iframe_escaped}' style='width:350px;height:250px;border:2px solid blue;'></iframe>"
+        for _ in range(10)
+    )
+    # Heavy local content with deep nesting
+    def deep_nest(d: int) -> str:
+        if d <= 0:
+            return '<input type="text" value="deep" /><button>X</button>'
+        return ''.join(f'<div class="d-{d}" style="padding:1px;border:1px solid #ddd;">{deep_nest(d-1)}</div>' for _ in range(3))
+    deep = deep_nest(6)
+    # Shadow DOM section
+    shadow_script = '''
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const c = document.getElementById('local-shadow');
+        for (let i = 0; i < 200; i++) {
+            const host = document.createElement('div');
+            c.appendChild(host);
+            const shadow = host.attachShadow({mode: 'open'});
+            for (let j = 0; j < 30; j++) {
+                const el = document.createElement('div');
+                el.innerHTML = '<span>LS' + i + '.' + j + '</span><input value="ls-' + i + '-' + j + '" /><button>Go</button>';
+                el.addEventListener('click', () => {});
+                el.addEventListener('mousedown', () => {});
+                shadow.appendChild(el);
+            }
+        }
+        // Event listener heavy section
+        const lc = document.getElementById('listener-heavy');
+        for (let i = 0; i < 5000; i++) {
+            const div = document.createElement('div');
+            div.innerHTML = '<span>EL-' + i + '</span><a href="#" onclick="return false">link</a><input type="checkbox" />';
+            div.addEventListener('click', () => {});
+            div.addEventListener('pointerdown', () => {});
+            div.addEventListener('mousedown', () => {});
+            lc.appendChild(div);
+        }
+    });
+    </script>'''
+    # Forms section
+    form_fields = ''.join(
+        f'<div><label for="xf-{i}">F{i}</label>'
+        f'<input type="{["text","email","number","date","tel","url","color","password","search","range"][i%10]}" id="xf-{i}" value="v{i}" />'
+        f'<select><option>Opt1</option><option>Opt2</option><option>Opt3</option></select></div>'
+        for i in range(1000)
+    )
+    # Table
+    table_rows = ''.join(
+        f'<tr>{"".join(f"<td><input value=r{r}c{c} /><button>X</button></td>" for c in range(15))}</tr>'
+        for r in range(200)
+    )
+    # Overlapping positioned elements
+    overlapping = ''.join(
+        f'<div style="position:absolute;left:{(i*25)%900}px;top:{(i*18)%500}px;width:80px;height:40px;'
+        f'background:rgba({i*7%255},{i*13%255},100,0.6);z-index:{i%20};">'
+        f'<button>O{i}</button></div>'
+        for i in range(500)
+    )
+
+    return (
+        f'<html><head><title>EXTREME: Cross-Origin + Shadow + Iframes</title>{shadow_script}</head>'
+        f'<body>'
+        f'<h1>EXTREME STRESS TEST</h1>'
+        f'<section><h2>Cross-Origin Iframes (15)</h2>{external_iframes}</section>'
+        f'<section><h2>Same-Origin Iframes with Shadow DOM (10)</h2>{same_origin_iframes}</section>'
+        f'<section id="local-shadow"><h2>Local Shadow DOM (200x30)</h2></section>'
+        f'<section id="listener-heavy"><h2>Event Listeners (5000)</h2></section>'
+        f'<section><h2>Forms (1000 fields)</h2><form>{form_fields}</form></section>'
+        f'<section><h2>Table (200x15)</h2><table border="1">{table_rows}</table></section>'
+        f'<section style="position:relative;width:1000px;height:600px;"><h2>Overlapping Layers (500)</h2>{overlapping}</section>'
+        f'<section><h2>Deep Nesting (6x3)</h2>{deep}</section>'
+        f'</body></html>'
+    )
+
+
+def gen_page_100k_flat() -> str:
+    """Page 15: Pure scale — 100k flat interactive elements. Tests raw throughput."""
+    script = '''
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const c = document.getElementById('bulk');
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < 33000; i++) {
+            const div = document.createElement('div');
+            div.innerHTML = '<span>' + i + '</span><input value="v' + i + '" /><button>X</button>';
+            frag.appendChild(div);
+        }
+        c.appendChild(frag);
+    });
+    </script>'''
+    return (
+        f'<html><head><title>100k Flat Elements</title>{script}</head>'
+        f'<body><h1>~100k flat elements</h1><div id="bulk"></div></body></html>'
+    )
+
+
 # ─── Test pages registry ──────────────────────────────────────────────────────
 
 TEST_PAGES = [
@@ -315,6 +529,11 @@ TEST_PAGES = [
     ('08_event_listeners_5k', lambda: gen_page_event_listeners(5000)),
     ('09_cross_origin',       lambda: gen_page_cross_origin_iframes(10)),
     ('10_ultimate_stress',    lambda: gen_page_ultimate_stress()),
+    ('11_shadow_iframe_combo', lambda: gen_page_shadow_iframe_combo(100, 20, 10)),
+    ('12_overlapping_layers', lambda: gen_page_overlapping_layers(50, 100)),
+    ('13_mega_shadow_dom',    lambda: gen_page_mega_shadow_dom(500, 50)),
+    ('14_extreme_everything', lambda: gen_page_cross_origin_shadow_iframe()),
+    ('15_100k_flat',          lambda: gen_page_100k_flat()),
 ]
 
 
@@ -470,6 +689,26 @@ async def run_dom_only_tests():
             logger.info(f'{"="*60}')
 
             result = await test_dom_capture(url, name, browser_session)
+
+            # If browser session became unstable, restart it for next test
+            if not result['success'] and 'unstable' in str(result.get('error', '')).lower():
+                logger.warning(f'  Browser session unstable — restarting for next test...')
+                try:
+                    await browser_session.kill()
+                except Exception:
+                    pass
+                browser_session = BrowserSession(
+                    browser_profile=BrowserProfile(
+                        headless=True,
+                        cross_origin_iframes=True,
+                        max_iframes=100,
+                        max_iframe_depth=5,
+                    ),
+                )
+                await browser_session.start()
+                # Retry on fresh session
+                result = await test_dom_capture(url, name, browser_session)
+
             results.append(result)
 
             status = 'PASS' if result['success'] else 'FAIL'
@@ -580,6 +819,12 @@ def main():
         from dotenv import load_dotenv
         load_dotenv(cloud_env)
         logger.info('Loaded API keys from cloud backend .env')
+
+    # Increase the BrowserStateRequest event timeout for extreme test pages.
+    # Default is 30s which is fine for normal pages, but 100k+ element pages
+    # need more time for Python-side tree construction.
+    os.environ['TIMEOUT_BrowserStateRequestEvent'] = '120'
+    logger.info('Set TIMEOUT_BrowserStateRequestEvent=120s for stress testing')
 
     if args.dom_only or (not args.agent):
         success = asyncio.run(run_dom_only_tests())

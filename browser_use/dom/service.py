@@ -748,6 +748,15 @@ class DomService:
 		snapshot_lookup = build_snapshot_lookup(snapshot, device_pixel_ratio)
 		timing_info['build_snapshot_lookup_ms'] = (time.time() - start_snapshot) * 1000
 
+		# Pre-resolve the CDP session for this target ONCE before recursion.
+		# Previously get_or_create_cdp_session() was called inside _construct_enhanced_node
+		# for every single node — on a 20k-element page that's 20k+ async operations.
+		try:
+			_cached_cdp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
+			_cached_session_id = _cached_cdp_session.session_id
+		except ValueError:
+			_cached_session_id = None
+
 		async def _construct_enhanced_node(
 			node: Node,
 			html_frames: list[EnhancedDOMTreeNode] | None,
@@ -830,13 +839,6 @@ class DomService:
 					height=snapshot_data.bounds.height,
 				)
 
-			try:
-				session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
-				session_id = session.session_id
-			except ValueError:
-				# Target may have detached during DOM construction
-				session_id = None
-
 			dom_tree_node = EnhancedDOMTreeNode(
 				node_id=node['nodeId'],
 				backend_node_id=node['backendNodeId'],
@@ -846,7 +848,7 @@ class DomService:
 				attributes=attributes or {},
 				is_scrollable=node.get('isScrollable', None),
 				frame_id=node.get('frameId', None),
-				session_id=session_id,
+				session_id=_cached_session_id,
 				target_id=target_id,
 				content_document=None,
 				shadow_root_type=shadow_root_type,
