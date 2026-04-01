@@ -1,0 +1,116 @@
+"""CLI configuration schema and helpers.
+
+Single source of truth for all CLI config keys. Doctor, setup, and
+getter functions all reference CONFIG_KEYS.
+"""
+
+import json
+import os
+from pathlib import Path
+
+CLI_DOCS_URL = 'https://docs.browser-use.com/open-source/browser-use-cli'
+
+CONFIG_KEYS: dict = {
+	'api_key': {
+		'type': str,
+		'sensitive': True,
+		'description': 'Browser Use Cloud API key',
+	},
+	'cloud_connect_profile_id': {
+		'type': str,
+		'description': 'Cloud browser profile ID (auto-created)',
+	},
+	'cloud_connect_proxy': {
+		'type': str,
+		'default': 'us',
+		'description': 'Cloud proxy country code',
+	},
+	'cloud_connect_timeout': {
+		'type': int,
+		'description': 'Cloud browser timeout (minutes)',
+	},
+}
+
+
+def _get_config_path() -> Path:
+	from browser_use.skill_cli.utils import get_config_path
+
+	return get_config_path()
+
+
+def read_config() -> dict:
+	"""Read CLI config file. Returns empty dict if missing or corrupt."""
+	path = _get_config_path()
+	if path.exists():
+		try:
+			return json.loads(path.read_text())
+		except (json.JSONDecodeError, OSError):
+			return {}
+	return {}
+
+
+def write_config(data: dict) -> None:
+	"""Write CLI config file with 0o600 permissions."""
+	path = _get_config_path()
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(json.dumps(data, indent=2) + '\n')
+	try:
+		path.chmod(0o600)
+	except OSError:
+		pass
+
+
+def get_config_value(key: str) -> object:
+	"""Read a config value, applying schema defaults.
+
+	Priority: env var BROWSER_USE_API_KEY (for api_key only) → config file → schema default → None.
+	"""
+	schema = CONFIG_KEYS.get(key)
+	if schema is None:
+		return None
+
+	# Special case: api_key checks env var first
+	if key == 'api_key':
+		env_val = os.environ.get('BROWSER_USE_API_KEY')
+		if env_val:
+			return env_val
+
+	config = read_config()
+	val = config.get(key)
+	if val is not None:
+		return val
+
+	return schema.get('default')
+
+
+def get_config_display() -> list[dict]:
+	"""Return config state for display (doctor, setup).
+
+	Each entry: {key, value, is_set, sensitive, description}
+	"""
+	config = read_config()
+	entries = []
+	for key, schema in CONFIG_KEYS.items():
+		val = config.get(key)
+		is_set = val is not None
+
+		# For api_key, also check env var
+		if key == 'api_key' and not is_set:
+			env_val = os.environ.get('BROWSER_USE_API_KEY')
+			if env_val:
+				val = env_val
+				is_set = True
+
+		# Apply default for display
+		display_val = val
+		if not is_set and 'default' in schema:
+			display_val = f'{schema["default"]} (default)'
+
+		entries.append({
+			'key': key,
+			'value': display_val,
+			'is_set': is_set,
+			'sensitive': schema.get('sensitive', False),
+			'description': schema.get('description', ''),
+		})
+	return entries

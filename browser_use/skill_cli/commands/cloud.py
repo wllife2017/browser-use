@@ -60,32 +60,22 @@ def _get_config_path() -> Path:
 
 
 def _read_config() -> dict:
-	path = _get_config_path()
-	if path.exists():
-		try:
-			return json.loads(path.read_text())
-		except (json.JSONDecodeError, OSError):
-			return {}
-	return {}
+	from browser_use.skill_cli.config import read_config
+
+	return read_config()
 
 
 def _write_config(data: dict) -> None:
-	path = _get_config_path()
-	path.parent.mkdir(parents=True, exist_ok=True)
-	path.write_text(json.dumps(data, indent=2) + '\n')
-	try:
-		path.chmod(0o600)
-	except OSError:
-		pass
+	from browser_use.skill_cli.config import write_config
+
+	write_config(data)
 
 
 def _get_api_key_or_none() -> str | None:
 	"""Return API key from env var or CLI config file, or None if not found."""
-	key = os.environ.get('BROWSER_USE_API_KEY')
-	if key:
-		return key
-	config = _read_config()
-	return config.get('api_key')
+	from browser_use.skill_cli.config import get_config_value
+
+	return get_config_value('api_key')
 
 
 def _get_api_key() -> str:
@@ -133,20 +123,18 @@ def _ensure_cloud_profile() -> str:
 	return new_id
 
 
-_VALID_PROXY_CODES = {'us', 'uk', 'fr', 'it', 'jp', 'au', 'de', 'fi', 'ca', 'in'}
-
-
 def _get_cloud_connect_proxy() -> str | None:
-	"""Return the cloud connect proxy country code. Defaults to 'us'."""
-	val = _read_config().get('cloud_connect_proxy', 'us')
-	if isinstance(val, str) and val.lower() in _VALID_PROXY_CODES:
-		return val.lower()
-	return None
+	"""Return the cloud connect proxy country code from config."""
+	from browser_use.skill_cli.config import get_config_value
+
+	return get_config_value('cloud_connect_proxy')
 
 
 def _get_cloud_connect_timeout() -> int | None:
-	"""Return the cloud connect timeout (minutes) from config, or None."""
-	val = _read_config().get('cloud_connect_timeout')
+	"""Return the cloud connect timeout (minutes) from config."""
+	from browser_use.skill_cli.config import get_config_value
+
+	val = get_config_value('cloud_connect_timeout')
 	return int(val) if val is not None else None
 
 
