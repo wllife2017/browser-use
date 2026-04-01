@@ -925,8 +925,10 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 		print('Error: --profile and cloud connect are mutually exclusive', file=sys.stderr)
 		return 1
 
-	# Auto-manage cloud profile and read config-driven settings
-	from browser_use.skill_cli.commands.cloud import _ensure_cloud_profile, _get_cloud_connect_proxy, _get_cloud_connect_timeout
+	# Validate API key exists before spawning daemon (shows our CLI error, not library's)
+	from browser_use.skill_cli.commands.cloud import _ensure_cloud_profile, _get_api_key, _get_cloud_connect_proxy, _get_cloud_connect_timeout
+
+	_get_api_key()  # exits with helpful message if no key
 
 	cloud_profile_id = _ensure_cloud_profile()
 

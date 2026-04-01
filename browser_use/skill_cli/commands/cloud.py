@@ -24,27 +24,28 @@ from pathlib import Path
 # Constants
 # ---------------------------------------------------------------------------
 
-_DEFAULT_BASE_URL = 'https://api.browser-use.com/api'
+_DEFAULT_BASE_URL = 'https://api.browser-use.com'
 _AUTH_HEADER = 'X-Browser-Use-API-Key'
 
 
 def _get_base() -> str:
+	"""Get the API host URL. All paths are appended by callers."""
 	return os.environ.get('BROWSER_USE_CLOUD_BASE_URL', _DEFAULT_BASE_URL).rstrip('/')
 
 
 def _base_url(version: str) -> str:
-	# Per-version override takes precedence (used by tests), then base override, then default
+	"""Get versioned API URL: {base}/api/{version}"""
 	per_version = os.environ.get(f'BROWSER_USE_CLOUD_BASE_URL_{version.upper()}')
 	if per_version:
 		return per_version
-	return f'{_get_base()}/{version}'
+	return f'{_get_base()}/api/{version}'
 
 
 def _spec_url(version: str) -> str:
 	per_version = os.environ.get(f'BROWSER_USE_OPENAPI_SPEC_URL_{version.upper()}')
 	if per_version:
 		return per_version
-	return f'{_get_base()}/{version}/openapi.json'
+	return f'{_get_base()}/api/{version}/openapi.json'
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +95,10 @@ def _get_api_key() -> str:
 		return key
 
 	print('Error: No API key found.', file=sys.stderr)
-	print('Get one at: https://cloud.browser-use.com/settings?tab=api-keys&new=1', file=sys.stderr)
-	print('Then run: browser-use cloud login <key>', file=sys.stderr)
+	print('Already have an account? Get a key at: https://cloud.browser-use.com/settings?tab=api-keys&new=1', file=sys.stderr)
+	print('  Then run: browser-use cloud login <key>', file=sys.stderr)
+	print('No account? Run: browser-use cloud signup', file=sys.stderr)
+	print('  This creates an agent account you can claim later with: browser-use cloud signup --claim', file=sys.stderr)
 	sys.exit(1)
 
 
@@ -105,12 +108,12 @@ def _ensure_cloud_profile() -> str:
 	profile_id = config.get('cloud_connect_profile_id')
 	api_key = _get_api_key()
 
-	# Validate existing profile
+	# Validate existing profile against current API key
 	if profile_id:
 		status, _ = _http_request('GET', f'{_base_url("v2")}/profiles/{profile_id}', None, api_key)
 		if status == 200:
 			return profile_id
-		# Profile was deleted — fall through to create
+		# Profile doesn't exist or belongs to a different account — create a new one
 
 	# Create new profile
 	body = json.dumps({'name': 'Browser Use CLI'}).encode()
@@ -534,6 +537,84 @@ def _cloud_versioned(argv: list[str], version: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Signup (agent self-registration)
+# ---------------------------------------------------------------------------
+
+
+def _signup_challenge() -> int:
+	"""Request a signup challenge."""
+	if _get_api_key_or_none():
+		print('You already have an API key configured.', file=sys.stderr)
+		print('Run `browser-use cloud signup --claim` to claim your account.', file=sys.stderr)
+		return 1
+
+	body = json.dumps({}).encode()
+	status, resp = _http_request('POST', f'{_get_base()}/cloud/signup', body, api_key='')
+	if status >= 400:
+		print(f'Error: HTTP {status}', file=sys.stderr)
+		_print_json(resp, file=sys.stderr)
+		return 1
+
+	try:
+		data = json.loads(resp)
+	except (json.JSONDecodeError, ValueError):
+		print('Error: invalid response', file=sys.stderr)
+		return 1
+
+	print(f'Challenge ID: {data["challenge_id"]}')
+	print(f'Challenge: {data["challenge_text"]}')
+	print()
+	print('Verify to create your agent account:')
+	print(f'  browser-use cloud signup --verify <challenge-id> <answer>')
+	return 0
+
+
+def _signup_verify(challenge_id: str, answer: str) -> int:
+	"""Verify a signup challenge and save the API key."""
+	if _get_api_key_or_none():
+		print('You already have an API key configured.', file=sys.stderr)
+		print('Run `browser-use cloud signup --claim` to claim your account.', file=sys.stderr)
+		return 1
+
+	body = json.dumps({'challenge_id': challenge_id, 'answer': answer}).encode()
+	status, resp = _http_request('POST', f'{_get_base()}/cloud/signup/verify', body, api_key='')
+	if status >= 400:
+		print(f'Error: HTTP {status}', file=sys.stderr)
+		_print_json(resp, file=sys.stderr)
+		return 1
+
+	try:
+		data = json.loads(resp)
+	except (json.JSONDecodeError, ValueError):
+		print('Error: invalid response', file=sys.stderr)
+		return 1
+
+	_save_api_key(data['api_key'])
+	print('API key saved')
+	return 0
+
+
+def _signup_claim() -> int:
+	"""Generate a claim URL for the current API key."""
+	api_key = _get_api_key()
+	status, resp = _http_request('POST', f'{_get_base()}/cloud/signup/claim', None, api_key)
+	if status >= 400:
+		print(f'Error: HTTP {status}', file=sys.stderr)
+		_print_json(resp, file=sys.stderr)
+		return 1
+
+	try:
+		data = json.loads(resp)
+	except (json.JSONDecodeError, ValueError):
+		print('Error: invalid response', file=sys.stderr)
+		return 1
+
+	print(f'Claim URL: {data["claim_url"]}')
+	print('Share this URL with a human to claim ownership of this account.')
+	return 0
+
+
+# ---------------------------------------------------------------------------
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
@@ -555,6 +636,17 @@ def handle_cloud_command(argv: list[str]) -> int:
 	if subcmd in ('v2', 'v3'):
 		return _cloud_versioned(argv[1:], subcmd)
 
+	if subcmd == 'signup':
+		if '--verify' in argv:
+			idx = argv.index('--verify')
+			if idx + 2 >= len(argv):
+				print('Usage: browser-use cloud signup --verify <challenge-id> <answer>', file=sys.stderr)
+				return 1
+			return _signup_verify(argv[idx + 1], argv[idx + 2])
+		if '--claim' in argv:
+			return _signup_claim()
+		return _signup_challenge()
+
 	if subcmd == 'connect':
 		# Normally intercepted by main.py before reaching here
 		print('Error: cloud connect must be run via the main CLI (browser-use cloud connect)', file=sys.stderr)
@@ -574,6 +666,9 @@ def _print_cloud_usage() -> None:
 	print()
 	print('Commands:')
 	print('  connect                           Provision cloud browser and connect')
+	print('  signup                            Create an agent account (challenge-response)')
+	print('  signup --verify <id> <answer>     Verify challenge and save API key')
+	print('  signup --claim                    Generate URL to claim your agent account')
 	print('  login <api-key>                   Save API key')
 	print('  logout                            Remove API key')
 	print('  v2 <METHOD> <path> [body]         REST passthrough (API v2)')

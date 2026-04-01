@@ -134,6 +134,15 @@ browser-use cloud v2 --help               # Show API endpoints
 
 `cloud connect` provisions a cloud browser with a persistent profile (auto-created on first use), connects via CDP, and prints a live URL. `browser-use close` disconnects AND stops the cloud browser. For custom browser settings (proxy, timeout, specific profile), use `cloud v2 POST /browsers` directly with the desired parameters.
 
+### Agent Self-Registration
+
+Only use this if you don't already have an API key (check `browser-use cloud login` status first). If already logged in, skip this entirely.
+
+1. `browser-use cloud signup` — get a challenge
+2. Solve the challenge
+3. `browser-use cloud signup --verify <challenge-id> <answer>` — verify and save API key
+4. `browser-use cloud signup --claim` — generate URL for a human to claim the account
+
 ## Tunnels
 
 ```bash
