@@ -219,6 +219,35 @@ browser-use --connect $INDEX click <element>     # Click in agent's tab
 - **If you get "Tab is currently in use by another agent"**: do NOT close sessions or force it. Just use `open` to navigate your own tab to the URL you need.
 - **Never run `browser-use close --all`** when other agents are sharing the browser — it kills everything.
 
+## Multiple Browser Sessions
+
+Run different browsers simultaneously with `--session`:
+
+```bash
+browser-use --session cloud cloud connect         # Cloud browser
+browser-use --session local --headed open <url>    # Local Chromium
+browser-use --session work --profile "Default" open <url>  # Real Chrome
+
+browser-use sessions                               # List all active
+browser-use --session cloud close                  # Close one
+browser-use close --all                            # Close all
+```
+
+Each session gets its own daemon, socket, and state. See `references/multi-session.md` for details.
+
+## Configuration
+
+```bash
+browser-use config list                            # Show all config values
+browser-use config set cloud_connect_proxy jp      # Set a value
+browser-use config get cloud_connect_proxy         # Get a value
+browser-use config unset cloud_connect_timeout     # Remove a value
+browser-use doctor                                 # Shows config + diagnostics
+browser-use setup                                  # Interactive post-install setup
+```
+
+Config stored in `~/.browser-use/config.json`.
+
 ## Global Options
 
 | Option | Description |
