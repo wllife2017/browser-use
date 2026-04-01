@@ -1192,15 +1192,9 @@ def main() -> int:
 	if args.command == 'setup':
 		from browser_use.skill_cli.commands import setup
 
-		loop = asyncio.get_event_loop()
-		result = loop.run_until_complete(
-			setup.handle(
-				'setup',
-				{
-					'yes': getattr(args, 'yes', False),
-					'json': args.json,
-				},
-			)
+		result = setup.handle(
+			yes=getattr(args, 'yes', False),
+			json_output=args.json,
 		)
 
 		if args.json:
@@ -1208,10 +1202,6 @@ def main() -> int:
 		elif 'error' in result:
 			print(f'Error: {result["error"]}', file=sys.stderr)
 			return 1
-		else:
-			if result.get('status') == 'success':
-				print('\n✓ Setup complete!')
-				print('Next: browser-use open https://example.com')
 		return 0
 
 	# Handle doctor command
