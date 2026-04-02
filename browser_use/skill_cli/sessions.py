@@ -10,6 +10,7 @@ from browser_use.skill_cli.browser import CLIBrowserSession
 from browser_use.skill_cli.python_session import PythonSession
 
 if TYPE_CHECKING:
+	from browser_use.browser.session import BrowserSession
 	from browser_use.skill_cli.actions import ActionHandler
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ class SessionInfo:
 	headed: bool
 	profile: str | None
 	cdp_url: str | None
-	browser_session: CLIBrowserSession
+	browser_session: BrowserSession
 	actions: ActionHandler | None = None
 	python_session: PythonSession = field(default_factory=PythonSession)
 	use_cloud: bool = False
