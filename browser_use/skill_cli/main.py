@@ -1007,6 +1007,7 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 						config_parts.append(f'profile={data["profile"]}')
 					if data.get('cdp_url'):
 						config_parts.append('cdp')
+						entry['cdp_url'] = data['cdp_url']
 					if data.get('use_cloud'):
 						config_parts.append('cloud')
 					entry['config'] = ', '.join(config_parts) if config_parts else 'headless'
@@ -1027,9 +1028,9 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 		print(json.dumps({'sessions': sessions}))
 	else:
 		if sessions:
-			print(f'{"SESSION":<16} {"PHASE":<14} {"PID":<8} CONFIG')
+			print(f'{"SESSION":<16} {"PHASE":<14} {"PID":<8} {"CONFIG":<12} CDP URL')
 			for s in sessions:
-				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", "")}')
+				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", ""):<12} {s.get("cdp_url", "")}')
 		else:
 			print('No active sessions')
 
