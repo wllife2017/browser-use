@@ -100,7 +100,12 @@ def set_config_value(key: str, value: str) -> None:
 		if expected_type is int:
 			coerced = int(value)
 		elif expected_type is bool:
-			coerced = value.lower() in ('true', '1', 'yes')
+			if value.lower() in ('true', '1', 'yes'):
+				coerced = True
+			elif value.lower() in ('false', '0', 'no'):
+				coerced = False
+			else:
+				raise ValueError(f'Invalid value for {key}: expected true/false, got {value!r}')
 		else:
 			coerced = str(value)
 	except (ValueError, TypeError):
