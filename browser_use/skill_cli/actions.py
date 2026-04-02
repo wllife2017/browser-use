@@ -37,7 +37,7 @@ class ActionHandler:
 	and DomService for DOM snapshots. All other actions use direct CDP calls.
 	"""
 
-	def __init__(self, browser_session: 'BrowserSession') -> None:
+	def __init__(self, browser_session: BrowserSession) -> None:
 		self.bs = browser_session
 		# Create watchdog instance — NOT registered on event bus
 		self._watchdog = DefaultActionWatchdog(
