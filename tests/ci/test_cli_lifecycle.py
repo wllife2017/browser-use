@@ -286,11 +286,7 @@ def test_close_orphaned_daemon(home_dir):
 	# - "Browser closed" (killed orphan successfully)
 	# - "No active browser session" (daemon already exited)
 	# - "daemon may still be shutting down" on stderr (SIGTERM sent but PID hasn't died yet)
-	assert (
-		'Browser closed' in result.stdout
-		or 'No active browser session' in result.stdout
-		or 'shutting down' in result.stderr
-	)
+	assert 'Browser closed' in result.stdout or 'No active browser session' in result.stdout or 'shutting down' in result.stderr
 
 	# Clean up — daemon may still be shutting down asynchronously
 	_kill_daemon(pid)
