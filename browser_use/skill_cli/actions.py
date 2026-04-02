@@ -24,8 +24,8 @@ from browser_use.dom.service import DomService
 from browser_use.dom.views import EnhancedDOMTreeNode, SerializedDOMState
 
 if TYPE_CHECKING:
+	from browser_use.browser.session import BrowserSession
 	from browser_use.browser.views import BrowserStateSummary, PageInfo
-	from browser_use.skill_cli.browser import CLIBrowserSession
 
 logger = logging.getLogger('browser_use.skill_cli.actions')
 
@@ -37,7 +37,7 @@ class ActionHandler:
 	and DomService for DOM snapshots. All other actions use direct CDP calls.
 	"""
 
-	def __init__(self, browser_session: CLIBrowserSession) -> None:
+	def __init__(self, browser_session: 'BrowserSession') -> None:
 		self.bs = browser_session
 		# Create watchdog instance — NOT registered on event bus
 		self._watchdog = DefaultActionWatchdog(
