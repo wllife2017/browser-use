@@ -1006,8 +1006,9 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 					if data.get('profile'):
 						config_parts.append(f'profile={data["profile"]}')
 					if data.get('cdp_url'):
-						config_parts.append('cdp')
 						entry['cdp_url'] = data['cdp_url']
+						if not data.get('use_cloud'):
+							config_parts.append('cdp')
 					if data.get('use_cloud'):
 						config_parts.append('cloud')
 					entry['config'] = ', '.join(config_parts) if config_parts else 'headless'
