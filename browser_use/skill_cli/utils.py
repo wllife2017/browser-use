@@ -178,7 +178,7 @@ def discover_chrome_cdp_url() -> str:
 	1. Read ``DevToolsActivePort`` from known Chrome data dirs.
 	2. Probe ``/json/version`` via HTTP to get ``webSocketDebuggerUrl``.
 	3. If HTTP fails, construct ``ws://`` URL directly from the port file.
-	4. Fallback: probe well-known ports 9222, 9229.
+	4. Fallback: probe well-known port 9222.
 
 	Raises ``RuntimeError`` if no running Chrome with remote debugging is found.
 	"""
@@ -234,7 +234,7 @@ def discover_chrome_cdp_url() -> str:
 			return f'ws://127.0.0.1:{port}{ws_path}'
 
 	# --- Phase 2: well-known fallback ports ---
-	for port in (9222, 9229):
+	for port in (9222,):
 		ws_url = _probe_http(port)
 		if ws_url:
 			return ws_url
