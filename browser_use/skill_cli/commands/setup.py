@@ -24,7 +24,7 @@ def _prompt(message: str, yes: bool) -> bool:
 		return False
 
 
-def handle(yes: bool = False, json_output: bool = False) -> dict:
+def handle(yes: bool = False) -> dict:
 	"""Run interactive setup."""
 	from browser_use.skill_cli.utils import get_home_dir
 

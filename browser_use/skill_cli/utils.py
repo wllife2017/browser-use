@@ -75,48 +75,6 @@ def get_pid_path(session: str = 'default') -> Path:
 	return get_home_dir() / f'{session}.pid'
 
 
-def is_daemon_alive(session: str = 'default') -> bool:
-	"""Check daemon liveness by attempting socket connect.
-
-	If socket file exists but nobody is listening, removes the stale file.
-	"""
-	import socket
-
-	sock_path = get_socket_path(session)
-
-	if sock_path.startswith('tcp://'):
-		_, hostport = sock_path.split('://', 1)
-		host, port_str = hostport.split(':')
-		s = None
-		try:
-			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			s.settimeout(0.5)
-			s.connect((host, int(port_str)))
-			return True
-		except OSError:
-			return False
-		finally:
-			if s:
-				s.close()
-	else:
-		sock_file = Path(sock_path)
-		if not sock_file.exists():
-			return False
-		s = None
-		try:
-			s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-			s.settimeout(0.5)
-			s.connect(sock_path)
-			return True
-		except OSError:
-			# Stale socket file — remove it
-			sock_file.unlink(missing_ok=True)
-			return False
-		finally:
-			if s:
-				s.close()
-
-
 def find_chrome_executable() -> str | None:
 	"""Find Chrome/Chromium executable on the system."""
 	system = platform.system()

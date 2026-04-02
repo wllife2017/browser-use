@@ -1182,10 +1182,7 @@ def main() -> int:
 	if args.command == 'setup':
 		from browser_use.skill_cli.commands import setup
 
-		result = setup.handle(
-			yes=getattr(args, 'yes', False),
-			json_output=args.json,
-		)
+		result = setup.handle(yes=getattr(args, 'yes', False))
 
 		if args.json:
 			print(json.dumps(result))
