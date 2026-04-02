@@ -131,6 +131,10 @@ class CLIBrowserSession(BrowserSession):
 			)
 
 		cloud_params = self.browser_profile.cloud_browser_params or CreateBrowserRequest()
+		# Set recording from CLI config (defaults to True)
+		from browser_use.skill_cli.config import get_config_value
+
+		cloud_params.enable_recording = bool(get_config_value('cloud_connect_recording'))
 		cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
 		self.browser_profile.cdp_url = cloud_response.cdpUrl
 		self.browser_profile.is_local = False

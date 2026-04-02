@@ -60,7 +60,7 @@ class CreateBrowserRequest(BaseModel):
 	)
 
 	enable_recording: bool = Field(
-		default=True,
+		default=False,
 		alias='enableRecording',
 		description='Enable session recording for playback in the cloud dashboard.',
 		title='Enable Recording',

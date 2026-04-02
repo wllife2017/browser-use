@@ -29,6 +29,11 @@ CONFIG_KEYS: dict = {
 		'type': int,
 		'description': 'Cloud browser timeout (minutes)',
 	},
+	'cloud_connect_recording': {
+		'type': bool,
+		'default': True,
+		'description': 'Enable session recording in cloud browser',
+	},
 }
 
 
@@ -94,6 +99,8 @@ def set_config_value(key: str, value: str) -> None:
 	try:
 		if expected_type is int:
 			coerced = int(value)
+		elif expected_type is bool:
+			coerced = value.lower() in ('true', '1', 'yes')
 		else:
 			coerced = str(value)
 	except (ValueError, TypeError):
