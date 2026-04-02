@@ -100,10 +100,15 @@ def _ensure_cloud_profile() -> str:
 
 	# Validate existing profile against current API key
 	if profile_id:
-		status, _ = _http_request('GET', f'{_base_url("v2")}/profiles/{profile_id}', None, api_key)
+		status, resp = _http_request('GET', f'{_base_url("v2")}/profiles/{profile_id}', None, api_key)
 		if status == 200:
 			return profile_id
-		# Profile doesn't exist or belongs to a different account — create a new one
+		if status != 404:
+			# Auth or server error — don't silently create a new profile
+			print(f'Error validating cloud profile: HTTP {status}', file=sys.stderr)
+			_print_json(resp, file=sys.stderr)
+			sys.exit(1)
+		# 404 — profile deleted, fall through to create a new one
 
 	# Create new profile
 	body = json.dumps({'name': 'Browser Use CLI'}).encode()
@@ -113,8 +118,13 @@ def _ensure_cloud_profile() -> str:
 		_print_json(resp, file=sys.stderr)
 		sys.exit(1)
 
-	data = json.loads(resp)
-	new_id = data['id']
+	try:
+		data = json.loads(resp)
+		new_id = data['id']
+	except (json.JSONDecodeError, KeyError, TypeError):
+		print('Error: unexpected response from cloud API', file=sys.stderr)
+		_print_json(resp, file=sys.stderr)
+		sys.exit(1)
 
 	# Save to config
 	config['cloud_connect_profile_id'] = new_id
