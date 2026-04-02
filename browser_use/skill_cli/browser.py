@@ -135,7 +135,20 @@ class CLIBrowserSession(BrowserSession):
 		from browser_use.skill_cli.config import get_config_value
 
 		cloud_params.enable_recording = bool(get_config_value('cloud_connect_recording'))
-		cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
+
+		try:
+			cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
+		except Exception as e:
+			# If profile is invalid, create a new one and retry once
+			if 'profile' in str(e).lower() or '422' in str(e):
+				logger.info('Cloud profile invalid, creating new one and retrying')
+				from browser_use.skill_cli.commands.cloud import _create_cloud_profile
+
+				new_profile_id = _create_cloud_profile()
+				cloud_params.profile_id = new_profile_id
+				cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
+			else:
+				raise
 		self.browser_profile.cdp_url = cloud_response.cdpUrl
 		self.browser_profile.is_local = False
 		logger.info(f'Cloud browser provisioned, CDP: {cloud_response.cdpUrl}')

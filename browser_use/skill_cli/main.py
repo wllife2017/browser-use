@@ -918,15 +918,15 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 
 	# Validate API key exists before spawning daemon (shows our CLI error, not library's)
 	from browser_use.skill_cli.commands.cloud import (
-		_ensure_cloud_profile,
 		_get_api_key,
 		_get_cloud_connect_proxy,
 		_get_cloud_connect_timeout,
+		_get_or_create_cloud_profile,
 	)
 
 	_get_api_key()  # exits with helpful message if no key
 
-	cloud_profile_id = _ensure_cloud_profile()
+	cloud_profile_id = _get_or_create_cloud_profile()
 
 	# Start daemon with cloud config
 	ensure_daemon(

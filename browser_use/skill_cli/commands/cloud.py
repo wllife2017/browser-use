@@ -93,25 +93,9 @@ def _get_api_key() -> str:
 	sys.exit(1)
 
 
-def _ensure_cloud_profile() -> str:
-	"""Return the default cloud connect profile ID, creating one if needed."""
-	config = _read_config()
-	profile_id = config.get('cloud_connect_profile_id')
+def _create_cloud_profile() -> str:
+	"""Create a new cloud profile and save to config. Returns profile ID."""
 	api_key = _get_api_key()
-
-	# Validate existing profile against current API key
-	if profile_id:
-		status, resp = _http_request('GET', f'{_base_url("v2")}/profiles/{profile_id}', None, api_key)
-		if status == 200:
-			return profile_id
-		if status != 404:
-			# Auth or server error — don't silently create a new profile
-			print(f'Error validating cloud profile: HTTP {status}', file=sys.stderr)
-			_print_json(resp, file=sys.stderr)
-			sys.exit(1)
-		# 404 — profile deleted, fall through to create a new one
-
-	# Create new profile
 	body = json.dumps({'name': 'Browser Use CLI'}).encode()
 	status, resp = _http_request('POST', f'{_base_url("v2")}/profiles', body, api_key)
 	if status >= 400:
@@ -127,11 +111,19 @@ def _ensure_cloud_profile() -> str:
 		_print_json(resp, file=sys.stderr)
 		sys.exit(1)
 
-	# Save to config
+	config = _read_config()
 	config['cloud_connect_profile_id'] = new_id
 	_write_config(config)
-
 	return new_id
+
+
+def _get_or_create_cloud_profile() -> str:
+	"""Return cloud profile ID from config, creating one if missing. No validation HTTP call."""
+	config = _read_config()
+	profile_id = config.get('cloud_connect_profile_id')
+	if profile_id:
+		return profile_id
+	return _create_cloud_profile()
 
 
 def _get_cloud_connect_proxy() -> str | None:
