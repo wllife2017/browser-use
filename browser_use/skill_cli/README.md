@@ -216,7 +216,7 @@ Generic REST passthrough to the Browser-Use Cloud API, plus cloud browser provis
 | `cloud v3 --help` | Show API v3 endpoints |
 
 ```bash
-# Save API key (or set BROWSER_USE_API_KEY env var)
+# Save API key to ~/.browser-use/config.json
 browser-use cloud login sk-abc123...
 
 # Provision a cloud browser and connect

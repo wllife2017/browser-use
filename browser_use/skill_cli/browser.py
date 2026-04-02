@@ -122,8 +122,10 @@ class CLIBrowserSession(BrowserSession):
 		if cloud_base:
 			self._cloud_browser_client.api_base_url = cloud_base.rstrip('/')
 
-		# Ensure CLI never falls back to library's ~/.config/browseruse/cloud_auth.json.
-		if not os.environ.get('BROWSER_USE_API_KEY', '').strip():
+		# Ensure CLI has an API key from config.json before proceeding.
+		from browser_use.skill_cli.config import get_config_value
+
+		if not get_config_value('api_key'):
 			from browser_use.browser.cloud.views import CloudBrowserAuthError
 
 			raise CloudBrowserAuthError(
@@ -142,9 +144,12 @@ class CLIBrowserSession(BrowserSession):
 			# If profile is invalid, create a new one and retry once
 			if 'profile' in str(e).lower() or '422' in str(e):
 				logger.info('Cloud profile invalid, creating new one and retrying')
-				from browser_use.skill_cli.commands.cloud import _create_cloud_profile
+				from browser_use.skill_cli.commands.cloud import _create_cloud_profile_inner
 
-				new_profile_id = _create_cloud_profile()
+				api_key = get_config_value('api_key')
+				if not api_key:
+					raise
+				new_profile_id = _create_cloud_profile_inner(str(api_key))
 				cloud_params.profile_id = new_profile_id
 				cloud_response = await self._cloud_browser_client.create_browser(cloud_params)
 			else:

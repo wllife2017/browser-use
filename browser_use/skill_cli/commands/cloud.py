@@ -72,7 +72,7 @@ def _write_config(data: dict) -> None:
 
 
 def _get_api_key_or_none() -> str | None:
-	"""Return API key from env var or CLI config file, or None if not found."""
+	"""Return API key from CLI config file, or None if not found."""
 	from browser_use.skill_cli.config import get_config_value
 
 	val = get_config_value('api_key')
@@ -80,7 +80,7 @@ def _get_api_key_or_none() -> str | None:
 
 
 def _get_api_key() -> str:
-	"""Return API key from env var or config file. Exits with error if missing."""
+	"""Return API key from config file. Exits with error if missing."""
 	key = _get_api_key_or_none()
 	if key:
 		return key
@@ -93,28 +93,39 @@ def _get_api_key() -> str:
 	sys.exit(1)
 
 
-def _create_cloud_profile() -> str:
-	"""Create a new cloud profile and save to config. Returns profile ID."""
-	api_key = _get_api_key()
+def _create_cloud_profile_inner(api_key: str) -> str:
+	"""Create a new cloud profile and save to config. Returns profile ID.
+
+	Raises RuntimeError on failure — safe to call from daemon context.
+	"""
 	body = json.dumps({'name': 'Browser Use CLI'}).encode()
 	status, resp = _http_request('POST', f'{_base_url("v2")}/profiles', body, api_key)
 	if status >= 400:
-		print(f'Error creating cloud profile: HTTP {status}', file=sys.stderr)
-		_print_json(resp, file=sys.stderr)
-		sys.exit(1)
+		raise RuntimeError(f'Error creating cloud profile: HTTP {status} — {resp}')
 
 	try:
 		data = json.loads(resp)
 		new_id = data['id']
 	except (json.JSONDecodeError, KeyError, TypeError):
-		print('Error: unexpected response from cloud API', file=sys.stderr)
-		_print_json(resp, file=sys.stderr)
-		sys.exit(1)
+		raise RuntimeError(f'Unexpected response from cloud API: {resp}')
 
 	config = _read_config()
 	config['cloud_connect_profile_id'] = new_id
 	_write_config(config)
 	return new_id
+
+
+def _create_cloud_profile() -> str:
+	"""Create a new cloud profile and save to config. Returns profile ID.
+
+	CLI entry point — exits on error.
+	"""
+	api_key = _get_api_key()
+	try:
+		return _create_cloud_profile_inner(api_key)
+	except RuntimeError as e:
+		print(str(e), file=sys.stderr)
+		sys.exit(1)
 
 
 def _get_or_create_cloud_profile() -> str:

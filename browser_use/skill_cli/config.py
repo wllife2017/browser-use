@@ -5,7 +5,6 @@ getter functions all reference CONFIG_KEYS.
 """
 
 import json
-import os
 from pathlib import Path
 
 CLI_DOCS_URL = 'https://docs.browser-use.com/open-source/browser-use-cli'
@@ -68,17 +67,11 @@ def write_config(data: dict) -> None:
 def get_config_value(key: str) -> str | int | None:
 	"""Read a config value, applying schema defaults.
 
-	Priority: env var BROWSER_USE_API_KEY (for api_key only) → config file → schema default → None.
+	Priority: config file → schema default → None.
 	"""
 	schema = CONFIG_KEYS.get(key)
 	if schema is None:
 		return None
-
-	# Special case: api_key checks env var first
-	if key == 'api_key':
-		env_val = os.environ.get('BROWSER_USE_API_KEY', '').strip() or None
-		if env_val:
-			return env_val
 
 	config = read_config()
 	val = config.get(key)
@@ -138,13 +131,6 @@ def get_config_display() -> list[dict]:
 	for key, schema in CONFIG_KEYS.items():
 		val = config.get(key)
 		is_set = val is not None
-
-		# For api_key, also check env var
-		if key == 'api_key' and not is_set:
-			env_val = os.environ.get('BROWSER_USE_API_KEY', '').strip() or None
-			if env_val:
-				val = env_val
-				is_set = True
 
 		# Apply default for display
 		display_val = val
