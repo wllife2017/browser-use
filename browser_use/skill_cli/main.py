@@ -973,9 +973,10 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 		probe = _probe_session(name)
 
 		if not probe.pid_alive:
-			# Dead — clean up stale files
-			_clean_session_files(name)
-			continue
+			# Don't delete if socket is still reachable — daemon alive despite stale PID
+			if not probe.socket_reachable:
+				_clean_session_files(name)
+				continue
 
 		# Terminal state + dead PID already handled above.
 		# If phase is terminal but PID is alive, the daemon restarted and
