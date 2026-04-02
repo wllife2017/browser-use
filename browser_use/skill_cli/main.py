@@ -929,6 +929,8 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 	cloud_profile_id = _get_or_create_cloud_profile()
 
 	# Start daemon with cloud config
+	if not args.json:
+		print('Connecting...', end='', flush=True)
 	ensure_daemon(
 		args.headed,
 		None,
@@ -946,6 +948,7 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 	if args.json:
 		print(json.dumps(response))
 	else:
+		print('\r' + ' ' * 20 + '\r', end='')  # clear "Connecting..."
 		if response.get('success'):
 			data = response.get('data', {})
 			print(f'status: {data.get("status", "unknown")}')
@@ -1046,6 +1049,7 @@ def _close_session(session: str) -> bool:
 	probe = _probe_session(session)
 
 	if probe.socket_reachable:
+		print('Closing...', end='', flush=True)
 		try:
 			send_command('shutdown', {}, session=session)
 		except Exception:
@@ -1371,8 +1375,11 @@ def main() -> int:
 		if args.json:
 			print(json.dumps({'success': True, 'data': {'shutdown': True}}))
 		else:
+			print('\r' + ' ' * 20 + '\r', end='')  # clear "Closing..."
 			if closed:
 				print('Browser closed')
+			elif closed is False and _probe_session(session).pid_alive:
+				print('Warning: daemon may still be shutting down', file=sys.stderr)
 			else:
 				print('No active browser session')
 		return 0
