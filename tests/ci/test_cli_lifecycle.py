@@ -282,9 +282,15 @@ def test_close_orphaned_daemon(home_dir):
 
 	result = _run_cli('close', home_dir=home_dir)
 	assert result.returncode == 0, f'close failed: stdout={result.stdout!r} stderr={result.stderr!r}'
-	# Daemon may have exited between socket deletion and CLI probe (race),
-	# so accept either "Browser closed" (killed orphan) or "No active browser session" (already dead)
-	assert 'Browser closed' in result.stdout or 'No active browser session' in result.stdout
+	# Race between socket deletion and CLI probe means several outcomes are valid:
+	# - "Browser closed" (killed orphan successfully)
+	# - "No active browser session" (daemon already exited)
+	# - "daemon may still be shutting down" on stderr (SIGTERM sent but PID hasn't died yet)
+	assert (
+		'Browser closed' in result.stdout
+		or 'No active browser session' in result.stdout
+		or 'shutting down' in result.stderr
+	)
 
 	# Clean up — daemon may still be shutting down asynchronously
 	_kill_daemon(pid)
