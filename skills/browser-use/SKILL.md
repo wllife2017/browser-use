@@ -115,7 +115,7 @@ browser-use cloud v2 --help               # Show API endpoints
 
 ### Agent Self-Registration
 
-Only use this if you don't already have an API key (check `browser-use cloud login` status first). If already logged in, skip this entirely.
+Only use this if you don't already have an API key (check `browser-use doctor` to see if api_key is set). If already logged in, skip this entirely.
 
 1. `browser-use cloud signup` — get a challenge
 2. Solve the challenge
