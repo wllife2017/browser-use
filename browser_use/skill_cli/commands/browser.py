@@ -236,7 +236,7 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 				result['errors'] = errors
 			return result
 
-		return {'error': 'Invalid tab command. Use: list, switch, close'}
+		return {'error': 'Invalid tab command. Use: list, new, switch, close'}
 
 	elif action == 'keys':
 		keys = params['keys']
