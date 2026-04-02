@@ -70,11 +70,14 @@ class ActionHandler:
 
 	async def scroll(self, direction: str, amount: int) -> None:
 		"""Scroll the page using JS (CDP gesture doesn't work in --connect mode)."""
-		pixels = amount if direction == 'down' else -amount
+		if direction in ('down', 'up'):
+			x, y = 0, (amount if direction == 'down' else -amount)
+		else:
+			x, y = (amount if direction == 'right' else -amount), 0
 		cdp_session = await self.bs.get_or_create_cdp_session()
 		assert cdp_session is not None, 'No CDP session for scroll'
 		await cdp_session.cdp_client.send.Runtime.evaluate(
-			params={'expression': f'window.scrollBy(0, {pixels})', 'awaitPromise': False},
+			params={'expression': f'window.scrollBy({x}, {y})', 'awaitPromise': False},
 			session_id=cdp_session.session_id,
 		)
 
