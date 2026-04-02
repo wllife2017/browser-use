@@ -1029,12 +1029,9 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 		print(json.dumps({'sessions': sessions}))
 	else:
 		if sessions:
-			print(f'{"SESSION":<16} {"PHASE":<14} {"PID":<8} {"CONFIG":<12} CDP URL')
+			print(f'{"SESSION":<16} {"PHASE":<14} {"PID":<8} CONFIG')
 			for s in sessions:
-				cdp_url = s.get('cdp_url', '')
-				if cdp_url and len(cdp_url) > 50:
-					cdp_url = cdp_url[:50] + '...'
-				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", ""):<12} {cdp_url}')
+				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", "")}')
 		else:
 			print('No active sessions')
 
