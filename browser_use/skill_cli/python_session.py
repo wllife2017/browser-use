@@ -121,9 +121,7 @@ class BrowserWrapper:
 	Runs coroutines on the server's event loop using run_coroutine_threadsafe.
 	"""
 
-	def __init__(
-		self, session: 'BrowserSession', loop: asyncio.AbstractEventLoop, actions: 'ActionHandler'
-	) -> None:
+	def __init__(self, session: 'BrowserSession', loop: asyncio.AbstractEventLoop, actions: 'ActionHandler') -> None:
 		self._session = session
 		self._loop = loop
 		self._actions = actions

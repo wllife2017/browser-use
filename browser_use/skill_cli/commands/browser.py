@@ -82,7 +82,6 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 	"""Handle browser control command."""
 	bs = session.browser_session
 	actions = session.actions
-	assert actions is not None, 'ActionHandler must be set on SessionInfo'
 
 	if action == 'open':
 		url = params['url']
