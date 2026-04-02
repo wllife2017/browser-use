@@ -1031,7 +1031,10 @@ def _handle_sessions(args: argparse.Namespace) -> int:
 		if sessions:
 			print(f'{"SESSION":<16} {"PHASE":<14} {"PID":<8} {"CONFIG":<12} CDP URL')
 			for s in sessions:
-				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", ""):<12} {s.get("cdp_url", "")}')
+				cdp_url = s.get('cdp_url', '')
+				if cdp_url and len(cdp_url) > 50:
+					cdp_url = cdp_url[:50] + '...'
+				print(f'{s["name"]:<16} {s.get("phase", "?"):<14} {s["pid"]:<8} {s.get("config", ""):<12} {cdp_url}')
 		else:
 			print('No active sessions')
 
