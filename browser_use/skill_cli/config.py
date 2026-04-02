@@ -71,7 +71,7 @@ def get_config_value(key: str) -> object:
 
 	# Special case: api_key checks env var first
 	if key == 'api_key':
-		env_val = os.environ.get('BROWSER_USE_API_KEY')
+		env_val = os.environ.get('BROWSER_USE_API_KEY', '').strip() or None
 		if env_val:
 			return env_val
 
@@ -129,7 +129,7 @@ def get_config_display() -> list[dict]:
 
 		# For api_key, also check env var
 		if key == 'api_key' and not is_set:
-			env_val = os.environ.get('BROWSER_USE_API_KEY')
+			env_val = os.environ.get('BROWSER_USE_API_KEY', '').strip() or None
 			if env_val:
 				val = env_val
 				is_set = True

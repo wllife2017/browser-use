@@ -95,7 +95,7 @@ def run_profile_use(args: list[str]) -> int:
 
 	env = {**os.environ, 'BROWSER_USE_CONFIG_DIR': str(get_home_dir())}
 	# Forward BROWSER_USE_API_KEY if set
-	api_key = os.environ.get('BROWSER_USE_API_KEY')
+	api_key = os.environ.get('BROWSER_USE_API_KEY', '').strip()
 	if api_key:
 		env['BROWSER_USE_API_KEY'] = api_key
 

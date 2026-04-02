@@ -119,7 +119,7 @@ class CLIBrowserSession(BrowserSession):
 			self._cloud_browser_client.api_base_url = cloud_base.rstrip('/')
 
 		# Ensure CLI never falls back to library's ~/.config/browseruse/cloud_auth.json.
-		if not os.environ.get('BROWSER_USE_API_KEY'):
+		if not os.environ.get('BROWSER_USE_API_KEY', '').strip():
 			from browser_use.browser.cloud.views import CloudBrowserAuthError
 
 			raise CloudBrowserAuthError('No API key configured. Run `browser-use cloud login <key>` or `browser-use cloud signup`.')
