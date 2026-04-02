@@ -215,6 +215,7 @@ def _install_cloudflared() -> bool:
 			# Linux: download binary + verify SHA256 checksum before installing
 			import hashlib
 			import platform
+			import shutil
 			import tempfile
 			import urllib.request
 
@@ -243,7 +244,7 @@ def _install_cloudflared() -> bool:
 				if not os.access('/usr/local/bin', os.W_OK):
 					dest = Path.home() / '.local' / 'bin' / 'cloudflared'
 					dest.parent.mkdir(parents=True, exist_ok=True)
-				tmp_path.rename(dest)
+				shutil.move(str(tmp_path), dest)
 				dest.chmod(0o755)
 			finally:
 				tmp_path.unlink(missing_ok=True)
