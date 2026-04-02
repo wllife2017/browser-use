@@ -213,9 +213,11 @@ def _install_cloudflared() -> bool:
 			return result.returncode == 0
 		else:
 			# Linux: download binary
+			import platform
 			import urllib.request
 
-			url = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64'
+			arch = 'arm64' if platform.machine() in ('aarch64', 'arm64') else 'amd64'
+			url = f'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{arch}'
 			dest = Path('/usr/local/bin/cloudflared')
 			if not os.access('/usr/local/bin', os.W_OK):
 				dest = Path.home() / '.local' / 'bin' / 'cloudflared'
