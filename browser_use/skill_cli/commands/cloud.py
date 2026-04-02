@@ -75,7 +75,8 @@ def _get_api_key_or_none() -> str | None:
 	"""Return API key from env var or CLI config file, or None if not found."""
 	from browser_use.skill_cli.config import get_config_value
 
-	return get_config_value('api_key')
+	val = get_config_value('api_key')
+	return str(val) if val is not None else None
 
 
 def _get_api_key() -> str:
@@ -137,7 +138,8 @@ def _get_cloud_connect_proxy() -> str | None:
 	"""Return the cloud connect proxy country code from config."""
 	from browser_use.skill_cli.config import get_config_value
 
-	return get_config_value('cloud_connect_proxy')
+	val = get_config_value('cloud_connect_proxy')
+	return str(val) if val is not None else None
 
 
 def _get_cloud_connect_timeout() -> int | None:
@@ -563,7 +565,7 @@ def _signup_challenge() -> int:
 	print(f'Challenge: {data["challenge_text"]}')
 	print()
 	print('Verify to create your agent account:')
-	print(f'  browser-use cloud signup --verify <challenge-id> <answer>')
+	print('  browser-use cloud signup --verify <challenge-id> <answer>')
 	return 0
 
 

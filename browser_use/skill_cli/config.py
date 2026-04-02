@@ -60,7 +60,7 @@ def write_config(data: dict) -> None:
 		pass
 
 
-def get_config_value(key: str) -> object:
+def get_config_value(key: str) -> str | int | None:
 	"""Read a config value, applying schema defaults.
 
 	Priority: env var BROWSER_USE_API_KEY (for api_key only) → config file → schema default → None.
@@ -92,7 +92,7 @@ def set_config_value(key: str, value: str) -> None:
 	# Coerce type
 	expected_type = schema.get('type', str)
 	try:
-		if expected_type == int:
+		if expected_type is int:
 			coerced = int(value)
 		else:
 			coerced = str(value)
@@ -139,11 +139,13 @@ def get_config_display() -> list[dict]:
 		if not is_set and 'default' in schema:
 			display_val = f'{schema["default"]} (default)'
 
-		entries.append({
-			'key': key,
-			'value': display_val,
-			'is_set': is_set,
-			'sensitive': schema.get('sensitive', False),
-			'description': schema.get('description', ''),
-		})
+		entries.append(
+			{
+				'key': key,
+				'value': display_val,
+				'is_set': is_set,
+				'sensitive': schema.get('sensitive', False),
+				'description': schema.get('description', ''),
+			}
+		)
 	return entries

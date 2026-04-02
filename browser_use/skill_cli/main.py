@@ -235,7 +235,9 @@ def _is_daemon_process(pid: int) -> bool:
 
 			result = _sp.run(
 				['wmic', 'process', 'where', f'ProcessId={pid}', 'get', 'CommandLine', '/format:list'],
-				capture_output=True, text=True, timeout=5,
+				capture_output=True,
+				text=True,
+				timeout=5,
 			)
 			return _marker in result.stdout
 		else:
@@ -516,7 +518,6 @@ def ensure_daemon(
 		cli_api_key = _get_api_key_or_none()
 		if cli_api_key:
 			env['BROWSER_USE_API_KEY'] = cli_api_key
-
 
 	# Start daemon as background process
 	if sys.platform == 'win32':
@@ -916,7 +917,12 @@ def _handle_cloud_connect(cloud_args: list[str], args: argparse.Namespace, sessi
 		return 1
 
 	# Validate API key exists before spawning daemon (shows our CLI error, not library's)
-	from browser_use.skill_cli.commands.cloud import _ensure_cloud_profile, _get_api_key, _get_cloud_connect_proxy, _get_cloud_connect_timeout
+	from browser_use.skill_cli.commands.cloud import (
+		_ensure_cloud_profile,
+		_get_api_key,
+		_get_cloud_connect_proxy,
+		_get_cloud_connect_timeout,
+	)
 
 	_get_api_key()  # exits with helpful message if no key
 
@@ -1251,7 +1257,13 @@ def main() -> int:
 
 	# Handle config command
 	if args.command == 'config':
-		from browser_use.skill_cli.config import CLI_DOCS_URL, get_config_display, get_config_value, set_config_value, unset_config_value
+		from browser_use.skill_cli.config import (
+			CLI_DOCS_URL,
+			get_config_display,
+			get_config_value,
+			set_config_value,
+			unset_config_value,
+		)
 
 		config_cmd = getattr(args, 'config_command', None)
 

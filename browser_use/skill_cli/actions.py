@@ -14,7 +14,6 @@ from bubus import EventBus
 
 from browser_use.browser.events import (
 	GoBackEvent,
-	ScrollEvent,
 	SelectDropdownOptionEvent,
 	SendKeysEvent,
 	TypeTextEvent,
@@ -165,7 +164,12 @@ class ActionHandler:
 					scroll_x=int(visual_viewport.get('pageX', 0)),
 					scroll_y=int(visual_viewport.get('pageY', 0)),
 					pixels_above=int(visual_viewport.get('pageY', 0)),
-					pixels_below=max(0, int(content_size.get('height', 0)) - int(css_metrics.get('clientHeight', 0)) - int(visual_viewport.get('pageY', 0))),
+					pixels_below=max(
+						0,
+						int(content_size.get('height', 0))
+						- int(css_metrics.get('clientHeight', 0))
+						- int(visual_viewport.get('pageY', 0)),
+					),
 					pixels_left=0,
 					pixels_right=0,
 				)

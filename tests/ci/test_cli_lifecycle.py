@@ -10,10 +10,9 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
-
-import tempfile
 
 import pytest
 
@@ -148,6 +147,7 @@ def test_daemon_pid_file_and_state_agree(home_dir):
 	pid = _start_daemon(home_dir)
 	try:
 		state = _read_state(home_dir)
+		assert state is not None
 		pid_file = home_dir / 'default.pid'
 		assert pid_file.exists()
 		assert int(pid_file.read_text().strip()) == state['pid']
@@ -190,10 +190,16 @@ def test_probe_session_dead_pid(home_dir):
 	from browser_use.skill_cli.main import _probe_session
 
 	# Write stale state + PID files
-	(home_dir / 'ghost.state.json').write_text(json.dumps({
-		'phase': 'running', 'pid': 99999999, 'updated_at': time.time(),
-		'config': {'headed': False, 'profile': None, 'cdp_url': None, 'use_cloud': False},
-	}))
+	(home_dir / 'ghost.state.json').write_text(
+		json.dumps(
+			{
+				'phase': 'running',
+				'pid': 99999999,
+				'updated_at': time.time(),
+				'config': {'headed': False, 'profile': None, 'cdp_url': None, 'use_cloud': False},
+			}
+		)
+	)
 	(home_dir / 'ghost.pid').write_text('99999999')
 
 	old_env = os.environ.get('BROWSER_USE_HOME')
@@ -342,10 +348,16 @@ def test_sessions_lists_daemon(home_dir):
 def test_sessions_cleans_dead(home_dir):
 	"""Sessions should clean up stale files for dead daemons."""
 	# Write stale files
-	(home_dir / 'dead.state.json').write_text(json.dumps({
-		'phase': 'running', 'pid': 99999999, 'updated_at': time.time(),
-		'config': {'headed': False, 'profile': None, 'cdp_url': None, 'use_cloud': False},
-	}))
+	(home_dir / 'dead.state.json').write_text(
+		json.dumps(
+			{
+				'phase': 'running',
+				'pid': 99999999,
+				'updated_at': time.time(),
+				'config': {'headed': False, 'profile': None, 'cdp_url': None, 'use_cloud': False},
+			}
+		)
+	)
 	(home_dir / 'dead.pid').write_text('99999999')
 
 	result = _run_cli('sessions', home_dir=home_dir)
@@ -358,10 +370,16 @@ def test_sessions_cleans_dead(home_dir):
 
 def test_sessions_cleans_terminal_state(home_dir):
 	"""Sessions should clean up stopped/failed state files."""
-	(home_dir / 'old.state.json').write_text(json.dumps({
-		'phase': 'stopped', 'pid': 99999999, 'updated_at': time.time(),
-		'config': {'headed': False, 'profile': None, 'cdp_url': None, 'use_cloud': False},
-	}))
+	(home_dir / 'old.state.json').write_text(
+		json.dumps(
+			{
+				'phase': 'stopped',
+				'pid': 99999999,
+				'updated_at': time.time(),
+				'config': {'headed': False, 'profile': None, 'cdp_url': None, 'use_cloud': False},
+			}
+		)
+	)
 
 	result = _run_cli('sessions', home_dir=home_dir)
 	assert result.returncode == 0

@@ -122,7 +122,9 @@ class CLIBrowserSession(BrowserSession):
 		if not os.environ.get('BROWSER_USE_API_KEY', '').strip():
 			from browser_use.browser.cloud.views import CloudBrowserAuthError
 
-			raise CloudBrowserAuthError('No API key configured. Run `browser-use cloud login <key>` or `browser-use cloud signup`.')
+			raise CloudBrowserAuthError(
+				'No API key configured. Run `browser-use cloud login <key>` or `browser-use cloud signup`.'
+			)
 
 		cloud_params = self.browser_profile.cloud_browser_params or CreateBrowserRequest()
 		cloud_response = await self._cloud_browser_client.create_browser(cloud_params)

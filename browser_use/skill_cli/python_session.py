@@ -67,7 +67,7 @@ class PythonSession:
 			actions: Optional ActionHandler for direct execution (no event bus)
 		"""
 		# Inject browser wrapper with the event loop for async operations
-		if loop is not None:
+		if loop is not None and actions is not None:
 			self.namespace['browser'] = BrowserWrapper(browser_session, loop, actions)
 		self.execution_count += 1
 
@@ -121,7 +121,9 @@ class BrowserWrapper:
 	Runs coroutines on the server's event loop using run_coroutine_threadsafe.
 	"""
 
-	def __init__(self, session: 'BrowserSession', loop: asyncio.AbstractEventLoop, actions: 'ActionHandler | None' = None) -> None:
+	def __init__(
+		self, session: 'BrowserSession', loop: asyncio.AbstractEventLoop, actions: 'ActionHandler'
+	) -> None:
 		self._session = session
 		self._loop = loop
 		self._actions = actions

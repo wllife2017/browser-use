@@ -401,8 +401,6 @@ class Daemon:
 		if self._browser_watchdog_task:
 			self._browser_watchdog_task.cancel()
 
-
-
 		if self._idle_watchdog_task:
 			self._idle_watchdog_task.cancel()
 

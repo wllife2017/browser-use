@@ -99,4 +99,6 @@ async def create_browser_session(
 				lines.append(f'  "{p["name"]}" ({p["directory"]})')
 			raise RuntimeError('\n'.join(lines))
 
-	return CLIBrowserSession(executable_path=chrome_path, user_data_dir=user_data_dir, profile_directory=profile_directory, headless=not headed)  # type: ignore[call-arg]
+	return CLIBrowserSession(
+		executable_path=chrome_path, user_data_dir=user_data_dir, profile_directory=profile_directory, headless=not headed
+	)  # type: ignore[call-arg]
