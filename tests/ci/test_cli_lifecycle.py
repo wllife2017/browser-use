@@ -53,6 +53,7 @@ def _start_daemon(home_dir: Path, session: str = 'default', timeout: float = 10.
 			try:
 				state = json.loads(state_path.read_text())
 				if state.get('phase') in ('ready', 'running'):
+					log_file.close()
 					return proc.pid
 			except (json.JSONDecodeError, OSError):
 				pass
