@@ -57,7 +57,7 @@ browser-use open <url>                    # Navigate to URL
 browser-use back                          # Go back in history
 browser-use scroll down                   # Scroll down (--amount N for pixels)
 browser-use scroll up                     # Scroll up
-browser-use tab list                      # List all tabs with lock status
+browser-use tab list                      # List all tabs
 browser-use tab new [url]                 # Open a new tab (blank or with URL)
 browser-use tab switch <index>            # Switch to tab by index
 browser-use tab close <index> [index...]  # Close one or more tabs
@@ -201,42 +201,30 @@ browser-use tunnel 3000                            # → https://abc.trycloudfla
 browser-use open https://abc.trycloudflare.com     # Browse the tunnel
 ```
 
-## Multi-Agent (--agent)
+## Multi-Agent Workflows
 
-Multiple agents can share one browser via `--agent`. Each agent gets its own tab — other agents can't interfere. Works with any browser mode (connect, cloud connect, profile, headless).
-
-**Setup**: Connect once, register agents, then pass `--agent` with every command:
+Each agent gets its own session with its own browser. No shared state, no conflicts.
 
 ```bash
-browser-use connect                              # or cloud connect, or --profile, etc.
-INDEX=$(browser-use register)                    # → prints "1"
-browser-use --agent $INDEX open <url>            # Navigate in agent's own tab
-browser-use --agent $INDEX state                 # Get state from agent's tab
-browser-use --agent $INDEX click <element>       # Click in agent's tab
+# Agent 1: research on cloud browser
+browser-use --session research cloud connect
+browser-use --session research open https://wikipedia.org
+
+# Agent 2: coding on cloud browser
+browser-use --session coding cloud connect
+browser-use --session coding open https://github.com
+
+# Agent 3: local headless Chromium
+browser-use --session local open https://example.com
+
+# List all
+browser-use sessions
+
+# Clean up
+browser-use close --all
 ```
 
-- **Tab locking**: When an agent mutates a tab (click, type, navigate), that tab is locked to it. Other agents get an error if they try to mutate the same tab.
-- **Read-only access**: `state`, `screenshot`, `get`, and `wait` commands work on any tab regardless of locks.
-- **Pre-existing tabs**: Tabs already open start unlocked — any agent can claim them.
-- **Agent sessions expire** after 5 minutes of inactivity. Run `browser-use register` again to get a new index.
-- **If you get "Tab is currently in use by another agent"**: do NOT close sessions or force it. Just use `open` to navigate your own tab to the URL you need.
-- **Never run `browser-use close --all`** when other agents are sharing the browser — it kills everything.
-
-## Multiple Browser Sessions
-
-Run different browsers simultaneously with `--session`:
-
-```bash
-browser-use --session cloud cloud connect         # Cloud browser
-browser-use --session local --headed open <url>    # Local Chromium
-browser-use --session work --profile "Default" open <url>  # Real Chrome
-
-browser-use sessions                               # List all active
-browser-use --session cloud close                  # Close one
-browser-use close --all                            # Close all
-```
-
-Each session gets its own daemon, socket, and state. See `references/multi-session.md` for details.
+For cloud browsers, each session provisions its own instance. For local, each session launches its own headless Chromium. Use `--session NAME` on every command. See `references/multi-session.md` for details.
 
 ## Configuration
 
@@ -257,7 +245,6 @@ Config stored in `~/.browser-use/config.json`.
 |--------|-------------|
 | `--headed` | Show browser window |
 | `--profile [NAME]` | Use real Chrome (bare `--profile` uses "Default") |
-| `--agent INDEX` | Multi-agent mode with tab isolation (run `browser-use register` first) |
 | `--cdp-url <url>` | Connect via CDP URL (`http://` or `ws://`) |
 | `--session NAME` | Target a named session (default: "default") |
 | `--json` | Output as JSON |

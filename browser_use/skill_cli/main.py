@@ -100,37 +100,6 @@ if _get_subcommand() == 'init':
 	init_main()
 	sys.exit(0)
 
-# Handle 'register' command — assigns an agent index for multi-agent mode (per-session)
-if _get_subcommand() == 'register':
-	_home = os.environ.get('BROWSER_USE_HOME')
-	_home_dir = Path(_home).expanduser() if _home else Path.home() / '.browser-use'
-	_home_dir.mkdir(parents=True, exist_ok=True)
-	# Resolve session name from --session flag or env
-	_session = 'default'
-	for i, arg in enumerate(sys.argv):
-		if arg == '--session' and i + 1 < len(sys.argv):
-			_session = sys.argv[i + 1]
-			break
-	if _session == 'default':
-		_session = os.environ.get('BROWSER_USE_SESSION', 'default')
-	agents_file = _home_dir / f'{_session}.agents.json'
-	agents = {}
-	if agents_file.exists():
-		try:
-			agents = json.loads(agents_file.read_text())
-		except (json.JSONDecodeError, OSError):
-			pass
-	# Clean expired entries (>5min) and find next available index
-	now = time.time()
-	agents = {k: v for k, v in agents.items() if now - v.get('last_active', 0) < 300}
-	next_idx = 1
-	while str(next_idx) in agents:
-		next_idx += 1
-	agents[str(next_idx)] = {'last_active': now}
-	agents_file.write_text(json.dumps(agents))
-	print(next_idx)
-	sys.exit(0)
-
 # Handle --template flag directly (without 'init' subcommand)
 # Delegate to init_main() which handles full template logic (directories, manifests, etc.)
 if '--template' in sys.argv:
@@ -667,13 +636,6 @@ Setup:
 		default=False,
 		help='(Deprecated) Use "browser-use connect" instead',
 	)
-	parser.add_argument(
-		'--agent',
-		nargs=1,
-		metavar='INDEX',
-		default=None,
-		help='Multi-agent mode with tab isolation (run "browser-use register" first)',
-	)
 	parser.add_argument('--session', default=None, help='Session name (default: "default")')
 	parser.add_argument('--json', action='store_true', help='Output as JSON')
 	parser.add_argument('--mcp', action='store_true', help='Run as MCP server (JSON-RPC via stdin/stdout)')
@@ -689,7 +651,6 @@ Setup:
 	subparsers.add_parser('install', help='Install Chromium browser + system dependencies')
 
 	# register
-	subparsers.add_parser('register', help='Register an agent for multi-agent --connect mode')
 
 	# init
 	p = subparsers.add_parser('init', help='Generate browser-use template file')
@@ -1407,9 +1368,9 @@ def main() -> int:
 	# Handle --connect deprecation
 	if args.connect:
 		print('Note: --connect has been replaced.', file=sys.stderr)
-		print('  To connect to Chrome: browser-use connect', file=sys.stderr)
-		print('  Then run commands:    browser-use open <url>', file=sys.stderr)
-		print('  For multi-agent:      browser-use --agent INDEX open <url>', file=sys.stderr)
+		print('  To connect to Chrome:  browser-use connect', file=sys.stderr)
+		print('  For cloud browser:     browser-use cloud connect', file=sys.stderr)
+		print('  For multiple agents:   use --session NAME per agent', file=sys.stderr)
 		return 1
 
 	# Handle connect command (discover local Chrome, start daemon)
@@ -1437,31 +1398,6 @@ def main() -> int:
 				print(f'Error: {response.get("error")}', file=sys.stderr)
 				return 1
 		return 0
-
-	# Resolve --agent to agent_id
-	agent_id = '__shared__'
-	if args.agent:
-		agent_id = args.agent[0]
-		# Validate agent index against per-session registry
-		agents_file = _get_home_dir() / f'{session}.agents.json'
-		agents = {}
-		if agents_file.exists():
-			try:
-				agents = json.loads(agents_file.read_text())
-			except (json.JSONDecodeError, OSError):
-				pass
-		now = time.time()
-		agent_entry = agents.get(agent_id)
-		if agent_entry is None:
-			print(f'Error: Agent {agent_id} not registered. Run \'browser-use register\' first.', file=sys.stderr)
-			return 1
-		if now - agent_entry.get('last_active', 0) > 300:
-			agents.pop(agent_id, None)
-			agents_file.write_text(json.dumps(agents))
-			print(f'Error: Agent {agent_id} session expired. Run \'browser-use register\' to get a new agent ID.', file=sys.stderr)
-			return 1
-		agent_entry['last_active'] = now
-		agents_file.write_text(json.dumps(agents))
 
 	# Mutual exclusivity
 	if args.cdp_url and args.profile:
@@ -1492,7 +1428,7 @@ def main() -> int:
 		params['profile'] = args.profile
 
 	# Send command to daemon
-	response = send_command(args.command, params, session=session, agent_id=agent_id)
+	response = send_command(args.command, params, session=session)
 
 	# Output response
 	if args.json:

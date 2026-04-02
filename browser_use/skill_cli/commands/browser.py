@@ -180,10 +180,6 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 		tab_command = params.get('tab_command')
 
 		if tab_command == 'list':
-			# tab list — handled by daemon which injects _tab_list
-			if '_tab_list' in params:
-				return {'_raw_text': params['_tab_list']}
-			# Fallback without tab ownership (no --connect)
 			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
 			lines = ['TAB  URL']
 			for i, t in enumerate(page_targets):
@@ -197,18 +193,12 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 			return {'created': target_id[:8], 'url': url}
 
 		elif tab_command == 'switch':
-			# Just update internal focus — don't visually activate the tab in Chrome
-			# The daemon already sets ctx.focused_target_id and swaps agent_focus_target_id
-			if '_resolved_target_id' in params:
-				target_id = params['_resolved_target_id']
-			else:
-				tab_index = params['tab']
-				page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-				if tab_index < 0 or tab_index >= len(page_targets):
-					return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
-				target_id = page_targets[tab_index].target_id
-			bs.agent_focus_target_id = target_id
-			return {'switched': params.get('tab', 0)}
+			tab_index = params['tab']
+			page_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
+			if tab_index < 0 or tab_index >= len(page_targets):
+				return {'error': f'Invalid tab index {tab_index}. Available: 0-{len(page_targets) - 1}'}
+			bs.agent_focus_target_id = page_targets[tab_index].target_id
+			return {'switched': tab_index}
 
 		elif tab_command == 'close':
 			tab_indices = params.get('tabs', [])
@@ -235,10 +225,6 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 			for idx in sorted(tab_indices, reverse=True):
 				if idx < 0 or idx >= len(page_targets):
 					errors.append(f'Tab {idx} out of range')
-					continue
-				lock_err = params.get(f'_lock_check_{idx}')
-				if lock_err:
-					errors.append(f'Tab {idx}: {lock_err}')
 					continue
 				try:
 					await _close_target(page_targets[idx].target_id)

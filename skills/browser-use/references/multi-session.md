@@ -35,21 +35,14 @@ If you forget `--session`, the command goes to the `default` session. This is th
 # Session 1: cloud browser
 browser-use --session cloud cloud connect
 
-# Session 2: connect to user's Chrome with multi-agent
-INDEX=$(browser-use register)
-browser-use --session chrome --connect $INDEX open <url>
+# Session 2: connect to user's Chrome
+browser-use --session chrome connect
 
 # Session 3: headed Chromium for debugging
 browser-use --session debug --headed open <url>
 ```
 
 Each session is fully independent. The cloud session talks to a remote browser, the chrome session talks to the user's Chrome, and the debug session manages its own Chromium — all running simultaneously.
-
-## Agent indices and sessions
-
-`browser-use register` writes to a shared `agents.json` (not per-session). An index like `1` can be used with any session that connects to the same Chrome. Typically you'd use `--connect` with one session and bare commands with others.
-
-If two sessions both use `--connect` to the same Chrome, their tab ownership is independent — locks in one session don't protect tabs in the other. Use one session per Chrome instance for multi-agent work.
 
 ## Listing and managing sessions
 

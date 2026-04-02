@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
 	from browser_use.skill_cli.sessions import SessionInfo
-	from browser_use.skill_cli.tab_ownership import TabOwnershipManager
 
 # Configure logging before imports
 logging.basicConfig(
@@ -60,10 +59,7 @@ class Daemon:
 		self._session: SessionInfo | None = None
 		self._shutdown_task: asyncio.Task | None = None
 		self._browser_watchdog_task: asyncio.Task | None = None
-		self._agent_cleanup_task: asyncio.Task | None = None
-		self._tab_ownership: TabOwnershipManager | None = None
 		self._session_lock = asyncio.Lock()
-		self._dispatch_lock = asyncio.Lock()
 		self._last_command_time: float = 0.0
 		self._idle_timeout: float = 30 * 60.0  # 30 minutes
 		self._idle_watchdog_task: asyncio.Task | None = None
@@ -158,21 +154,6 @@ class Daemon:
 				)
 				self._browser_watchdog_task = asyncio.create_task(self._watch_browser())
 
-				# Initialize tab ownership for multi-agent isolation
-				from browser_use.skill_cli.tab_ownership import TabOwnershipManager
-				from browser_use.skill_cli.utils import get_home_dir
-
-				self._tab_ownership = TabOwnershipManager(bs)
-				self._tab_ownership.set_agents_file(get_home_dir() / f'{self.session}.agents.json')
-
-				# Register initial tabs with tab ownership (no event bus)
-				if bs.session_manager:
-					for target in bs.session_manager.get_all_page_targets():
-						self._tab_ownership.on_tab_created(target.target_id)
-
-				# Start periodic agent cleanup
-				self._agent_cleanup_task = asyncio.create_task(self._cleanup_stale_agents())
-
 				# Start idle timeout watchdog
 				self._idle_watchdog_task = asyncio.create_task(self._watch_idle())
 
@@ -225,16 +206,6 @@ class Daemon:
 					logger.info(f'Daemon idle for {idle:.0f}s, shutting down')
 					self._request_shutdown()
 					return
-
-	async def _cleanup_stale_agents(self) -> None:
-		"""Periodically clean up contexts for agents whose parent process is dead."""
-		while self.running:
-			await asyncio.sleep(30.0)
-			if self._tab_ownership:
-				try:
-					await self._tab_ownership.cleanup_stale_agents()
-				except Exception as e:
-					logger.debug(f'Agent cleanup error: {e}')
 
 	async def handle_connection(
 		self,
@@ -321,97 +292,16 @@ class Daemon:
 
 			from browser_use.skill_cli.commands import browser, python_exec
 
-			# Commands that mutate browser state — these acquire a tab lock
-			MUTATING_COMMANDS = {
-				'open', 'click', 'type', 'input', 'scroll', 'back',
-				'keys', 'select', 'upload', 'eval', 'dblclick', 'rightclick', 'hover',
-			}
-
 			# Get or create the single session
 			session = await self._get_or_create_session()
-			bs = session.browser_session
-			agent_id = request.get('agent_id', '__shared__')
 
-			# --- Tab locking: scope commands to the caller's focused tab ---
-			if self._tab_ownership:
-				ctx = await self._tab_ownership.ensure_caller_has_tab(agent_id)
-
-				# Handle tab subcommands
-				if action == 'tab':
-					tab_cmd = params.get('tab_command')
-					if tab_cmd == 'list':
-						tab_list = self._tab_ownership.get_tab_list(agent_id)
-						lines = ['TAB  LOCKED    URL']
-						for t in tab_list:
-							lines.append(f'{t["index"]:<4} {t["locked"]:<9} {t["url"]}')
-						params['_tab_list'] = '\n'.join(lines)
-					elif tab_cmd == 'switch' and 'tab' in params:
-						resolved = self._tab_ownership.resolve_tab_index(params['tab'])
-						if resolved is None:
-							all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-							return {
-								'id': req_id,
-								'success': False,
-								'error': f'Invalid tab index {params["tab"]}. {len(all_targets)} tab(s) available (indices 0-{len(all_targets) - 1}).',
-							}
-						lock_err = self._tab_ownership.check_lock(agent_id, resolved)
-						if lock_err:
-							return {'id': req_id, 'success': False, 'error': lock_err}
-						params['_resolved_target_id'] = resolved
-						ctx.focused_target_id = resolved
-					elif tab_cmd == 'close':
-						# Pre-check locks for each tab the agent wants to close
-						all_targets = bs.session_manager.get_all_page_targets() if bs.session_manager else []
-						for i in range(len(all_targets)):
-							lock_err = self._tab_ownership.check_lock(agent_id, all_targets[i].target_id)
-							if lock_err:
-								params[f'_lock_check_{i}'] = lock_err
-
-				# For mutating commands, check lock on focused tab
-				if action in MUTATING_COMMANDS:
-					lock_err = self._tab_ownership.check_lock(agent_id, ctx.focused_target_id)
-					if lock_err:
-						return {'id': req_id, 'success': False, 'error': lock_err}
-					# Lock the tab for this caller
-					if ctx.focused_target_id:
-						self._tab_ownership.lock_tab(agent_id, ctx.focused_target_id)
-
-				# Serialize focus swap + command execution so concurrent agents
-				# don't corrupt each other's focus state on the shared BrowserSession.
-				async with self._dispatch_lock:
-					# Swap focus and selector map to caller's tab
-					saved_focus = bs.agent_focus_target_id
-					saved_selector_map = bs._cached_selector_map
-					bs.agent_focus_target_id = ctx.focused_target_id
-					bs._cached_selector_map = ctx.cached_selector_map
-
-					# Dispatch to handler
-					try:
-						if action in browser.COMMANDS:
-							result = await browser.handle(action, session, params)
-						elif action == 'python':
-							result = await python_exec.handle(session, params)
-						else:
-							return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
-					finally:
-						# Save caller's updated focus/selector map and restore previous
-						new_focus = bs.agent_focus_target_id
-						ctx.focused_target_id = new_focus
-						ctx.cached_selector_map = bs._cached_selector_map
-						bs.agent_focus_target_id = saved_focus
-						bs._cached_selector_map = saved_selector_map
-						# If focus changed (e.g. tab new), lock the new tab
-						if new_focus and new_focus != saved_focus:
-							self._tab_ownership.lock_tab(agent_id, new_focus)
-
+			# Dispatch to handler
+			if action in browser.COMMANDS:
+				result = await browser.handle(action, session, params)
+			elif action == 'python':
+				result = await python_exec.handle(session, params)
 			else:
-				# No tab ownership — single agent mode, no lock needed
-				if action in browser.COMMANDS:
-					result = await browser.handle(action, session, params)
-				elif action == 'python':
-					result = await python_exec.handle(session, params)
-				else:
-					return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
+				return {'id': req_id, 'success': False, 'error': f'Unknown action: {action}'}
 
 			return {'id': req_id, 'success': True, 'data': result}
 
@@ -511,8 +401,7 @@ class Daemon:
 		if self._browser_watchdog_task:
 			self._browser_watchdog_task.cancel()
 
-		if self._agent_cleanup_task:
-			self._agent_cleanup_task.cancel()
+
 
 		if self._idle_watchdog_task:
 			self._idle_watchdog_task.cancel()
