@@ -18,36 +18,29 @@ For setup details, see https://github.com/browser-use/browser-use/blob/main/brow
 
 ## Core Workflow
 
-**Default: connect to the user's existing Chrome browser.** This preserves their logins, cookies, and open tabs.
+1. **Navigate**: `browser-use open <url>` — launches headless browser and opens page
+2. **Inspect**: `browser-use state` — returns clickable elements with indices
+3. **Interact**: use indices from state (`browser-use click 5`, `browser-use input 3 "text"`)
+4. **Verify**: `browser-use state` or `browser-use screenshot` to confirm
+5. **Repeat**: browser stays open between commands
 
-1. **Connect**: `browser-use connect` — discover and connect to running Chrome (one-time)
-2. **Navigate**: `browser-use open <url>` — opens in a new tab
-3. **Inspect**: `browser-use state` — returns clickable elements with indices
-4. **Interact**: use indices from state (`browser-use click 5`, `browser-use input 3 "text"`)
-5. **Verify**: `browser-use state` or `browser-use screenshot` to confirm
-6. **Repeat**: browser stays open between commands
+If a command fails, run `browser-use close` first to clear any broken session, then retry.
 
-If `connect` fails (Chrome not running with remote debugging), fall back to `browser-use --headed open <url>` which launches a fresh Chromium.
+To use the user's existing Chrome (preserves logins/cookies): run `browser-use connect` first.
+To use a cloud browser instead: run `browser-use cloud connect` first.
+After either, commands work the same way.
 
 ## Browser Modes
 
 ```bash
-# Preferred: connect to user's existing Chrome (one-time setup)
-browser-use connect                            # Discover and connect to running Chrome
-
-# Cloud browser (zero-config)
-browser-use cloud connect                      # Provision cloud browser
-
-# Launch a new browser
-browser-use --headed open <url>                # Visible Chromium window
-browser-use open <url>                         # Headless Chromium
-
-# Other modes
-browser-use --profile "Default" open <url>     # Real Chrome with Default profile
-browser-use --cdp-url ws://localhost:9222/... open <url>  # Connect via explicit CDP URL
+browser-use open <url>                         # Default: headless Chromium (no setup needed)
+browser-use --headed open <url>                # Visible window (for debugging)
+browser-use connect                            # Connect to user's Chrome (preserves logins/cookies)
+browser-use cloud connect                      # Cloud browser (zero-config, requires API key)
+browser-use --profile "Default" open <url>     # Real Chrome with specific profile
 ```
 
-After connecting, all commands go to that browser — no flags needed. `--cdp-url` and `--profile` are mutually exclusive.
+After `connect` or `cloud connect`, all subsequent commands go to that browser — no extra flags needed.
 
 ## Commands
 
@@ -98,29 +91,13 @@ browser-use cookies clear [--url <url>]   # Clear cookies
 browser-use cookies export <file>         # Export to JSON
 browser-use cookies import <file>         # Import from JSON
 
-# Python — persistent session with browser access
-browser-use python "code"                 # Execute Python (variables persist across calls)
-browser-use python --file script.py       # Run file
-browser-use python --vars                 # Show defined variables
-browser-use python --reset                # Clear namespace
-
 # Session
 browser-use close                         # Close browser and stop daemon
 browser-use sessions                      # List active sessions
 browser-use close --all                   # Close all sessions
 ```
 
-The Python `browser` object provides: `browser.url`, `browser.title`, `browser.html`, `browser.goto(url)`, `browser.back()`, `browser.click(index)`, `browser.type(text)`, `browser.input(index, text)`, `browser.keys(keys)`, `browser.upload(index, path)`, `browser.screenshot(path)`, `browser.scroll(direction, amount)`, `browser.wait(seconds)`.
-
-### Raw CDP / Python session
-
-The CLI commands handle most browser interactions. Use `browser-use python` with raw CDP access when you need to:
-- Control which tab the user sees in Chrome (activate/focus a tab)
-- Manipulate page internals the CLI doesn't expose (network, DOM, device emulation)
-- Work with Chrome target IDs instead of element indices
-- Chain multiple async browser operations in one call
-
-Read `references/cdp-python.md` for the `browser._run()` pattern and copy-pasteable CDP recipes.
+For advanced browser control (CDP, device emulation, tab activation), see `references/cdp-python.md`.
 
 ## Cloud API
 
@@ -185,15 +162,6 @@ browser-use profile list                           # Check available profiles
 browser-use --profile "Default" open https://github.com  # Already logged in
 ```
 
-### Connecting to Existing Chrome
-
-```bash
-browser-use connect                                # Discover and connect (one-time)
-browser-use open https://example.com               # Then use normally
-```
-
-Requires Chrome with remote debugging enabled. Falls back to probing ports 9222/9229.
-
 ### Exposing Local Dev Servers
 
 ```bash
@@ -201,30 +169,9 @@ browser-use tunnel 3000                            # → https://abc.trycloudfla
 browser-use open https://abc.trycloudflare.com     # Browse the tunnel
 ```
 
-## Multi-Agent Workflows
+## Multiple Browsers
 
-Each agent gets its own session with its own browser. No shared state, no conflicts.
-
-```bash
-# Agent 1: research on cloud browser
-browser-use --session research cloud connect
-browser-use --session research open https://wikipedia.org
-
-# Agent 2: coding on cloud browser
-browser-use --session coding cloud connect
-browser-use --session coding open https://github.com
-
-# Agent 3: local headless Chromium
-browser-use --session local open https://example.com
-
-# List all
-browser-use sessions
-
-# Clean up
-browser-use close --all
-```
-
-For cloud browsers, each session provisions its own instance. For local, each session launches its own headless Chromium. Use `--session NAME` on every command. See `references/multi-session.md` for details.
+For subagent workflows or running multiple browsers in parallel, use `--session NAME`. Each session gets its own browser. See `references/multi-session.md`.
 
 ## Configuration
 
@@ -256,6 +203,7 @@ Config stored in `~/.browser-use/config.json`.
 2. **Use `--headed` for debugging** to see what the browser is doing
 3. **Sessions persist** — browser stays open between commands
 4. **CLI aliases**: `bu`, `browser`, and `browseruse` all work
+5. **If commands fail**, run `browser-use close` first, then retry
 
 ## Troubleshooting
 
