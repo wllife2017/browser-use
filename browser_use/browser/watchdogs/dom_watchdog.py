@@ -272,7 +272,7 @@ class DOMWatchdog(BaseWatchdog):
 				pending_requests_before_wait = await asyncio.wait_for(self._get_pending_network_requests(), timeout=2.0)
 				if pending_requests_before_wait:
 					self.logger.debug(f'🔍 Found {len(pending_requests_before_wait)} pending requests before stability wait')
-			except asyncio.TimeoutError:
+			except TimeoutError:
 				self.logger.debug('Pending network request check timed out (2s), skipping')
 			except Exception as e:
 				self.logger.debug(f'Failed to get pending requests before wait: {e}')
