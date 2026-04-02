@@ -140,7 +140,9 @@ class CLIBrowserSession(BrowserSession):
 		# Stop cloud browser if we provisioned one
 		if self.browser_profile.use_cloud and self._cloud_browser_client.current_session_id:
 			try:
-				await self._cloud_browser_client.stop_browser()
+				import asyncio as _asyncio
+
+				await _asyncio.wait_for(self._cloud_browser_client.stop_browser(), timeout=5.0)
 			except Exception as e:
 				logger.debug(f'Error stopping cloud browser: {e}')
 		if self._cdp_client_root:
