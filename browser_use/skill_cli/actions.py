@@ -174,10 +174,20 @@ class ActionHandler:
 
 		tabs = await self.bs.get_tabs()
 
+		# Use focused tab's title, not tabs[0]
+		title = ''
+		focused_id = self.bs.agent_focus_target_id
+		for tab in tabs:
+			if tab.target_id == focused_id:
+				title = tab.title
+				break
+		if not title and tabs:
+			title = tabs[0].title
+
 		return BrowserStateSummary(
 			dom_state=dom_state,
 			url=page_url,
-			title=tabs[0].title if tabs else '',
+			title=title,
 			tabs=tabs,
 			screenshot=screenshot_b64,
 			page_info=page_info,
