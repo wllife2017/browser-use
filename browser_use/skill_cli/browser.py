@@ -90,6 +90,7 @@ class CLIBrowserSession(BrowserSession):
 			except Exception:
 				pass
 
+		await self._cdp_client_root.send.Page.enable()
 		self._cdp_client_root.register.Page.javascriptDialogOpening(handle_dialog)  # type: ignore[arg-type]
 
 	async def _launch_local_browser(self) -> None:
