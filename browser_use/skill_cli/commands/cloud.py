@@ -72,11 +72,28 @@ def _write_config(data: dict) -> None:
 
 
 def _get_api_key_or_none() -> str | None:
-	"""Return API key from CLI config file, or None if not found."""
+	"""Return API key from CLI config file, or None if not found.
+
+	Also checks BROWSER_USE_API_KEY env var for backwards compatibility,
+	but emits a deprecation warning and prompts the user to migrate.
+	"""
 	from browser_use.skill_cli.config import get_config_value
 
 	val = get_config_value('api_key')
-	return str(val) if val is not None else None
+	if val is not None:
+		return str(val)
+
+	# Backwards-compat: accept env var but warn the user to migrate
+	env_key = os.environ.get('BROWSER_USE_API_KEY')
+	if env_key:
+		print(
+			'Warning: BROWSER_USE_API_KEY env var is deprecated for the CLI. '
+			'Run `browser-use config set api_key <key>` to migrate.',
+			file=sys.stderr,
+		)
+		return env_key
+
+	return None
 
 
 def _get_api_key() -> str:
