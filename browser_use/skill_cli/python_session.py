@@ -154,12 +154,7 @@ class BrowserWrapper:
 		self._run(self._goto_async(url))
 
 	async def _goto_async(self, url: str) -> None:
-		if self._actions:
-			await self._actions.navigate(url)
-		else:
-			from browser_use.browser.events import NavigateToUrlEvent
-
-			await self._session.event_bus.dispatch(NavigateToUrlEvent(url=url))
+		await self._actions.navigate(url)
 
 	def click(self, index: int) -> None:
 		"""Click element by index."""
@@ -169,12 +164,7 @@ class BrowserWrapper:
 		node = await self._session.get_element_by_index(index)
 		if node is None:
 			raise ValueError(f'Element index {index} not found')
-		if self._actions:
-			await self._actions.click_element(node)
-		else:
-			from browser_use.browser.events import ClickElementEvent
-
-			await self._session.event_bus.dispatch(ClickElementEvent(node=node))
+		await self._actions.click_element(node)
 
 	def type(self, text: str) -> None:
 		"""Type text into focused element."""
@@ -197,14 +187,8 @@ class BrowserWrapper:
 		node = await self._session.get_element_by_index(index)
 		if node is None:
 			raise ValueError(f'Element index {index} not found')
-		if self._actions:
-			await self._actions.click_element(node)
-			await self._actions.type_text(node, text)
-		else:
-			from browser_use.browser.events import ClickElementEvent, TypeTextEvent
-
-			await self._session.event_bus.dispatch(ClickElementEvent(node=node))
-			await self._session.event_bus.dispatch(TypeTextEvent(node=node, text=text))
+		await self._actions.click_element(node)
+		await self._actions.type_text(node, text)
 
 	def upload(self, index: int, path: str) -> None:
 		"""Upload a file to a file input element."""
@@ -230,24 +214,14 @@ class BrowserWrapper:
 		if file_input_node is None:
 			raise ValueError(f'Element {index} is not a file input and no file input found nearby')
 
-		if self._actions:
-			await self._actions.upload_file(file_input_node, file_path)
-		else:
-			from browser_use.browser.events import UploadFileEvent
-
-			await self._session.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=file_path))
+		await self._actions.upload_file(file_input_node, file_path)
 
 	def scroll(self, direction: Literal['up', 'down', 'left', 'right'] = 'down', amount: int = 500) -> None:
 		"""Scroll the page."""
 		self._run(self._scroll_async(direction, amount))
 
 	async def _scroll_async(self, direction: Literal['up', 'down', 'left', 'right'], amount: int) -> None:
-		if self._actions:
-			await self._actions.scroll(direction, amount)
-		else:
-			from browser_use.browser.events import ScrollEvent
-
-			await self._session.event_bus.dispatch(ScrollEvent(direction=direction, amount=amount))
+		await self._actions.scroll(direction, amount)
 
 	def screenshot(self, path: str | None = None) -> bytes:
 		"""Take screenshot, optionally save to file."""
@@ -284,24 +258,14 @@ class BrowserWrapper:
 		self._run(self._keys_async(keys))
 
 	async def _keys_async(self, keys: str) -> None:
-		if self._actions:
-			await self._actions.send_keys(keys)
-		else:
-			from browser_use.browser.events import SendKeysEvent
-
-			await self._session.event_bus.dispatch(SendKeysEvent(keys=keys))
+		await self._actions.send_keys(keys)
 
 	def back(self) -> None:
 		"""Go back in history."""
 		self._run(self._back_async())
 
 	async def _back_async(self) -> None:
-		if self._actions:
-			await self._actions.go_back()
-		else:
-			from browser_use.browser.events import GoBackEvent
-
-			await self._session.event_bus.dispatch(GoBackEvent())
+		await self._actions.go_back()
 
 	def wait(self, seconds: float) -> None:
 		"""Wait for specified seconds."""

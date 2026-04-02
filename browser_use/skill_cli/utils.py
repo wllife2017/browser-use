@@ -117,52 +117,6 @@ def is_daemon_alive(session: str = 'default') -> bool:
 				s.close()
 
 
-def list_sessions() -> list[dict]:
-	"""List active daemon sessions by scanning PID files.
-
-	Returns list of {'name': str, 'pid': int, 'socket': str} for alive sessions.
-	Cleans up stale PID/socket files for dead sessions.
-	"""
-	home_dir = get_home_dir()
-	sessions: list[dict] = []
-
-	for pid_file in sorted(home_dir.glob('*.pid')):
-		session_name = pid_file.stem
-		if not session_name:
-			continue
-
-		try:
-			pid = int(pid_file.read_text().strip())
-		except (OSError, ValueError):
-			# Corrupt PID file — clean up
-			pid_file.unlink(missing_ok=True)
-			continue
-
-		# Check if process is alive
-		if not is_process_alive(pid):
-			# Dead process — clean up stale files
-			pid_file.unlink(missing_ok=True)
-			sock_path = get_socket_path(session_name)
-			if not sock_path.startswith('tcp://'):
-				Path(sock_path).unlink(missing_ok=True)
-			continue
-
-		sessions.append(
-			{
-				'name': session_name,
-				'pid': pid,
-				'socket': get_socket_path(session_name),
-			}
-		)
-
-	return sessions
-
-
-def get_log_path() -> Path:
-	"""Get log file path for the daemon."""
-	return get_home_dir() / 'cli.log'
-
-
 def find_chrome_executable() -> str | None:
 	"""Find Chrome/Chromium executable on the system."""
 	system = platform.system()
