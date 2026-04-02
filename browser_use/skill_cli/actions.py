@@ -177,11 +177,13 @@ class ActionHandler:
 		# Use focused tab's title, not tabs[0]
 		title = ''
 		focused_id = self.bs.agent_focus_target_id
+		found_focused = False
 		for tab in tabs:
 			if tab.target_id == focused_id:
 				title = tab.title
+				found_focused = True
 				break
-		if not title and tabs:
+		if not found_focused and tabs:
 			title = tabs[0].title
 
 		return BrowserStateSummary(
