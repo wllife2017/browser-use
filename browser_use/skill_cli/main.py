@@ -181,6 +181,19 @@ def _get_pid_path(session: str = 'default') -> Path:
 	return _get_home_dir() / f'{session}.pid'
 
 
+def _read_auth_token(session: str = 'default') -> str:
+	"""Read per-session auth token written by the daemon.
+
+	Must match utils.get_auth_token_path().
+	Returns empty string if the token file is missing (pre-auth daemon).
+	"""
+	token_path = _get_home_dir() / f'{session}.token'
+	try:
+		return token_path.read_text().strip()
+	except OSError:
+		return ''
+
+
 def _connect_to_daemon(timeout: float = 60.0, session: str = 'default') -> socket.socket:
 	"""Connect to daemon socket."""
 	sock_path = _get_socket_path(session)
@@ -563,6 +576,7 @@ def send_command(action: str, params: dict, *, session: str = 'default', agent_i
 		'action': action,
 		'params': params,
 		'agent_id': agent_id,
+		'token': _read_auth_token(session),
 	}
 
 	sock = _connect_to_daemon(session=session)

@@ -64,6 +64,7 @@ class Daemon:
 		self._idle_timeout: float = 30 * 60.0  # 30 minutes
 		self._idle_watchdog_task: asyncio.Task | None = None
 		self._is_shutting_down: bool = False
+		self._auth_token: str = ''
 
 	def _write_state(self, phase: str) -> None:
 		"""Atomically write session state file for CLI observability."""
@@ -220,8 +221,19 @@ class Daemon:
 
 			request = {}
 			try:
+				import hmac
+
 				request = json.loads(line.decode())
-				response = await self.dispatch(request)
+				req_id = request.get('id', '')
+				# Reject requests that don't carry the correct auth token.
+				# Use hmac.compare_digest to prevent timing-oracle attacks.
+				if self._auth_token and not hmac.compare_digest(
+					request.get('token', ''),
+					self._auth_token,
+				):
+					response = {'id': req_id, 'success': False, 'error': 'Unauthorized'}
+				else:
+					response = await self.dispatch(request)
 			except json.JSONDecodeError as e:
 				response = {'id': '', 'success': False, 'error': f'Invalid JSON: {e}'}
 			except Exception as e:
@@ -231,7 +243,7 @@ class Daemon:
 			writer.write((json.dumps(response) + '\n').encode())
 			await writer.drain()
 
-			if request.get('action') == 'shutdown':
+			if response.get('success') and request.get('action') == 'shutdown':
 				self._request_shutdown()
 
 		except TimeoutError:
@@ -322,9 +334,24 @@ class Daemon:
 		Stale sockets are cleaned up by is_daemon_alive() and by the next
 		daemon's startup (unlink before bind).
 		"""
-		from browser_use.skill_cli.utils import get_pid_path, get_socket_path
+		import secrets
+
+		from browser_use.skill_cli.utils import get_auth_token_path, get_pid_path, get_socket_path
 
 		self._write_state('initializing')
+
+		# Generate and persist a per-session auth token.
+		# The client reads this file to authenticate its requests, preventing
+		# any other local process from sending commands to the daemon socket.
+		self._auth_token = secrets.token_hex(32)
+		token_path = get_auth_token_path(self.session)
+		tmp_token = token_path.with_suffix('.token.tmp')
+		try:
+			tmp_token.write_text(self._auth_token)
+			os.chmod(tmp_token, 0o600)
+			os.replace(tmp_token, token_path)
+		except OSError as e:
+			logger.warning(f'Failed to write auth token file: {e}')
 
 		# Setup signal handlers
 		loop = asyncio.get_running_loop()
@@ -426,11 +453,10 @@ class Daemon:
 				logger.warning(f'Error closing session: {e}')
 			self._session = None
 
-		# Delete PID file last, right before exit. If browser cleanup hangs above,
-		# the PID file still exists so `sessions` can discover the orphaned daemon.
+		# Delete PID and auth token files last, right before exit.
 		import os
 
-		from browser_use.skill_cli.utils import get_pid_path
+		from browser_use.skill_cli.utils import get_auth_token_path, get_pid_path
 
 		pid_path = get_pid_path(self.session)
 		try:
@@ -438,6 +464,8 @@ class Daemon:
 				pid_path.unlink(missing_ok=True)
 		except (OSError, ValueError):
 			pass
+
+		get_auth_token_path(self.session).unlink(missing_ok=True)
 
 		self._write_state('stopped')
 
