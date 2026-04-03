@@ -75,6 +75,11 @@ def get_pid_path(session: str = 'default') -> Path:
 	return get_home_dir() / f'{session}.pid'
 
 
+def get_auth_token_path(session: str = 'default') -> Path:
+	"""Get auth token file path for a session."""
+	return get_home_dir() / f'{session}.token'
+
+
 def find_chrome_executable() -> str | None:
 	"""Find Chrome/Chromium executable on the system."""
 	system = platform.system()
