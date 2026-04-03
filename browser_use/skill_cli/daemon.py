@@ -343,15 +343,24 @@ class Daemon:
 		# Generate and persist a per-session auth token.
 		# The client reads this file to authenticate its requests, preventing
 		# any other local process from sending commands to the daemon socket.
+		# Create the temp file with 0o600 at open() time to avoid a permission
+		# race window where the file exists but is not yet restricted.
+		# Raise on failure — running without a readable token file leaves the
+		# daemon permanently unauthorized for all clients.
 		self._auth_token = secrets.token_hex(32)
 		token_path = get_auth_token_path(self.session)
 		tmp_token = token_path.with_suffix('.token.tmp')
+		fd = os.open(str(tmp_token), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
 		try:
-			tmp_token.write_text(self._auth_token)
-			os.chmod(tmp_token, 0o600)
-			os.replace(tmp_token, token_path)
-		except OSError as e:
-			logger.warning(f'Failed to write auth token file: {e}')
+			with os.fdopen(fd, 'w') as f:
+				f.write(self._auth_token)
+		except OSError:
+			try:
+				tmp_token.unlink(missing_ok=True)
+			except OSError:
+				pass
+			raise
+		os.replace(tmp_token, token_path)
 
 		# Setup signal handlers
 		loop = asyncio.get_running_loop()
