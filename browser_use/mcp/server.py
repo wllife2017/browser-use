@@ -238,15 +238,15 @@ class BrowserUseServer:
 						'properties': {
 							'index': {
 								'type': 'integer',
-								'description': 'The index of the element to click (from browser_get_state). Use this OR coordinates.',
+								'description': 'The index of the element to click (from browser_get_state). Provide this OR coordinate_x+coordinate_y.',
 							},
 							'coordinate_x': {
 								'type': 'integer',
-								'description': 'X coordinate (pixels from left edge of viewport). Use with coordinate_y.',
+								'description': 'X coordinate in pixels from the left edge of the viewport. Must be used together with coordinate_y. Provide this OR index.',
 							},
 							'coordinate_y': {
 								'type': 'integer',
-								'description': 'Y coordinate (pixels from top edge of viewport). Use with coordinate_x.',
+								'description': 'Y coordinate in pixels from the top edge of the viewport. Must be used together with coordinate_x. Provide this OR index.',
 							},
 							'new_tab': {
 								'type': 'boolean',
@@ -254,10 +254,6 @@ class BrowserUseServer:
 								'default': False,
 							},
 						},
-						'oneOf': [
-							{'required': ['index']},
-							{'required': ['coordinate_x', 'coordinate_y']},
-						],
 					},
 				),
 				types.Tool(
@@ -1227,19 +1223,25 @@ class BrowserUseServer:
 		# Start the cleanup task
 		await self._start_cleanup_task()
 
+		if sys.stdin is None:
+			raise RuntimeError('MCP stdio transport requires stdin, but this process was launched without one.')
+
 		async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-			await self.server.run(
-				read_stream,
-				write_stream,
-				InitializationOptions(
-					server_name='browser-use',
-					server_version='0.1.0',
-					capabilities=self.server.get_capabilities(
-						notification_options=NotificationOptions(),
-						experimental_capabilities={},
+			try:
+				await self.server.run(
+					read_stream,
+					write_stream,
+					InitializationOptions(
+						server_name='browser-use',
+						server_version='0.1.0',
+						capabilities=self.server.get_capabilities(
+							notification_options=NotificationOptions(),
+							experimental_capabilities={},
+						),
 					),
-				),
-			)
+				)
+			except BrokenPipeError:
+				logger.warning('MCP client disconnected while writing to stdio; shutting down server cleanly.')
 
 
 async def main(session_timeout_minutes: int = 10):
