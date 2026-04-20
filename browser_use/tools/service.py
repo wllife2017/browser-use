@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 from typing import Generic, TypeVar
 
@@ -87,18 +88,37 @@ T = TypeVar('T', bound=BaseModel)
 # BROWSER_USE_ACTION_TIMEOUT_S env var or tools.act(action_timeout=...).
 _ACTION_TIMEOUT_FALLBACK_S = 180.0
 
-_env_timeout = os.getenv('BROWSER_USE_ACTION_TIMEOUT_S')
-try:
-	_DEFAULT_ACTION_TIMEOUT_S = float(_env_timeout) if _env_timeout else _ACTION_TIMEOUT_FALLBACK_S
-except ValueError:
-	# A bad env value should not prevent the module from importing (would break
-	# every tool call). Warn and fall back to the default.
-	logging.getLogger(__name__).warning(
-		'Invalid BROWSER_USE_ACTION_TIMEOUT_S=%r; falling back to %.0fs',
-		_env_timeout,
-		_ACTION_TIMEOUT_FALLBACK_S,
-	)
-	_DEFAULT_ACTION_TIMEOUT_S = _ACTION_TIMEOUT_FALLBACK_S
+
+def _parse_env_action_timeout(raw: str | None) -> float:
+	"""Parse BROWSER_USE_ACTION_TIMEOUT_S defensively.
+
+	Accepts only finite positive values. Empty, non-numeric, inf, nan, or
+	non-positive values fall back to the hardcoded default with a warning
+	— these would otherwise make every action time out immediately (nan)
+	or disable the hang guard entirely (inf / negative / zero).
+	"""
+	if raw is None or raw == '':
+		return _ACTION_TIMEOUT_FALLBACK_S
+	try:
+		parsed = float(raw)
+	except ValueError:
+		logging.getLogger(__name__).warning(
+			'Invalid BROWSER_USE_ACTION_TIMEOUT_S=%r; falling back to %.0fs',
+			raw,
+			_ACTION_TIMEOUT_FALLBACK_S,
+		)
+		return _ACTION_TIMEOUT_FALLBACK_S
+	if not math.isfinite(parsed) or parsed <= 0:
+		logging.getLogger(__name__).warning(
+			'BROWSER_USE_ACTION_TIMEOUT_S=%r is not a finite positive number; falling back to %.0fs',
+			raw,
+			_ACTION_TIMEOUT_FALLBACK_S,
+		)
+		return _ACTION_TIMEOUT_FALLBACK_S
+	return parsed
+
+
+_DEFAULT_ACTION_TIMEOUT_S = _parse_env_action_timeout(os.getenv('BROWSER_USE_ACTION_TIMEOUT_S'))
 
 
 def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
