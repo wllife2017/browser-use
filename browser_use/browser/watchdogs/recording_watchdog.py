@@ -38,7 +38,12 @@ class RecordingWatchdog(BaseWatchdog):
 
 		video_format = getattr(profile, 'record_video_format', 'mp4').strip('.')
 		output_path = Path(profile.record_video_dir) / f'{uuid7str()}.{video_format}'
-		await self.start_recording(output_path, size=profile.record_video_size, framerate=profile.record_video_framerate)
+		try:
+			await self.start_recording(output_path, size=profile.record_video_size, framerate=profile.record_video_framerate)
+		except RuntimeError as e:
+			# Preserve prior graceful degradation: a session configured with record_video_dir
+			# should not fail startup when video deps are missing or viewport detection fails.
+			self.logger.warning(f'Skipping video recording: {e}')
 
 	async def start_recording(
 		self,

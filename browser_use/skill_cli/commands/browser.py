@@ -779,6 +779,7 @@ async def handle(action: str, session: SessionInfo, params: dict[str, Any]) -> A
 
 			RecordingWatchdog.model_rebuild()
 			watchdog = RecordingWatchdog(event_bus=bs.event_bus, browser_session=bs)
+			watchdog.attach_to_session()
 			bs._recording_watchdog = watchdog
 
 		record_command = params.get('record_command')

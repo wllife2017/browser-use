@@ -109,6 +109,28 @@ async def test_stop_without_start_returns_none(browser_session: BrowserSession):
 	assert await watchdog.stop_recording() is None
 
 
+async def test_on_browser_connected_degrades_gracefully_when_recording_fails(
+	browser_session: BrowserSession, tmp_path: Path, monkeypatch
+):
+	"""If start_recording() raises (e.g. missing [video] deps), profile-driven recording
+	must degrade to a warning instead of breaking BrowserSession startup (see PR #4710 review)."""
+	from browser_use.browser.events import BrowserConnectedEvent
+	from browser_use.browser.watchdogs import recording_watchdog as rw_mod
+
+	watchdog = browser_session._recording_watchdog
+	assert watchdog is not None
+
+	async def fake_start_recording(self: Any, *_args: Any, **_kwargs: Any) -> Path:
+		raise RuntimeError('simulated missing video deps')
+
+	monkeypatch.setattr(rw_mod.RecordingWatchdog, 'start_recording', fake_start_recording)
+	browser_session.browser_profile.record_video_dir = tmp_path
+
+	# Must not raise — watchdog should catch the RuntimeError and just log a warning.
+	await watchdog.on_BrowserConnectedEvent(BrowserConnectedEvent(cdp_url=browser_session.cdp_url or ''))
+	assert not watchdog.is_recording
+
+
 async def test_profile_record_video_dir_still_works(page_url: str, tmp_path: Path):
 	"""The existing event-driven flow (profile.record_video_dir) must keep working."""
 	session = BrowserSession(
