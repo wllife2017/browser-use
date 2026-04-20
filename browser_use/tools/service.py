@@ -74,6 +74,16 @@ Context = TypeVar('Context')
 T = TypeVar('T', bound=BaseModel)
 
 
+# Global per-action timeout: last-resort guard against hung event handlers.
+# Individual CDP calls (Page.navigate etc.) have their own shorter timeouts,
+# but event-bus `await event` and `event_result()` calls have none — if a
+# watchdog handler blocks on a dead CDP WebSocket, the action can hang past
+# any agent-level watchdog. This cap ensures every action returns within a
+# bounded window with an ActionResult(error=...) instead of hanging silently.
+# Override per-call via BROWSER_USE_ACTION_TIMEOUT_S env var or tools.act(action_timeout=...).
+_DEFAULT_ACTION_TIMEOUT_S = float(os.getenv('BROWSER_USE_ACTION_TIMEOUT_S', '90'))
+
+
 def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
 	"""Detect which sensitive key name corresponds to the given text value."""
 	if not sensitive_data or not text:
@@ -2041,8 +2051,17 @@ Validated Code (after quote fixing):
 		available_file_paths: list[str] | None = None,
 		file_system: FileSystem | None = None,
 		extraction_schema: dict | None = None,
+		action_timeout: float | None = None,
 	) -> ActionResult:
-		"""Execute an action"""
+		"""Execute an action.
+
+		action_timeout: per-action wall-clock cap (seconds). Prevents actions from hanging
+		indefinitely when a CDP WebSocket goes silent — a common failure mode with remote
+		browsers where internal CDP calls (tab switches, lifecycle waits) have no timeouts.
+		Defaults to BROWSER_USE_ACTION_TIMEOUT_S env var or 90s.
+		"""
+
+		timeout_s = action_timeout if action_timeout is not None else _DEFAULT_ACTION_TIMEOUT_S
 
 		for action_name, params in action.model_dump(exclude_unset=True).items():
 			if params is not None:
@@ -2064,22 +2083,36 @@ Validated Code (after quote fixing):
 
 				with span_context:
 					try:
-						result = await self.registry.execute_action(
-							action_name=action_name,
-							params=params,
-							browser_session=browser_session,
-							page_extraction_llm=page_extraction_llm,
-							file_system=file_system,
-							sensitive_data=sensitive_data,
-							available_file_paths=available_file_paths,
-							extraction_schema=extraction_schema,
+						result = await asyncio.wait_for(
+							self.registry.execute_action(
+								action_name=action_name,
+								params=params,
+								browser_session=browser_session,
+								page_extraction_llm=page_extraction_llm,
+								file_system=file_system,
+								sensitive_data=sensitive_data,
+								available_file_paths=available_file_paths,
+								extraction_schema=extraction_schema,
+							),
+							timeout=timeout_s,
 						)
 					except BrowserError as e:
 						logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
 						result = handle_browser_error(e)
-					except TimeoutError as e:
-						logger.error(f'❌ Action {action_name} failed with TimeoutError: {str(e)}')
-						result = ActionResult(error=f'{action_name} was not executed due to timeout.')
+					except TimeoutError:
+						# Covers both the per-action asyncio.wait_for cap and any inner
+						# TimeoutError that bubbled out of the handler.
+						logger.error(
+							f'❌ Action {action_name} hit the per-action timeout ({timeout_s:.0f}s) '
+							f'— likely an unresponsive CDP connection. Returning error so the agent can recover.'
+						)
+						result = ActionResult(
+							error=(
+								f'Action {action_name} timed out after {timeout_s:.0f}s. '
+								f'The browser may be unresponsive (dead CDP WebSocket). '
+								f'Try again or a different approach.'
+							)
+						)
 					except Exception as e:
 						# Log the original exception with traceback for observability
 						logger.error(f"Action '{action_name}' failed with error: {str(e)}")
