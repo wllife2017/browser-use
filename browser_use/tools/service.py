@@ -80,8 +80,25 @@ T = TypeVar('T', bound=BaseModel)
 # watchdog handler blocks on a dead CDP WebSocket, the action can hang past
 # any agent-level watchdog. This cap ensures every action returns within a
 # bounded window with an ActionResult(error=...) instead of hanging silently.
-# Override per-call via BROWSER_USE_ACTION_TIMEOUT_S env var or tools.act(action_timeout=...).
-_DEFAULT_ACTION_TIMEOUT_S = float(os.getenv('BROWSER_USE_ACTION_TIMEOUT_S', '90'))
+#
+# The default (180s) sits above the longest built-in inner timeout — the extract
+# action's page_extraction_llm.ainvoke at 120s — plus comfortable grace, so
+# slow-but-valid LLM-backed actions aren't truncated. Override per-call via
+# BROWSER_USE_ACTION_TIMEOUT_S env var or tools.act(action_timeout=...).
+_ACTION_TIMEOUT_FALLBACK_S = 180.0
+
+_env_timeout = os.getenv('BROWSER_USE_ACTION_TIMEOUT_S')
+try:
+	_DEFAULT_ACTION_TIMEOUT_S = float(_env_timeout) if _env_timeout else _ACTION_TIMEOUT_FALLBACK_S
+except ValueError:
+	# A bad env value should not prevent the module from importing (would break
+	# every tool call). Warn and fall back to the default.
+	logging.getLogger(__name__).warning(
+		'Invalid BROWSER_USE_ACTION_TIMEOUT_S=%r; falling back to %.0fs',
+		_env_timeout,
+		_ACTION_TIMEOUT_FALLBACK_S,
+	)
+	_DEFAULT_ACTION_TIMEOUT_S = _ACTION_TIMEOUT_FALLBACK_S
 
 
 def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
@@ -2058,7 +2075,8 @@ Validated Code (after quote fixing):
 		action_timeout: per-action wall-clock cap (seconds). Prevents actions from hanging
 		indefinitely when a CDP WebSocket goes silent — a common failure mode with remote
 		browsers where internal CDP calls (tab switches, lifecycle waits) have no timeouts.
-		Defaults to BROWSER_USE_ACTION_TIMEOUT_S env var or 90s.
+		Defaults to BROWSER_USE_ACTION_TIMEOUT_S env var or 180s (above the 120s
+		page_extraction_llm cap used by the `extract` action).
 		"""
 
 		timeout_s = action_timeout if action_timeout is not None else _DEFAULT_ACTION_TIMEOUT_S

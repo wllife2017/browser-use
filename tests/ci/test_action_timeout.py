@@ -88,3 +88,40 @@ async def test_act_passes_through_fast_handler():
 	assert isinstance(result, ActionResult)
 	assert result.error is None
 	assert result.extracted_content == 'done'
+
+
+def test_default_action_timeout_accommodates_extract_action():
+	"""The module-level default must sit above extract's 120s LLM inner cap."""
+	from browser_use.tools.service import _DEFAULT_ACTION_TIMEOUT_S
+
+	# extract action uses page_extraction_llm.ainvoke(..., timeout=120.0); the
+	# outer per-action cap must not truncate it.
+	assert _DEFAULT_ACTION_TIMEOUT_S >= 150.0, (
+		f'Default action cap ({_DEFAULT_ACTION_TIMEOUT_S}s) is below the 120s '
+		f'extract timeout + grace — slow but valid extractions would be killed.'
+	)
+
+
+def test_malformed_env_timeout_does_not_break_import(monkeypatch):
+	"""Empty / non-numeric BROWSER_USE_ACTION_TIMEOUT_S must not crash import.
+
+	Env-templating tools sometimes produce empty strings; that turning into a
+	ValueError at module import would take out every tool call process-wide.
+	"""
+	import importlib
+
+	import browser_use.tools.service as svc_module
+
+	for bad_value in ('', 'not-a-number', 'abc'):
+		monkeypatch.setenv('BROWSER_USE_ACTION_TIMEOUT_S', bad_value)
+		# Re-import cleanly; this would have raised ValueError before the fix.
+		reloaded = importlib.reload(svc_module)
+		# Fell back to the hardcoded default (180s) without raising.
+		assert reloaded._DEFAULT_ACTION_TIMEOUT_S == 180.0, (
+			f'Expected fallback 180.0 for bad env {bad_value!r}, got {reloaded._DEFAULT_ACTION_TIMEOUT_S}'
+		)
+
+	# Numeric values still work.
+	monkeypatch.setenv('BROWSER_USE_ACTION_TIMEOUT_S', '45')
+	reloaded = importlib.reload(svc_module)
+	assert reloaded._DEFAULT_ACTION_TIMEOUT_S == 45.0
