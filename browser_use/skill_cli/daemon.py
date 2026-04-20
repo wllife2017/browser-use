@@ -450,11 +450,14 @@ class Daemon:
 		if self._session:
 			# Finalize any in-progress video recording before tearing down the browser,
 			# otherwise the MP4 is truncated since the ffmpeg writer is never closed.
+			# No timeout: stop_recording() already offloads the blocking encoder close
+			# to an executor; a hard timeout here risks os._exit(0) firing before the
+			# writer has flushed, producing the very truncation this hook prevents.
 			bs = self._session.browser_session
 			watchdog = getattr(bs, '_recording_watchdog', None)
 			if watchdog is not None and getattr(watchdog, 'is_recording', False):
 				try:
-					saved = await asyncio.wait_for(watchdog.stop_recording(), timeout=5.0)
+					saved = await watchdog.stop_recording()
 					if saved:
 						logger.info(f'Finalized in-progress recording: {saved}')
 				except Exception as e:
