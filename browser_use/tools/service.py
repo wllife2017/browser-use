@@ -121,6 +121,27 @@ def _parse_env_action_timeout(raw: str | None) -> float:
 _DEFAULT_ACTION_TIMEOUT_S = _parse_env_action_timeout(os.getenv('BROWSER_USE_ACTION_TIMEOUT_S'))
 
 
+def _coerce_valid_action_timeout(value: float | None) -> float:
+	"""Normalize a caller-supplied action_timeout to a finite positive value.
+
+	Mirrors the env-var guard so the public `tools.act(action_timeout=...)`
+	override path has the same defenses: nan / inf / <=0 make actions either
+	time out immediately or never, which would silently defeat the hang
+	guard this module exists to provide. Fall back to the env-derived
+	default with a warning instead.
+	"""
+	if value is None:
+		return _DEFAULT_ACTION_TIMEOUT_S
+	if not math.isfinite(value) or value <= 0:
+		logging.getLogger(__name__).warning(
+			'action_timeout=%r is not a finite positive number; falling back to %.0fs',
+			value,
+			_DEFAULT_ACTION_TIMEOUT_S,
+		)
+		return _DEFAULT_ACTION_TIMEOUT_S
+	return float(value)
+
+
 def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
 	"""Detect which sensitive key name corresponds to the given text value."""
 	if not sensitive_data or not text:
@@ -2099,7 +2120,7 @@ Validated Code (after quote fixing):
 		page_extraction_llm cap used by the `extract` action).
 		"""
 
-		timeout_s = action_timeout if action_timeout is not None else _DEFAULT_ACTION_TIMEOUT_S
+		timeout_s = _coerce_valid_action_timeout(action_timeout)
 
 		for action_name, params in action.model_dump(exclude_unset=True).items():
 			if params is not None:

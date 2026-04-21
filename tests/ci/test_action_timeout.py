@@ -90,6 +90,36 @@ async def test_act_passes_through_fast_handler():
 	assert result.extracted_content == 'done'
 
 
+@pytest.mark.asyncio
+async def test_act_rejects_invalid_action_timeout_override():
+	"""An invalid action_timeout override (nan / inf / <=0) must fall back to
+	the default, not silently defeat the timeout (nan → immediate timeout,
+	inf → no timeout at all)."""
+	tools = Tools()
+
+	calls = {'n': 0}
+
+	async def _fast_execute_action(**_kwargs):
+		calls['n'] += 1
+		return ActionResult(extracted_content='done')
+
+	tools.registry.execute_action = _fast_execute_action  # type: ignore[assignment]
+
+	# nan would otherwise produce an immediate TimeoutError; we expect the
+	# coercion to fall back to the default, so the fast handler runs to
+	# completion and returns the success result.
+	action = _StubActionModel(fast_action={'x': 1})
+	result = await tools.act(action=action, browser_session=None, action_timeout=float('nan'))  # type: ignore[arg-type]
+	assert calls['n'] == 1
+	assert result.error is None
+	assert result.extracted_content == 'done'
+
+	# inf / non-positive values also fall back cleanly.
+	for bad in (float('inf'), 0.0, -5.0):
+		result = await tools.act(action=action, browser_session=None, action_timeout=bad)  # type: ignore[arg-type]
+		assert result.error is None, f'override {bad!r} should have fallen back'
+
+
 def test_default_action_timeout_accommodates_extract_action():
 	"""The module-level default must sit above extract's 120s LLM inner cap."""
 	from browser_use.tools.service import _DEFAULT_ACTION_TIMEOUT_S
