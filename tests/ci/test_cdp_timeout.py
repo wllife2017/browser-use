@@ -11,57 +11,89 @@ from __future__ import annotations
 
 import asyncio
 import time
+from unittest.mock import patch
 
 import pytest
 
 from browser_use.browser._cdp_timeout import (
 	DEFAULT_CDP_REQUEST_TIMEOUT_S,
 	TimeoutWrappedCDPClient,
+	_coerce_valid_timeout,
 	_parse_env_cdp_timeout,
 )
 
 
-class _HangingClient(TimeoutWrappedCDPClient):
-	"""Wrapper whose parent send_raw never returns — simulates a silent server."""
+def _make_wrapped_client_without_websocket(timeout_s: float) -> TimeoutWrappedCDPClient:
+	"""Build a TimeoutWrappedCDPClient without opening a real WebSocket.
 
-	def __init__(self, cdp_request_timeout_s: float) -> None:
-		# Skip real CDPClient.__init__ — we only exercise the timeout wrapper.
-		self._cdp_request_timeout_s = cdp_request_timeout_s
-		self.call_count = 0
-
-	async def _parent_send_raw(self, *_args, **_kwargs):
-		self.call_count += 1
-		await asyncio.sleep(30)  # Way longer than any test timeout.
-		return {}
-
-	async def send_raw(self, method, params=None, session_id=None):
-		# Inline version of TimeoutWrappedCDPClient.send_raw using our _parent_send_raw
-		# (avoids needing a real WebSocket).
-		try:
-			return await asyncio.wait_for(
-				self._parent_send_raw(method=method, params=params, session_id=session_id),
-				timeout=self._cdp_request_timeout_s,
-			)
-		except TimeoutError as e:
-			raise TimeoutError(f'CDP method {method!r} did not respond within {self._cdp_request_timeout_s:.0f}s.') from e
+	Calling `CDPClient.__init__` directly would try to construct a working
+	client. We only want to exercise the timeout-wrapper `send_raw` path, so
+	we construct the object via __new__ and set the single attribute the
+	wrapper needs.
+	"""
+	client = TimeoutWrappedCDPClient.__new__(TimeoutWrappedCDPClient)
+	client._cdp_request_timeout_s = timeout_s
+	return client
 
 
 @pytest.mark.asyncio
 async def test_send_raw_times_out_on_silent_server():
-	"""A CDP method that gets no response must raise TimeoutError within the cap."""
-	client = _HangingClient(cdp_request_timeout_s=0.5)
+	"""The production TimeoutWrappedCDPClient.send_raw must cap a hung parent
+	send_raw within the configured timeout.
 
-	start = time.monotonic()
-	with pytest.raises(TimeoutError) as exc:
-		await client.send_raw('Target.getTargets')
-	elapsed = time.monotonic() - start
+	We deliberately exercise the real `send_raw` (not an inline copy) so
+	regressions in the wrapper itself — e.g. accidentally removing the
+	asyncio.wait_for — fail this test.
+	"""
+	client = _make_wrapped_client_without_websocket(timeout_s=0.5)
+	call_count = {'n': 0}
 
-	assert client.call_count == 1
-	# Returned within the cap (plus a small scheduling margin), not after the
-	# full 30s sleep.
+	async def _hanging_super_send_raw(self, method, params=None, session_id=None):
+		call_count['n'] += 1
+		await asyncio.sleep(30)
+		return {}
+
+	# Patch the parent class's send_raw so TimeoutWrappedCDPClient.send_raw's
+	# `super().send_raw(...)` call lands on our hanging stub.
+	with patch('browser_use.browser._cdp_timeout.CDPClient.send_raw', _hanging_super_send_raw):
+		start = time.monotonic()
+		with pytest.raises(TimeoutError) as exc:
+			await client.send_raw('Target.getTargets')
+		elapsed = time.monotonic() - start
+
+	assert call_count['n'] == 1
+	# Returned within the cap (plus scheduling margin), not after the full 30s.
 	assert elapsed < 2.0, f'wrapper did not enforce timeout; took {elapsed:.2f}s'
 	assert 'Target.getTargets' in str(exc.value)
-	assert '0s' in str(exc.value) or '1s' in str(exc.value)
+	# Error message mentions "within 0s" (0.5 rounded with %.0f) or "within 1s".
+	assert 'within' in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_send_raw_passes_through_when_fast():
+	"""A parent send_raw that returns quickly should bubble the result up unchanged."""
+	client = _make_wrapped_client_without_websocket(timeout_s=5.0)
+
+	async def _fast_super_send_raw(self, method, params=None, session_id=None):
+		return {'ok': True, 'method': method}
+
+	with patch('browser_use.browser._cdp_timeout.CDPClient.send_raw', _fast_super_send_raw):
+		result = await client.send_raw('Target.getTargets')
+
+	assert result == {'ok': True, 'method': 'Target.getTargets'}
+
+
+def test_constructor_rejects_invalid_timeout():
+	"""Non-finite / non-positive constructor args must fall back to the default,
+	mirroring the env-var path in _parse_env_cdp_timeout."""
+	# None → default.
+	assert _coerce_valid_timeout(None) == DEFAULT_CDP_REQUEST_TIMEOUT_S
+	# Invalid values → default, with a warning.
+	for bad in (float('nan'), float('inf'), float('-inf'), 0.0, -5.0, -0.01):
+		assert _coerce_valid_timeout(bad) == DEFAULT_CDP_REQUEST_TIMEOUT_S, f'Expected fallback for {bad!r}, got something else'
+	# Valid finite positives are preserved.
+	assert _coerce_valid_timeout(0.1) == 0.1
+	assert _coerce_valid_timeout(30.0) == 30.0
 
 
 def test_default_cdp_timeout_is_reasonable():

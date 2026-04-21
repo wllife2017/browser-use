@@ -68,6 +68,26 @@ def _parse_env_cdp_timeout(raw: str | None) -> float:
 DEFAULT_CDP_REQUEST_TIMEOUT_S: float = _parse_env_cdp_timeout(os.getenv('BROWSER_USE_CDP_TIMEOUT_S'))
 
 
+def _coerce_valid_timeout(value: float | None) -> float:
+	"""Normalize a user-supplied timeout to a finite positive value.
+
+	None / nan / inf / non-positive values all fall back to the env-derived
+	default with a warning. This mirrors _parse_env_cdp_timeout so callers that
+	pass cdp_request_timeout_s directly get the same defensive behaviour as
+	callers that set the env var.
+	"""
+	if value is None:
+		return DEFAULT_CDP_REQUEST_TIMEOUT_S
+	if not math.isfinite(value) or value <= 0:
+		logger.warning(
+			'cdp_request_timeout_s=%r is not a finite positive number; falling back to %.0fs',
+			value,
+			DEFAULT_CDP_REQUEST_TIMEOUT_S,
+		)
+		return DEFAULT_CDP_REQUEST_TIMEOUT_S
+	return float(value)
+
+
 class TimeoutWrappedCDPClient(CDPClient):
 	"""CDPClient subclass that enforces a per-request timeout on send_raw.
 
@@ -83,9 +103,7 @@ class TimeoutWrappedCDPClient(CDPClient):
 		**kwargs: Any,
 	) -> None:
 		super().__init__(*args, **kwargs)
-		self._cdp_request_timeout_s: float = (
-			cdp_request_timeout_s if cdp_request_timeout_s is not None else DEFAULT_CDP_REQUEST_TIMEOUT_S
-		)
+		self._cdp_request_timeout_s: float = _coerce_valid_timeout(cdp_request_timeout_s)
 
 	async def send_raw(
 		self,
