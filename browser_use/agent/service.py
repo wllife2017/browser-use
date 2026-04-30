@@ -2808,6 +2808,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					break
 
 		except Exception as e:
+			# Re-raise control-flow exceptions to preserve stop/pause/interrupt behavior
+			if isinstance(e, (InterruptedError, asyncio.CancelledError)):
+				raise
 			# Handle any exceptions during action execution
 			self.logger.error(f'❌ Executing action {i + 1} failed -> {type(e).__name__}: {e}')
 			await self._demo_mode_log(
