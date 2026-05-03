@@ -2807,20 +2807,23 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					self.logger.info(f'Page changed after "{action_name}" — skipping {total_actions - i - 1} remaining action(s)')
 					break
 
-		except Exception as e:
-			# Re-raise control-flow exceptions to preserve stop/pause/interrupt behavior
-			if isinstance(e, (InterruptedError, asyncio.CancelledError)):
-				raise
-			# Handle any exceptions during action execution
-			self.logger.error(f'❌ Executing action {i + 1} failed -> {type(e).__name__}: {e}')
-			await self._demo_mode_log(
-				f'Action "{action_name}" raised {type(e).__name__}: {e}',
-				'error',
-				{'action': action_name, 'step': self.state.n_steps},
-			)
-			# Preserve partial results so the agent knows which actions succeeded before the failure
-			results.append(ActionResult(error=str(e)))
-			return results
+			except Exception as e:
+				# Re-raise InterruptedError so _check_stop_or_pause's stop/pause signal still propagates
+				if isinstance(e, InterruptedError):
+					raise
+				# Re-raise browser/connection errors so _handle_step_error can handle reconnect/shutdown
+				if self._is_connection_like_error(e):
+					raise
+				# Handle any exceptions during action execution
+				self.logger.error(f'❌ Executing action {i + 1} failed -> {type(e).__name__}: {e}')
+				await self._demo_mode_log(
+					f'Action "{action_name}" raised {type(e).__name__}: {e}',
+					'error',
+					{'action': action_name, 'step': self.state.n_steps},
+				)
+				# Preserve partial results so the agent knows which actions succeeded before the failure
+				results.append(ActionResult(error=f'{type(e).__name__}: {e}'))
+				return results
 
 		return results
 
