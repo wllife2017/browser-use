@@ -136,83 +136,37 @@ class SecurityWatchdog(BaseWatchdog):
 			return (host, f'www.{host}')  # ('example.com', 'www.example.com')
 
 	def _is_ip_address(self, host: str) -> bool:
-		"""Check if a hostname is an IP address (IPv4 or IPv6).
+		"""True iff `host` matches an IPv4 or IPv6 the browser would resolve.
 
-		Mirrors the host canonicalization the browser performs before applying
-		its IPv4 parser, so the classifier sees the same string the network
-		stack would resolve:
-
-		1. Strip IPv6 brackets.
-		2. Percent-decode (`%30x7f000001` → `0x7f000001`).
-		3. NFKC-normalize (fullwidth `１２７.０.０.１` → ASCII `127.0.0.1`;
-		   circled `①②⑦.⓪.⓪.①` → ASCII `127.0.0.1`).
-		4. Try `ipaddress.ip_address` (dotted-quad / IPv6).
-		5. Fall back to `socket.inet_aton` for non-standard IPv4 forms —
-		   decimal (`2130706433`), hex (`0x7f000001`), octal (`0177.0.0.1`),
-		   and short forms (`127.1`, `127.0.1`).
-
-		Without these steps `block_ip_addresses=True` is trivially bypassed by
-		re-encoding the IP in any of those forms.
-
-		See GHSA-xrfv-gg9f-wwjp / GHSA-g27c-8gp4-28cv.
+		Mirrors WHATWG host canonicalization so non-standard IPv4 encodings
+		(decimal, hex, octal, short-form, percent-encoded, Unicode digits)
+		can't bypass `block_ip_addresses`. Never raises — unrecognizable
+		hosts return False and fall through to domain-allowlist handling.
 		"""
 		import ipaddress
 		import socket
 		import unicodedata
 		from urllib.parse import unquote
 
-		# Strip IPv6 bracket wrapping defensively; urlparse usually strips it,
-		# but a malformed url could leak it through.
 		bare = host.strip('[]')
-
-		# Percent-decode the host before parsing. Browsers decode `%XX` escapes
-		# in the host component, so an unencoded check would miss
-		# `%30x7f000001` (→ '0x7f000001') and `%31%32%37.0.0.1` (→ '127.0.0.1').
-		# `unquote` is forgiving (leaves malformed `%`-sequences as-is) but we
-		# still wrap in try/except so any future encoding edge case can never
-		# crash the navigation security check.
 		try:
 			bare = unquote(bare)
 		except Exception:
 			pass
-
-		# NFKC-normalize so Unicode digit variants the browser canonicalizes to
-		# ASCII (fullwidth `１２７`, circled `①②⑦`, etc.) reach the IP parsers
-		# in their ASCII form. NFKC is a stdlib operation that does not raise
-		# for malformed input (surrogates pass through unchanged).
 		try:
 			bare = unicodedata.normalize('NFKC', bare)
 		except Exception:
 			pass
+		# IDNA label separators NFKC misses (U+3002, U+FF61 → U+3002).
+		bare = bare.replace('。', '.').replace('｡', '.')
 
-		# Fold IDNA label separators to ASCII `.`. Per RFC 3490 / UTS46 four
-		# code points act as label separators in IDNA processing: `.` (U+002E),
-		# `。` (U+3002), `．` (U+FF0E), `｡` (U+FF61). NFKC handles U+FF0E only
-		# and maps U+FF61 → U+3002 (still ideographic), leaving the IPv4 parser
-		# unable to match. WHATWG URL parsing folds all four to `.` before
-		# resolution, so we must do the same.
-		for _dot in ('。', '｡'):
-			if _dot in bare:
-				bare = bare.replace(_dot, '.')
-
-		# Standard dotted-quad IPv4 and full IPv6.
 		try:
 			ipaddress.ip_address(bare)
 			return True
-		except (ValueError, TypeError):
-			pass
 		except Exception:
-			# Be defensively conservative: any parser-internal failure means
-			# "we can't recognize this as a standard IP", not "crash the
-			# navigation security check". Falls through to inet_aton.
 			pass
-
-		# Non-standard IPv4 forms that the kernel resolver (and browsers) accept:
-		# decimal, hex, octal, and short-form. `inet_aton` is IPv4-only and
-		# accepts all of these; OSError means "not a parseable IPv4 in any form".
-		# It can also raise other exceptions (e.g. `UnicodeEncodeError` for
-		# lone-surrogate hostnames from URL-decoded malformed UTF-8) — treat
-		# any failure as "not a recognizable IP", never propagate.
+		# Non-standard IPv4 (decimal, hex, octal, short-form) — `inet_aton`
+		# accepts the same liberal forms the kernel resolver does.
 		try:
 			socket.inet_aton(bare)
 			return True
