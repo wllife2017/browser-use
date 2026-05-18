@@ -185,6 +185,16 @@ class SecurityWatchdog(BaseWatchdog):
 		except Exception:
 			pass
 
+		# Fold IDNA label separators to ASCII `.`. Per RFC 3490 / UTS46 four
+		# code points act as label separators in IDNA processing: `.` (U+002E),
+		# `。` (U+3002), `．` (U+FF0E), `｡` (U+FF61). NFKC handles U+FF0E only
+		# and maps U+FF61 → U+3002 (still ideographic), leaving the IPv4 parser
+		# unable to match. WHATWG URL parsing folds all four to `.` before
+		# resolution, so we must do the same.
+		for _dot in ('。', '｡'):
+			if _dot in bare:
+				bare = bare.replace(_dot, '.')
+
 		# Standard dotted-quad IPv4 and full IPv6.
 		try:
 			ipaddress.ip_address(bare)

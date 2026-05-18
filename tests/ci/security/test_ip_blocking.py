@@ -650,3 +650,26 @@ class TestNonStandardIPv4Representations:
 		assert watchdog._is_ip_address('xn--caf-dma.example') is False
 		assert watchdog._is_ip_address('日本.example') is False
 		assert watchdog._is_ip_address('xn--wgv71a.example') is False
+
+	def test_idna_dot_separators_blocked(self):
+		"""Per RFC 3490 / UTS46, four code points act as label separators in
+		IDNA processing — `.` (U+002E), `。` (U+3002 IDEOGRAPHIC FULL STOP),
+		`．` (U+FF0E FULLWIDTH FULL STOP), `｡` (U+FF61 HALFWIDTH IDEOGRAPHIC
+		FULL STOP). WHATWG URL parsing maps all four to `.` before resolution,
+		so `http://127。0。0。1/` etc. reach 127.0.0.1.
+
+		NFKC alone is insufficient — it maps U+FF0E → U+002E and U+FF61 →
+		U+3002, but leaves U+3002 (the most common one) untouched. Classifier
+		must additionally fold U+3002 and U+FF61 to U+002E before IP parsing.
+		"""
+		watchdog = self._watchdog()
+		# All four dot variants must result in the IP being blocked.
+		assert watchdog._is_url_allowed('http://127。0。0。1/') is False  # U+3002
+		assert watchdog._is_url_allowed('http://127｡0｡0｡1/') is False  # U+FF61
+		assert watchdog._is_url_allowed('http://127．0．0．1/') is False  # U+FF0E
+		# Combined with circled-digit normalization.
+		assert watchdog._is_url_allowed('http://①②⑦。⓪。⓪。①/') is False
+		# Direct classifier checks.
+		assert watchdog._is_ip_address('127。0。0。1') is True
+		assert watchdog._is_ip_address('127｡0｡0｡1') is True
+		assert watchdog._is_ip_address('127．0．0．1') is True
