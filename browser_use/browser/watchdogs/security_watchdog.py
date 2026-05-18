@@ -138,21 +138,34 @@ class SecurityWatchdog(BaseWatchdog):
 	def _is_ip_address(self, host: str) -> bool:
 		"""Check if a hostname is an IP address (IPv4 or IPv6).
 
-		Args:
-			host: The hostname to check
-
-		Returns:
-			True if the host is an IP address, False otherwise
+		Recognizes non-standard IPv4 representations that Chromium resolves but
+		`ipaddress.ip_address()` rejects — decimal (`2130706433`), hex
+		(`0x7f000001`), octal (`0177.0.0.1`), and short forms (`127.1`,
+		`127.0.1`). Without this canonicalization, `block_ip_addresses=True`
+		can be bypassed by simply re-encoding the IP in one of these forms.
+		See GHSA-xrfv-gg9f-wwjp / GHSA-g27c-8gp4-28cv.
 		"""
 		import ipaddress
+		import socket
 
+		# Strip IPv6 bracket wrapping defensively; urlparse usually strips it,
+		# but a malformed url could leak it through.
+		bare = host.strip('[]')
+
+		# Standard dotted-quad IPv4 and full IPv6.
 		try:
-			# Try to parse as IP address (handles both IPv4 and IPv6)
-			ipaddress.ip_address(host)
+			ipaddress.ip_address(bare)
 			return True
-		except ValueError:
-			return False
-		except Exception:
+		except (ValueError, TypeError):
+			pass
+
+		# Non-standard IPv4 forms that the kernel resolver (and browsers) accept:
+		# decimal, hex, octal, and short-form. `inet_aton` is IPv4-only and
+		# accepts all of these; OSError means "not a parseable IPv4 in any form".
+		try:
+			socket.inet_aton(bare)
+			return True
+		except OSError:
 			return False
 
 	def _is_url_allowed(self, url: str) -> bool:

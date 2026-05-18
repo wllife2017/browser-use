@@ -299,17 +299,22 @@ class TestEdgeCases:
 		assert watchdog._is_url_allowed('chrome://newtab/') is True
 
 	def test_ipv4_lookalike_domains_allowed(self):
-		"""Test that domains that look like IPs but aren't are still allowed."""
+		"""Test that strings that look like IPs but cannot be resolved as IPs by
+		the kernel/browser are still treated as domain names and allowed.
+
+		Note: short-form IPv4 strings such as `1.2.3` (which Chromium resolves
+		as `1.2.0.3`) ARE recognized as IPs — see TestNonStandardIPv4Representations.
+		"""
 		browser_profile = BrowserProfile(block_ip_addresses=True, headless=True, user_data_dir=None)
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		event_bus = EventBus()
 		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
-		# These look like IPs but have too many/few octets or invalid ranges
-		# The IP parser should reject them, so they're treated as domain names
-		assert watchdog._is_url_allowed('http://999.999.999.999/') is True  # Invalid IP range
-		assert watchdog._is_url_allowed('http://1.2.3.4.5/') is True  # Too many octets
-		assert watchdog._is_url_allowed('http://1.2.3/') is True  # Too few octets
+		# These look like IPs but cannot resolve as IPv4 in any form the browser accepts:
+		# - 999.999.999.999: out of range for every octet
+		# - 1.2.3.4.5: too many octets
+		assert watchdog._is_url_allowed('http://999.999.999.999/') is True
+		assert watchdog._is_url_allowed('http://1.2.3.4.5/') is True
 
 	def test_different_schemes_with_ips(self):
 		"""Test that IP blocking works across different URL schemes."""
@@ -373,12 +378,14 @@ class TestIsIPAddressHelper:
 		assert watchdog._is_ip_address('www.google.com') is False
 		assert watchdog._is_ip_address('localhost') is False
 
-		# Invalid IPs
+		# Invalid IPs (rejected by both ipaddress and inet_aton)
 		assert watchdog._is_ip_address('999.999.999.999') is False
-		assert watchdog._is_ip_address('1.2.3') is False
 		assert watchdog._is_ip_address('1.2.3.4.5') is False
 		assert watchdog._is_ip_address('not-an-ip') is False
 		assert watchdog._is_ip_address('') is False
+
+		# Short-form IPv4 strings (1.2.3 == 1.2.0.3) ARE valid IPs that
+		# browsers/kernel resolve — covered by TestNonStandardIPv4Representations.
 
 		# IPs with ports or paths (not valid for the helper - it only checks hostnames)
 		assert watchdog._is_ip_address('192.168.1.1:8080') is False
@@ -487,3 +494,81 @@ class TestComplexScenarios:
 
 		# Even localhost blocked
 		assert watchdog._is_url_allowed('http://127.0.0.1/') is False
+
+
+class TestNonStandardIPv4Representations:
+	"""Regression tests for GHSA-xrfv-gg9f-wwjp / GHSA-g27c-8gp4-28cv.
+
+	`ipaddress.ip_address()` only accepts the canonical dotted-quad form, but
+	Chromium also resolves decimal, hex, octal, and short-form IPv4 strings.
+	Without canonicalization, `block_ip_addresses=True` could be bypassed via:
+
+	  http://2130706433/      → 127.0.0.1 (decimal)
+	  http://0x7f000001/      → 127.0.0.1 (hex)
+	  http://0177.0.0.1/      → 127.0.0.1 (octal)
+	  http://127.1/           → 127.0.0.1 (short-form)
+	  http://127.0.1/         → 127.0.0.1 (short-form)
+	"""
+
+	def _watchdog(self) -> SecurityWatchdog:
+		profile = BrowserProfile(block_ip_addresses=True, headless=True, user_data_dir=None)
+		session = BrowserSession(browser_profile=profile)
+		return SecurityWatchdog(browser_session=session, event_bus=EventBus())
+
+	def test_decimal_ipv4_blocked(self):
+		"""Decimal integer IPv4 strings (browser-accepted) must be blocked."""
+		watchdog = self._watchdog()
+		assert watchdog._is_url_allowed('http://2130706433/') is False  # 127.0.0.1
+		assert watchdog._is_url_allowed('http://3232235521/') is False  # 192.168.0.1
+
+	def test_hex_ipv4_blocked(self):
+		"""Hex IPv4 strings (browser-accepted) must be blocked."""
+		watchdog = self._watchdog()
+		assert watchdog._is_url_allowed('http://0x7f000001/') is False  # 127.0.0.1
+		assert watchdog._is_url_allowed('http://0x7F.0x0.0x0.0x1/') is False
+
+	def test_octal_ipv4_blocked(self):
+		"""Octal IPv4 strings (browser-accepted) must be blocked."""
+		watchdog = self._watchdog()
+		assert watchdog._is_url_allowed('http://0177.0.0.1/') is False  # 127.0.0.1
+
+	def test_short_form_ipv4_blocked(self):
+		"""Short-form IPv4 strings (browser-accepted) must be blocked."""
+		watchdog = self._watchdog()
+		assert watchdog._is_url_allowed('http://127.1/') is False
+		assert watchdog._is_url_allowed('http://127.0.1/') is False
+		assert watchdog._is_url_allowed('http://10.1/') is False
+
+	def test_lookalike_domains_still_allowed(self):
+		"""Hostnames that look IP-ish but are not (e.g. embedded labels) must
+		remain unaffected — only browser-resolvable IP forms should be blocked."""
+		watchdog = self._watchdog()
+		# Real domains, not IPs — should not be incorrectly blocked.
+		assert watchdog._is_url_allowed('http://127.0.0.1.evil.com/') is True
+		assert watchdog._is_url_allowed('http://2130706433.evil.com/') is True
+		assert watchdog._is_url_allowed('http://example.com/') is True
+
+	def test_non_standard_forms_allowed_when_blocking_disabled(self):
+		"""Without block_ip_addresses, non-standard IPv4 strings are not blocked."""
+		profile = BrowserProfile(block_ip_addresses=False, headless=True, user_data_dir=None)
+		session = BrowserSession(browser_profile=profile)
+		watchdog = SecurityWatchdog(browser_session=session, event_bus=EventBus())
+		assert watchdog._is_url_allowed('http://2130706433/') is True
+		assert watchdog._is_url_allowed('http://0x7f000001/') is True
+
+	def test_non_standard_forms_blocked_inside_allowed_domains(self):
+		"""block_ip_addresses must override allowed_domains for non-standard forms
+		just as it does for the canonical form."""
+		profile = BrowserProfile(
+			block_ip_addresses=True,
+			allowed_domains=['*'],
+			headless=True,
+			user_data_dir=None,
+		)
+		session = BrowserSession(browser_profile=profile)
+		watchdog = SecurityWatchdog(browser_session=session, event_bus=EventBus())
+		# Even with '*' allowlist, the IP block must still fire.
+		assert watchdog._is_url_allowed('http://2130706433/') is False
+		assert watchdog._is_url_allowed('http://0x7f000001/') is False
+		# Sanity: legitimate domains still allowed.
+		assert watchdog._is_url_allowed('https://example.com/') is True
