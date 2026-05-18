@@ -133,3 +133,64 @@ async def test_traversal_with_no_basename_match_still_fails_safely(
 	assert result.error is not None
 	# Should be the "not available" rejection, not a path-resolution success.
 	assert 'not available' in result.error.lower() or 'does not exist' in result.error.lower()
+
+
+class _StubRemoteBrowserSession(_StubBrowserSession):
+	"""Stub for a remote (non-local) browser session — the upload action's
+	rules differ here. Remote paths are passed through to the browser process."""
+
+	is_local = False
+
+
+async def test_remote_session_does_not_rewrite_to_local_filesystem_on_basename_collision(
+	tmp_path,
+	monkeypatch: pytest.MonkeyPatch,
+) -> None:
+	"""For remote sessions, an absolute remote path that happens to share a
+	basename with a local FileSystem-managed file MUST be passed through
+	unchanged. Rewriting to the local FileSystem path would silently upload
+	the wrong file (the local managed one) instead of the remote-machine file
+	the agent referenced.
+
+	Pre-existing issue surfaced by the GHSA-j9hj-92j8-jv9h review (codex bot).
+	"""
+	fs = FileSystem(base_dir=tmp_path)
+	# Create a local managed file with a basename that collides with the
+	# remote path the agent will reference.
+	await fs.write_file('note.md', 'LOCAL content the agent did NOT ask for')
+
+	# What the remote-session agent would pass — a path valid on the remote
+	# machine, NOT in the local FileSystem.
+	remote_path = '/tmp/note.md'
+
+	# Capture every path that the action checks for existence. For remote
+	# sessions the local-existence check is skipped, so we instead capture
+	# the resolved path via the same os.path.exists hook used by the local
+	# test — if the rewrite-to-local-filesystem branch fires, the next call
+	# will be against the data_dir path; if not, no call should reference it.
+	exists_calls: list[str] = []
+	real_exists = os.path.exists
+
+	def capturing_exists(path: str) -> bool:
+		exists_calls.append(str(path))
+		return real_exists(path)
+
+	monkeypatch.setattr('browser_use.tools.service.os.path.exists', capturing_exists)
+
+	tools = Tools()
+	await tools.registry.execute_action(
+		'upload_file',
+		{'index': 0, 'path': remote_path},
+		browser_session=_StubRemoteBrowserSession(),  # type: ignore[arg-type]
+		file_system=fs,
+		available_file_paths=[],
+	)
+
+	# The action should NOT have rewritten to a local FileSystem path. If it
+	# had, we'd see the data_dir/note.md path appear in the captured calls.
+	data_dir_str = str(fs.get_dir())
+	rewrites = [p for p in exists_calls if p.startswith(data_dir_str)]
+	assert not rewrites, (
+		f'Remote session upload silently rewrote to local FileSystem path: {rewrites}. '
+		f'The agent intended to upload {remote_path!r}; the rewrite would have uploaded the local managed file instead.'
+	)

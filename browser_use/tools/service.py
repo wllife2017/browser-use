@@ -845,8 +845,13 @@ class Tools(Generic[Context]):
 				# Also check if it's a recently downloaded file that might not be in available_file_paths yet
 				downloaded_files = browser_session.downloaded_files
 				if params.path not in downloaded_files:
-					# Finally, check if it's a file in the FileSystem service
-					if file_system and file_system.get_dir():
+					# Finally, check if it's a file in the FileSystem service.
+					# Only rewrite to the local FileSystem path on local sessions —
+					# on remote sessions, params.path is meant to address a file on
+					# the remote machine, and a coincidental basename collision with
+					# a local managed file (e.g. `/tmp/note.md` colliding with a
+					# local `note.md`) must not silently upload the local file.
+					if browser_session.is_local and file_system and file_system.get_dir():
 						# Check if the file is actually managed by the FileSystem service
 						# The path should be just the filename for FileSystem files
 						file_obj = file_system.get_file(params.path)
@@ -868,13 +873,9 @@ class Tools(Generic[Context]):
 								return ActionResult(error=msg)
 							params = UploadFileAction(index=params.index, path=file_system_path)
 						else:
-							# If browser is remote, allow passing a remote-accessible absolute path
-							if not browser_session.is_local:
-								pass
-							else:
-								msg = f'File path {params.path} is not available. To fix: The user must add this file path to the available_file_paths parameter when creating the Agent. Example: Agent(task="...", llm=llm, browser=browser, available_file_paths=["{params.path}"])'
-								logger.error(f'❌ {msg}')
-								return ActionResult(error=msg)
+							msg = f'File path {params.path} is not available. To fix: The user must add this file path to the available_file_paths parameter when creating the Agent. Example: Agent(task="...", llm=llm, browser=browser, available_file_paths=["{params.path}"])'
+							logger.error(f'❌ {msg}')
+							return ActionResult(error=msg)
 					else:
 						# If browser is remote, allow passing a remote-accessible absolute path
 						if not browser_session.is_local:
