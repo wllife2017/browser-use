@@ -572,3 +572,19 @@ class TestNonStandardIPv4Representations:
 		assert watchdog._is_url_allowed('http://0x7f000001/') is False
 		# Sanity: legitimate domains still allowed.
 		assert watchdog._is_url_allowed('https://example.com/') is True
+
+	def test_malformed_unicode_hostnames_do_not_crash_classifier(self):
+		"""Hostnames with lone surrogates (e.g. `\\udcff` from URL-decoded
+		malformed UTF-8) must not crash `_is_ip_address` — `socket.inet_aton`
+		raises `UnicodeEncodeError` (not `OSError`) for surrogates, and the
+		classifier must treat that as "not an IP" rather than propagating.
+
+		Pre-existing defensive behavior in the original code (caught
+		`Exception`) — must be preserved when extending with `inet_aton`.
+		"""
+		watchdog = self._watchdog()
+		# Lone surrogates — common in URLs containing percent-encoded malformed UTF-8.
+		assert watchdog._is_ip_address('\udcff') is False
+		assert watchdog._is_ip_address('\ud800') is False
+		assert watchdog._is_ip_address('caf\udce9.local') is False
+		assert watchdog._is_ip_address('\udcff.example.com') is False

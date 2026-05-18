@@ -158,14 +158,22 @@ class SecurityWatchdog(BaseWatchdog):
 			return True
 		except (ValueError, TypeError):
 			pass
+		except Exception:
+			# Be defensively conservative: any parser-internal failure means
+			# "we can't recognize this as a standard IP", not "crash the
+			# navigation security check". Falls through to inet_aton.
+			pass
 
 		# Non-standard IPv4 forms that the kernel resolver (and browsers) accept:
 		# decimal, hex, octal, and short-form. `inet_aton` is IPv4-only and
 		# accepts all of these; OSError means "not a parseable IPv4 in any form".
+		# It can also raise other exceptions (e.g. `UnicodeEncodeError` for
+		# lone-surrogate hostnames from URL-decoded malformed UTF-8) — treat
+		# any failure as "not a recognizable IP", never propagate.
 		try:
 			socket.inet_aton(bare)
 			return True
-		except OSError:
+		except Exception:
 			return False
 
 	def _is_url_allowed(self, url: str) -> bool:
