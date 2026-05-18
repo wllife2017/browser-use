@@ -851,8 +851,21 @@ class Tools(Generic[Context]):
 						# The path should be just the filename for FileSystem files
 						file_obj = file_system.get_file(params.path)
 						if file_obj:
-							# File is managed by FileSystem, construct the full path
-							file_system_path = str(file_system.get_dir() / params.path)
+							# Construct the upload path from the FileSystem-owned basename
+							# (file_obj.full_name), NOT from params.path. The agent-controlled
+							# params.path may contain '..' traversal sequences that escape
+							# data_dir when naively joined — get_file() matches by basename
+							# so a path like '../../../note.md' would otherwise resolve to a
+							# sibling file outside the FileSystem directory.
+							# GHSA-j9hj-92j8-jv9h.
+							file_system_path = str(file_system.get_dir() / file_obj.full_name)
+							# Defense in depth: refuse any path that resolves outside data_dir.
+							real_path = os.path.realpath(file_system_path)
+							real_dir = os.path.realpath(str(file_system.get_dir()))
+							if not (real_path == real_dir or real_path.startswith(real_dir + os.sep)):
+								msg = f'Upload of {params.path!r} escapes FileSystem directory; refusing.'
+								logger.error(f'❌ {msg}')
+								return ActionResult(error=msg)
 							params = UploadFileAction(index=params.index, path=file_system_path)
 						else:
 							# If browser is remote, allow passing a remote-accessible absolute path
