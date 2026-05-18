@@ -138,19 +138,27 @@ class SecurityWatchdog(BaseWatchdog):
 	def _is_ip_address(self, host: str) -> bool:
 		"""Check if a hostname is an IP address (IPv4 or IPv6).
 
-		Recognizes non-standard IPv4 representations that Chromium resolves but
-		`ipaddress.ip_address()` rejects — decimal (`2130706433`), hex
-		(`0x7f000001`), octal (`0177.0.0.1`), and short forms (`127.1`,
-		`127.0.1`). Also percent-decodes the host first, since Chromium decodes
-		`%XX` escapes before applying its IPv4 parser; without that step,
-		`http://%30x7f000001/` (decodes to `0x7f000001` → 127.0.0.1) and
-		`http://%31%32%37.0.0.1/` (decodes to `127.0.0.1`) would still bypass
-		`block_ip_addresses`.
+		Mirrors the host canonicalization the browser performs before applying
+		its IPv4 parser, so the classifier sees the same string the network
+		stack would resolve:
+
+		1. Strip IPv6 brackets.
+		2. Percent-decode (`%30x7f000001` → `0x7f000001`).
+		3. NFKC-normalize (fullwidth `１２７.０.０.１` → ASCII `127.0.0.1`;
+		   circled `①②⑦.⓪.⓪.①` → ASCII `127.0.0.1`).
+		4. Try `ipaddress.ip_address` (dotted-quad / IPv6).
+		5. Fall back to `socket.inet_aton` for non-standard IPv4 forms —
+		   decimal (`2130706433`), hex (`0x7f000001`), octal (`0177.0.0.1`),
+		   and short forms (`127.1`, `127.0.1`).
+
+		Without these steps `block_ip_addresses=True` is trivially bypassed by
+		re-encoding the IP in any of those forms.
 
 		See GHSA-xrfv-gg9f-wwjp / GHSA-g27c-8gp4-28cv.
 		"""
 		import ipaddress
 		import socket
+		import unicodedata
 		from urllib.parse import unquote
 
 		# Strip IPv6 bracket wrapping defensively; urlparse usually strips it,
@@ -165,6 +173,15 @@ class SecurityWatchdog(BaseWatchdog):
 		# crash the navigation security check.
 		try:
 			bare = unquote(bare)
+		except Exception:
+			pass
+
+		# NFKC-normalize so Unicode digit variants the browser canonicalizes to
+		# ASCII (fullwidth `１２７`, circled `①②⑦`, etc.) reach the IP parsers
+		# in their ASCII form. NFKC is a stdlib operation that does not raise
+		# for malformed input (surrogates pass through unchanged).
+		try:
+			bare = unicodedata.normalize('NFKC', bare)
 		except Exception:
 			pass
 
