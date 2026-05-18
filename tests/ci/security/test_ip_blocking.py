@@ -588,3 +588,33 @@ class TestNonStandardIPv4Representations:
 		assert watchdog._is_ip_address('\ud800') is False
 		assert watchdog._is_ip_address('caf\udce9.local') is False
 		assert watchdog._is_ip_address('\udcff.example.com') is False
+
+	def test_percent_encoded_ipv4_blocked(self):
+		"""Percent-encoded hostnames that decode to IPs must be blocked.
+
+		Chromium percent-decodes the host before resolving — so
+		`http://%30x7f000001/` decodes to `0x7f000001` → `127.0.0.1`, and
+		`http://%31%32%37.0.0.1/` decodes to `127.0.0.1`. Without
+		percent-decoding inside the classifier, the IP block is bypassed
+		whenever the URL contains any `%`-encoded host bytes.
+		"""
+		watchdog = self._watchdog()
+		# Mixed encoding: %30 = '0', rest literal → '0x7f000001'
+		assert watchdog._is_url_allowed('http://%30x7f000001/') is False
+		# Fully encoded canonical form: %31%32%37 = '127'
+		assert watchdog._is_url_allowed('http://%31%32%37.0.0.1/') is False
+		# Fully encoded decimal form: → '2130706433'
+		assert watchdog._is_url_allowed('http://%32%31%33%30%37%30%36%34%33%33/') is False
+		# Direct classifier checks for the same decoded forms.
+		assert watchdog._is_ip_address('%30x7f000001') is True
+		assert watchdog._is_ip_address('%31%32%37.0.0.1') is True
+		assert watchdog._is_ip_address('%32%31%33%30%37%30%36%34%33%33') is True
+
+	def test_malformed_percent_encoding_does_not_crash(self):
+		"""Hostnames with malformed `%` escapes must not crash the classifier."""
+		watchdog = self._watchdog()
+		# `unquote` leaves bad `%`-sequences as-is; we must still treat the
+		# result as a non-IP rather than blowing up.
+		assert watchdog._is_ip_address('%') is False
+		assert watchdog._is_ip_address('%zz') is False
+		assert watchdog._is_ip_address('%2') is False

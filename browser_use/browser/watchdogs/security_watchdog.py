@@ -141,16 +141,32 @@ class SecurityWatchdog(BaseWatchdog):
 		Recognizes non-standard IPv4 representations that Chromium resolves but
 		`ipaddress.ip_address()` rejects — decimal (`2130706433`), hex
 		(`0x7f000001`), octal (`0177.0.0.1`), and short forms (`127.1`,
-		`127.0.1`). Without this canonicalization, `block_ip_addresses=True`
-		can be bypassed by simply re-encoding the IP in one of these forms.
+		`127.0.1`). Also percent-decodes the host first, since Chromium decodes
+		`%XX` escapes before applying its IPv4 parser; without that step,
+		`http://%30x7f000001/` (decodes to `0x7f000001` → 127.0.0.1) and
+		`http://%31%32%37.0.0.1/` (decodes to `127.0.0.1`) would still bypass
+		`block_ip_addresses`.
+
 		See GHSA-xrfv-gg9f-wwjp / GHSA-g27c-8gp4-28cv.
 		"""
 		import ipaddress
 		import socket
+		from urllib.parse import unquote
 
 		# Strip IPv6 bracket wrapping defensively; urlparse usually strips it,
 		# but a malformed url could leak it through.
 		bare = host.strip('[]')
+
+		# Percent-decode the host before parsing. Browsers decode `%XX` escapes
+		# in the host component, so an unencoded check would miss
+		# `%30x7f000001` (→ '0x7f000001') and `%31%32%37.0.0.1` (→ '127.0.0.1').
+		# `unquote` is forgiving (leaves malformed `%`-sequences as-is) but we
+		# still wrap in try/except so any future encoding edge case can never
+		# crash the navigation security check.
+		try:
+			bare = unquote(bare)
+		except Exception:
+			pass
 
 		# Standard dotted-quad IPv4 and full IPv6.
 		try:
