@@ -24,8 +24,14 @@ from browser_use.tools.service import Tools
 
 
 class _StubProfile:
-	def __init__(self, allowed_domains: Any = None, block_ip_addresses: bool = False) -> None:
+	def __init__(
+		self,
+		allowed_domains: Any = None,
+		prohibited_domains: Any = None,
+		block_ip_addresses: bool = False,
+	) -> None:
 		self.allowed_domains = allowed_domains
+		self.prohibited_domains = prohibited_domains
 		self.block_ip_addresses = block_ip_addresses
 
 
@@ -68,6 +74,15 @@ async def test_evaluate_refused_when_block_ip_addresses_set() -> None:
 	result = await _run_evaluate(_StubProfile(block_ip_addresses=True))
 	assert result.error is not None
 	assert 'block_ip_addresses' in result.error.lower() or 'restricted' in result.error.lower()
+
+
+async def test_evaluate_refused_when_prohibited_domains_set() -> None:
+	"""`prohibited_domains` is the deny-list counterpart of `allowed_domains`;
+	SecurityWatchdog enforces both as navigation restrictions. Refuse evaluate()
+	when either is set — otherwise an agent can fetch() into the blocked domains."""
+	result = await _run_evaluate(_StubProfile(prohibited_domains=['evil.test']))
+	assert result.error is not None
+	assert 'prohibited_domains' in result.error.lower() or 'restricted' in result.error.lower()
 
 
 async def test_evaluate_refused_when_both_restrictions_set() -> None:
