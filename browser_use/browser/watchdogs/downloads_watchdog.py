@@ -243,9 +243,7 @@ class DownloadsWatchdog(BaseWatchdog):
 			# Cache info for later completion event handling (esp. remote browsers)
 			guid = event.get('guid', '')
 			url = event.get('url', '')
-			# CDP suggestedFilename is page-controlled — sanitize at the ingress
-			# so every downstream consumer (callbacks, cache, events) sees only a
-			# safe basename. See _sanitize_download_filename / GHSA-rv9j-wqjp-2fv4.
+			# Sanitize at the ingress so every downstream consumer sees a safe basename.
 			suggested_filename = self._sanitize_download_filename(event.get('suggestedFilename', 'download'))
 			try:
 				assert suggested_filename, 'CDP DownloadWillBegin missing suggestedFilename'
@@ -583,8 +581,6 @@ class DownloadsWatchdog(BaseWatchdog):
 
 							filename_match = re.search(r'filename[^;=\n]*=(([\'"]).*?\2|[^;\n]*)', content_disposition)
 							if filename_match:
-								# Content-Disposition is attacker-controlled — strip path
-								# components before passing along. See _sanitize_download_filename.
 								suggested_filename = self._sanitize_download_filename(filename_match.group(1).strip('\'"'))
 
 						self.logger.info(f'[DownloadsWatchdog] 🔍 Detected downloadable content via network: {url[:80]}...')
@@ -678,8 +674,6 @@ class DownloadsWatchdog(BaseWatchdog):
 			# Get or create CDP session for this target
 			temp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
 
-			# Determine filename. `suggested_filename` is page-controlled
-			# (parsed from Content-Disposition) — sanitize before any path join.
 			if suggested_filename:
 				filename = self._sanitize_download_filename(suggested_filename)
 			else:
@@ -749,8 +743,6 @@ class DownloadsWatchdog(BaseWatchdog):
 
 			if download_result and download_result.get('data') and len(download_result['data']) > 0:
 				download_path = os.path.join(downloads_dir, final_filename)
-				# Defense in depth: refuse to write outside downloads_dir even
-				# if sanitization above missed something (e.g. symlinked dir).
 				if not self._is_path_contained(download_path, downloads_dir):
 					self.logger.error(f'[DownloadsWatchdog] Refusing to write download outside downloads_dir: {download_path}')
 					return None
@@ -869,7 +861,6 @@ class DownloadsWatchdog(BaseWatchdog):
 		expected_path = None
 		download_result = None
 		download_url = event.get('url', '')
-		# CDP suggestedFilename is page-controlled — sanitize before any path join.
 		suggested_filename = self._sanitize_download_filename(event.get('suggestedFilename', 'download'))
 		guid = event.get('guid', '')
 
@@ -965,8 +956,6 @@ class DownloadsWatchdog(BaseWatchdog):
 			current_step = 'getting_download_info'
 			# Get download info immediately
 			url = download.url
-			# `download.suggested_filename` originates from CDP/the page — sanitize
-			# before using it in any path join. See _sanitize_download_filename.
 			suggested_filename = self._sanitize_download_filename(download.suggested_filename)
 
 			current_step = 'determining_download_directory'
@@ -979,8 +968,6 @@ class DownloadsWatchdog(BaseWatchdog):
 
 			# Check if Playwright already auto-downloaded the file (due to CDP setup)
 			original_path = Path(downloads_dir) / suggested_filename
-			# Defense in depth: even with a sanitized filename, refuse a path
-			# whose realpath escapes downloads_dir (e.g. symlinked downloads_dir).
 			if not self._is_path_contained(original_path, downloads_dir):
 				self.logger.error(f'[DownloadsWatchdog] Refusing to handle download outside downloads_dir: {original_path}')
 				return
@@ -1329,10 +1316,6 @@ class DownloadsWatchdog(BaseWatchdog):
 					downloads_dir = str(self.browser_session.browser_profile.downloads_path)
 					os.makedirs(downloads_dir, exist_ok=True)
 					download_path = os.path.join(downloads_dir, final_filename)
-					# Defense in depth: ensure the resolved write target is inside
-					# downloads_dir. `final_filename` is derived from the URL path here
-					# (already basename'd), but a future change to the upstream
-					# derivation must not be able to silently re-introduce a traversal.
 					if not self._is_path_contained(download_path, downloads_dir):
 						self.logger.error(f'[DownloadsWatchdog] Refusing to write PDF outside downloads_dir: {download_path}')
 						return None
@@ -1406,39 +1389,20 @@ class DownloadsWatchdog(BaseWatchdog):
 
 	@staticmethod
 	def _sanitize_download_filename(name: str | None) -> str:
-		"""Reduce an attacker-controlled filename to a safe basename.
-
-		`suggested_filename` from CDP (`Page.downloadWillBegin.suggestedFilename`)
-		and `Content-Disposition` headers is page-controlled — any visited site
-		can supply `../../../etc/foo`, `/etc/shadow`, `\\\\server\\share\\x`, or
-		embedded null bytes. Joining such names into `downloads_path` writes
-		attacker-controlled bytes to an arbitrary location.
-
-		GHSA-rv9j-wqjp-2fv4, GHSA-66xh-g88g-2h8j, GHSA-hpr4-fqgr-xhj9.
-		"""
+		"""Reduce a page-controlled filename (CDP / Content-Disposition) to a safe basename."""
 		if not name:
 			return 'download'
-		# Strip embedded null bytes — some platforms treat them as terminators.
 		name = name.replace('\x00', '')
-		# Normalize Windows-style separators served by Linux servers so we never
-		# fall through `os.path.basename` (which on POSIX does NOT split on '\\').
+		# POSIX basename does not split on '\\'; normalize first.
 		name = name.replace('\\', '/')
-		# Keep only the last path segment.
 		name = os.path.basename(name.rsplit('/', 1)[-1])
-		# Reject pure-traversal names that basename keeps verbatim.
 		if name in ('', '.', '..'):
 			return 'download'
 		return name
 
 	@staticmethod
 	def _is_path_contained(path: str | Path, directory: str | Path) -> bool:
-		"""Return True iff `path`'s realpath is inside `directory`'s realpath.
-
-		Defense in depth: even after sanitization the on-disk write must verify
-		the resolved target stays inside `downloads_path`. Protects against
-		`directory` itself being a symlink whose target an attacker could change,
-		or sanitization bugs we haven't caught yet.
-		"""
+		"""True iff `path`'s realpath stays inside `directory`'s realpath."""
 		real_path = os.path.realpath(str(path))
 		real_dir = os.path.realpath(str(directory))
 		return real_path == real_dir or real_path.startswith(real_dir + os.sep)
