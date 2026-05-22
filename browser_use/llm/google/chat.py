@@ -34,7 +34,9 @@ VerifiedGeminiModels = Literal[
 	'gemini-flash-lite-latest',
 	'gemini-2.5-pro',
 	'gemini-3-pro-preview',
+	'gemini-3.1-pro-preview',
 	'gemini-3-flash-preview',
+	'gemini-3.1-flash-lite',
 	'gemma-3-27b-it',
 	'gemma-3-4b',
 	'gemma-3-12b',
@@ -267,8 +269,8 @@ class ChatGoogle(BaseChatModel):
 		# Gemini 3 Pro: uses thinking_level only
 		# Gemini 3 Flash: supports both, defaults to thinking_budget=-1
 		# Gemini 2.5: uses thinking_budget only
-		is_gemini_3_pro = 'gemini-3-pro' in self.model
-		is_gemini_3_flash = 'gemini-3-flash' in self.model
+		is_gemini_3_pro = 'gemini-3-pro' in self.model or 'gemini-3.1-pro' in self.model
+		is_gemini_3_flash = 'gemini-3-flash' in self.model or 'gemini-3.1-flash' in self.model
 
 		if is_gemini_3_pro:
 			# Validate: thinking_budget should not be set for Gemini 3 Pro
