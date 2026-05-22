@@ -1,4 +1,5 @@
 import asyncio
+import importlib.metadata
 import json
 import logging
 import random
@@ -122,6 +123,31 @@ class ChatGoogle(BaseChatModel):
 		"""Get logger for this chat instance"""
 		return logging.getLogger(f'browser_use.llm.google.{self.model}')
 
+	def _get_http_options(self) -> dict[str, Any]:
+		"""Get http options with the default headers set."""
+		try:
+			bu_version = importlib.metadata.version('browser-use')
+		except importlib.metadata.PackageNotFoundError:
+			bu_version = 'unknown'
+
+		header_value = f'browser-use/{bu_version}'
+
+		http_options = self.http_options or {}
+		if hasattr(http_options, 'model_dump'):
+			http_options = http_options.model_dump(exclude_unset=True)
+		elif not isinstance(http_options, dict):
+			http_options = dict(http_options)
+
+		headers = http_options.get('headers', {})
+		if not isinstance(headers, dict):
+			headers = dict(headers)
+
+		# Overwrite x-goog-api-client header as requested
+		headers['x-goog-api-client'] = header_value
+		http_options['headers'] = headers
+
+		return http_options
+
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""
 		# Define base client params
@@ -131,7 +157,7 @@ class ChatGoogle(BaseChatModel):
 			'credentials': self.credentials,
 			'project': self.project,
 			'location': self.location,
-			'http_options': self.http_options,
+			'http_options': self._get_http_options(),
 		}
 
 		# Create client_params dict with non-None values
