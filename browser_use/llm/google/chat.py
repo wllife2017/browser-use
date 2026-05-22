@@ -132,21 +132,23 @@ class ChatGoogle(BaseChatModel):
 
 		header_value = f'browser-use/{bu_version}'
 
-		http_options = self.http_options or {}
-		if hasattr(http_options, 'model_dump'):
-			http_options = http_options.model_dump(exclude_unset=True)
-		elif not isinstance(http_options, dict):
-			http_options = dict(http_options)
+		http_opts: dict[str, Any] = {}
 
-		headers = http_options.get('headers', {})
-		if not isinstance(headers, dict):
-			headers = dict(headers)
+		if self.http_options is not None:
+			if isinstance(self.http_options, types.HttpOptions):
+				http_opts = self.http_options.model_dump(exclude_unset=True)
+			elif isinstance(self.http_options, dict):
+				http_opts = dict(self.http_options)
 
-		# Overwrite x-goog-api-client header as requested
+		headers: dict[str, str] = {}
+		existing_headers = http_opts.get('headers')
+		if isinstance(existing_headers, dict):
+			headers = {str(k): str(v) for k, v in existing_headers.items()}
+
 		headers['x-goog-api-client'] = header_value
-		http_options['headers'] = headers
+		http_opts['headers'] = headers
 
-		return http_options
+		return http_opts
 
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""
