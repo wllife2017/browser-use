@@ -240,6 +240,45 @@ Look for an outbound USDC transfer of exactly `$1.000000`.
 
 Once verification passes, transition the user to the SDK (`AsyncBrowserUse()` / `new BrowserUse()`) for real tasks — that path uses the $5 default top-up.
 
+## Step 5: Show the Browser Use credit balance
+
+After verification (and any time the user asks "how much do I have left?"), read the wallet's Browser Use credit balance — the prepaid USD in their account, **not** their on-chain USDC. This is a free, off-chain call: the SDK signs a message proving wallet ownership.
+
+Requires `browser-use-sdk` ≥ 3.8.0. If the installed version is older, tell the user to upgrade (`pip install -U "browser-use-sdk[x402]"` / `npm install browser-use-sdk@latest`) — or skip this step.
+
+```python
+import asyncio, os
+from browser_use_sdk.v3 import get_wallet_balance
+
+async def main():
+    bal = await get_wallet_balance(os.environ["BROWSER_USE_X402_PRIVATE_KEY"])
+    print(f"Browser Use credits: ${bal['total_credits_usd']}")
+
+asyncio.run(main())
+```
+
+```typescript
+import { getWalletBalance } from "browser-use-sdk/v3";
+
+const bal = await getWalletBalance(process.env.BROWSER_USE_X402_PRIVATE_KEY!);
+console.log(`Browser Use credits: $${bal.total_credits_usd}`);
+```
+
+Then summarize for the user, e.g.:
+
+> Verification passed. Your Browser Use credit balance is now **$0.99** (you spent ~$0.01 of the $1 top-up on the test task). Tasks will draw from this balance, and the SDK will auto-top-up $5 each time you run out.
+
+For **Mode B (top-up)**: skip this step. The credits live in the API-key's project, not a wallet-derived one — read the balance the normal way:
+
+```python
+from browser_use_sdk.v3 import AsyncBrowserUse
+client = AsyncBrowserUse(api_key=os.environ["BROWSER_USE_API_KEY"])
+acct = await client.billing.account()
+print(f"Browser Use credits: ${acct.total_credits_balance_usd}")
+```
+
+`get_wallet_balance` returns `404` for Mode B because the wallet has no wallet-derived project — its payments topped up the API key's project instead. That's expected; don't surface it as an error to the user.
+
 ## TypeScript equivalents
 
 | Python | TypeScript |
