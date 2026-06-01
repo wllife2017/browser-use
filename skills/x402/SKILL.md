@@ -1,110 +1,127 @@
 ---
 name: x402
-description: Onboard a developer to Browser Use Cloud using x402 pay-per-request authentication — wallet-based USDC payments on Base mainnet, no signup or API key. Walks the user through setting up a wallet, funding it with USDC on Base, writing credentials to .env, installing the SDK, and running a verification task. Use when the user asks about x402, pay-per-use, USDC payments, or wants to use Browser Use Cloud without an API key. For the standard free-tier signup (reverse-CAPTCHA → API key), use the `cloud` skill or run `browser-use cloud signup` directly. Distinct from the `browser-use` skill which controls the local CLI.
+description: Set up Browser Use Cloud payments with x402 — pay per request from a crypto wallet (USDC on Base mainnet), no signup or API key. Two setups it works out up front: "just use it" (set up a wallet so you or Claude Code can run cloud browser tasks paid from the wallet — Claude writes and runs throwaway scripts, nothing touches your codebase) or "build it in" (install the SDK and write the key + code into your project). Walks through wallet setup, funding, .env, and a ~$1 test run. Use when the user asks about x402, pay-per-use, USDC payments, or wants Browser Use Cloud without an API key. For the free-tier signup (reverse-CAPTCHA → API key), use `browser-use cloud signup` or the `cloud` skill instead.
 allowed-tools: Bash, Read, Write, Edit
 ---
 
-# Browser Use Cloud — x402 onboarding
+# Browser Use Cloud — pay with x402 (crypto wallet)
 
-You are guiding a developer to authenticate with Browser Use Cloud using **x402** (HTTP-native payments via USDC on Base mainnet) instead of an API key. End state: working SDK client that pays per request from a wallet they control.
+This is a scripted flow. Follow the steps in order. x402 only works through the **SDK** (`browser-use-sdk` for Python, the `browser-use` npm package for TS) — there is no `browser-use` CLI command for it, so every step runs a short SDK script.
 
-Reference: https://docs.browser-use.com/cloud/guides/x402 has the full user-facing version of this flow.
+## How to use this script
 
-## When to use this skill vs alternatives
+- Lines under **Say:** are spoken to the user **word for word.** Don't paraphrase, add, or drop anything.
+- `<like this>` inside a Say block is a fill-in — replace it with the real value, keep the rest exact.
+- Lines under **Ask:** use the AskUserQuestion tool. Use the question and option text exactly as written.
+- **To show an explanation before a question, put it inside the AskUserQuestion `question` field** (it renders above the options). Don't send it as separate chat text before calling the tool — that text gets dropped when the question UI opens. So: explanation + the actual question both go in the `question` field, in one tool call.
+- Lines under **Do:** are your actions. Don't read them out.
+- Track two facts as you go: `SETUP` (A or B, from Step 1) and `MODE` (A or B, from Step 2).
+- **`SETUP`, `MODE`, and the Path A/B/C names are internal labels for you only. Never say them to the user.** Describe choices in plain words instead (e.g. "top up your account" / "accountless wallet"), never "Mode B" or "Path A".
 
-- **This skill (`x402`):** wallet-based payments. Two sub-modes — see "Two payment modes" below.
-- **`browser-use cloud signup`** (CLI command): free tier with reverse-CAPTCHA → standard API key. Faster, no wallet needed. Use this if the user just wants to try Browser Use Cloud quickly.
-- **`cloud` skill:** documentation reference for the API. Use when the user asks how to use already-authenticated calls.
+---
 
-## Two payment modes
+## Step 1 — Open and pick the setup
 
-x402 supports two flows. Pick based on whether the user already has an API key.
+**Ask:** (header: `Use x402`) — put the explanation and the question both in the `question` field, exactly:
 
-### Mode A — Accountless (no signup)
-
-Wallet IS the identity. First payment auto-creates a project named after the wallet. No email, no API key.
-
-Use when:
-- User has no existing Browser Use account
-- Building autonomous agents that hold their own wallet
-- Discovering Browser Use via the x402 directory and wanting hit-and-pay
-
-### Mode B — Top up an existing account
-
-Same payment, but credits land in an existing API-key's project instead of a wallet-derived one. Useful when:
-- User self-registered via `browser-use cloud signup`, used the free credits, and needs more
-- User has a regular Browser Use account and wants to add credits via crypto instead of credit card
-- Multi-agent system where many wallets fund one shared account
-
-Mechanically: same `https://x402.api.browser-use.com` endpoint, but include the `X-Browser-Use-API-Key` header alongside the payment. The backend detects the key and credits that project instead of auto-creating a wallet-keyed one.
-
-If the user is unsure which mode they want, ask:
-
-> Do you already have a Browser Use API key (e.g. from `browser-use cloud signup` or the dashboard)?
+> x402 is a protocol from Coinbase that, instead of presenting an API key, allows you to use crypto to pay for API requests. x402 lets you pay Browser Use per request from a crypto wallet with USDC on Base — no signup, API key, or credit card needed, just a wallet. Setup takes a few minutes: get or make a wallet, add funds, save the key in `.env`, and test it.
 >
-> - **Yes** → I'll set up x402 to top up that account.
-> - **No** → I'll set up x402 in accountless mode (wallet is your identity).
+> How do you want to use x402?
+- **Just use it** — Run Browser Use tasks, paid from your wallet, here in terminal by asking me. I set up the wallet and key.
+- **Build it in** — You're coding an app and want x402 in it. I will help you install the SDK, save the key to your project's `.env`, and add code.
 
-Either path goes through the same wallet setup steps below; the only difference is whether the `X-Browser-Use-API-Key` env var also gets set.
+**Do:** "Just use it" → `SETUP = A`. "Build it in" → `SETUP = B`.
 
-## Step 0: Detect the language
+---
 
-Look at the cwd to figure out what they're building in:
+## Step 2 — Find the account (check before asking)
 
-- `package.json` / `tsconfig.json` / `pnpm-lock.yaml` → TypeScript
-- `pyproject.toml` / `requirements.txt` / any `.py` → Python
-- Both / neither → ask which
+**Do:** Look for an existing Browser Use API key, in this order. Don't say anything yet.
+1. `BROWSER_USE_API_KEY` in the environment
+2. a `BROWSER_USE_API_KEY=` line in `./.env`
+3. `~/.browser-use/config.json` (saved by `browser-use cloud login` / `signup`)
+4. `browser-use doctor` output, if the CLI is installed
 
-Use this for install commands and code samples. Examples below default to Python; substitute TypeScript per the table at the bottom.
+**If no key is found anywhere:**
 
-## Step 1: Wallet
+**Say:**
+> No Browser Use key found, so I'll set this up accountless: the wallet is your identity, and the first payment makes a project named after it.
 
-Ask:
+**Do:** `MODE = A`. Go to Step 3.
 
-> Do you already have an EVM wallet (e.g. MetaMask, Rabby, Coinbase Wallet, Frame, Phantom) with USDC on Base mainnet, or do you want me to walk you through setting one up? For Claude Code automation, generating a fresh disposable wallet is also an option.
+**If a key is found:**
 
-### Path A — User has a wallet already
+**Ask:** (header: `Account`) — question: `I found a Browser Use API key in <location>. Where should the USDC credits go?`
+- **Top up that account** — Credits go to your existing API key's project. Good if your free credits ran out, or you'd rather pay with crypto than a card.
+- **Accountless wallet** — The wallet is a separate identity. The first payment makes a fresh project named after the wallet, apart from your existing account.
 
-Direct the user to set the key themselves in their project's `.env`, and just ask for the public address for confirmation:
+**Do:** "Top up that account" → `MODE = B`. "Accountless wallet" → `MODE = A`.
 
-1. Verify `.env` is in `.gitignore` — add it if not.
-2. Tell the user to add the key to their project's `.env`:
-   ```
-   BROWSER_USE_X402_PRIVATE_KEY=0x...
-   ```
-3. Ask them to share their wallet's **public address** for confirmation. Verify it's a valid EVM address (`^0x[0-9a-fA-F]{40}$`) and display it back.
+---
 
-**If they paste a private key directly into chat: do not process it.** Chat transcripts persist in logs, sync to backups, and may be seen by future model training pipelines. Instead:
+## Step 3 — Wallet
 
-1. Tell them the key is now compromised — anything in chat must be treated as leaked.
-2. Have them rotate immediately: drain whatever's in that wallet to a new one and stop using the pasted key.
-3. Restart Path A with the **new** key: they put it in `.env` themselves, then share only the **public address** for confirmation.
+**Ask:** (header: `Wallet`) — question: `Do you have a wallet ready, or should I set one up?`
+- **I have a funded wallet** — An EVM wallet (MetaMask, Rabby, Coinbase Wallet, Frame, Phantom, …) with USDC on Base mainnet.
+- **Walk me through it** — I'll guide you through making a wallet, adding Base, and buying USDC.
+- **Make a fresh one** — I'll generate a throwaway wallet for automation. You'll still need to fund it.
 
-Never echo, hash, derive from, or write a chat-pasted private key to disk.
+Branch on the answer.
 
-### Path B — Walk them through setting up a wallet
+### Path A — "I have a funded wallet"
 
-Tell the user:
+**Do:** Check `.env` is in `.gitignore`; add it if missing.
 
-> Easiest path:
->
-> 1. Install **MetaMask** (or any other EVM wallet — Rabby, Coinbase Wallet, Frame, Trust Wallet, Phantom, etc.) from the official site only: https://metamask.io. Create a wallet, save the seed phrase offline, set a password.
-> 2. Add **Base** as a network. Most wallets only show Ethereum by default. Open https://chainlist.org/chain/8453, click "Connect Wallet" → "Add to MetaMask", approve in your wallet.
-> 3. Click **"Buy"** inside MetaMask. Pick **USDC**, set network to **Base**, pay with credit card / Apple Pay / bank via the built-in onramp. The USDC lands directly in your wallet.
-> 4. Export the private key: account menu → Account details → Show private key → enter password → copy.
-> 5. Add the key to your project's `.env` (make sure `.env` is in your `.gitignore`):
->    ```
->    BROWSER_USE_X402_PRIVATE_KEY=0x...
->    ```
-> 6. Share your wallet's **public address** so I can confirm it's set up correctly.
+**Ask:** (header: `Add key`) — put the note and the question both in the `question` field:
+> Your wallet's private key needs to go into `.env`. You can paste it here and I'll add it for you, or add it yourself. Heads up: anything pasted in chat is saved in the transcript, so for a high-value wallet, adding it yourself is a bit safer. How do you want to do it?
 
-Then proceed as in Path A.
+- **Paste it here** — Paste your private key in the chat and I'll write it to `.env` for you.
+- **I'll add it myself** — You add it to `.env`, then send me just your public address.
 
-### Path C — Auto-generate a fresh wallet (for Claude Code automation)
+**If "Paste it here":**
 
-Useful for autonomous agents or test setups. The user still has to fund the resulting address themselves.
+**Do:** Write `BROWSER_USE_X402_PRIVATE_KEY=<pasted key>` to `.env` (create the file if needed; make sure `.env` is gitignored). Never echo the key back or print it anywhere.
 
-For Python:
+**Say:**
+> Saved your key to `.env` — I won't print it back.
+
+**Do:** Go to Step 4.
+
+**If "I'll add it myself":**
+
+**Say:**
+> Add this line to your `.env`, then send me your wallet's public address (the `0x…` one — safe to share):
+> ```
+> BROWSER_USE_X402_PRIVATE_KEY=<your private key>
+> ```
+
+**Do:** When they send the address, check it matches `^0x[0-9a-fA-F]{40}$`.
+
+**Say:**
+> Got it: `<address>`. That's a valid address.
+
+**Do:** Go to Step 4.
+
+### Path B — "Walk me through it"
+
+**Say:**
+> 1. Install MetaMask (or Rabby, Coinbase Wallet, Frame, Trust Wallet, Phantom, …) from the official site only: https://metamask.io. Make a wallet, save the seed phrase offline, set a password.
+> 2. Add Base as a network. Open https://chainlist.org/chain/8453 → "Connect Wallet" → "Add to MetaMask", then approve it in your wallet.
+> 3. Click "Buy" in your wallet. Pick USDC, network Base, pay with card / Apple Pay / bank. The USDC lands straight in your wallet.
+> 4. Get the private key: account menu → Account details → Show private key → enter password → copy.
+> 5. Add it to your `.env` (make sure `.env` is gitignored):
+> ```
+> BROWSER_USE_X402_PRIVATE_KEY=<your private key>
+> ```
+> 6. Send me your wallet's public address (the `0x…` one) so I can check it.
+
+**Do:** Then follow Path A from the address check onward.
+
+### Path C — "Make a fresh one"
+
+**Do:** Generate a wallet. Save the key to `.env`. Show the address only.
+
+Python:
 ```bash
 pip install eth-account
 ```
@@ -115,72 +132,77 @@ print("Address:", acc.address)
 print("Private key:", acc.key.hex())
 ```
 
-For TypeScript:
+TypeScript:
 ```bash
 npm install viem
 ```
 ```typescript
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 const key = generatePrivateKey();
-const acc = privateKeyToAccount(key);
-console.log("Address:", acc.address);
+console.log("Address:", privateKeyToAccount(key).address);
 console.log("Private key:", key);
 ```
 
-Save the key to `.env`. **Display the address, never echo the private key in chat.** Then send the user to fund it (see Step 2).
+**Say:**
+> Made a fresh wallet. Your public address is `<address>`, and I've saved the private key to `.env`. Now it needs funds.
 
-## Step 2: Fund the wallet (only if not already funded)
+**Do:** Go to Step 4 (funding).
 
-For Path A / B: the wallet is already funded. Skip this step.
+---
 
-For Path C: tell the user (substitute their wallet address):
+## Step 4 — Add funds
 
+**If Path A or B (already funded):**
+
+**Say:**
+> Your wallet's already funded, so we'll skip ahead to the test.
+
+**Do:** Go to Step 5.
+
+**If Path C:**
+
+**Say:**
 > Two ways to get USDC into your wallet on Base:
+> - In-wallet Buy button (easiest): click "Buy", pick USDC, set the network to Base, pay with a card. No exchange needed.
+> - From an exchange: send USDC to `<address>` and pick "Base" as the network — not Ethereum, which costs $5–$20 in fees.
 >
-> - **In-wallet Buy button (easiest):** if you used MetaMask or another wallet that supports it, click "Buy" inside the wallet, pick USDC, set network to Base, pay with credit card. USDC lands directly. No exchange account needed.
-> - **From an existing exchange:** if you already have crypto on Coinbase, Binance, Kraken, etc., withdraw USDC to `<wallet-address>` and **pick "Base" as the network** (NOT Ethereum — that costs $5–$20 in gas).
+> Add at least $20: that covers the $1 test plus a few real tasks. I'll watch the balance and tell you when it lands.
 
-Poll the on-chain balance every 5 seconds via Base public RPC (no API key needed):
-
+**Do:** Check the on-chain balance every 5s with Base's public RPC:
 ```bash
 PADDED=$(printf "%064s" "${WALLET_ADDR:2}" | tr ' ' '0')
 curl -s https://mainnet.base.org \
   -H "Content-Type: application/json" \
   -d "{\"jsonrpc\":\"2.0\",\"method\":\"eth_call\",\"params\":[{\"to\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\"data\":\"0x70a08231${PADDED}\"},\"latest\"],\"id\":1}"
 ```
+Read `result` as a hex number; divide by `1_000_000` (USDC has 6 decimals). Stop once it's $20 or more.
 
-Decode the `result` field as a hex int; divide by `1_000_000` (USDC has 6 decimals). **Recommend funding with at least $20.** That gives room for the $1 verification charge plus headroom for several real tasks. Stop polling once the on-chain balance is ≥ $20.
+**Say:**
+> Funded — I see $<amount> on Base. Next, a quick test.
 
-## Step 3: Install the SDK with the x402 extra
+---
 
+## Step 5 — Test run (~$1)
+
+**Do:** If `SETUP = A`, make sure the SDK is installed where you'll run scripts (default Python). If `SETUP = B`, install it into the project in the project's language — work out the language from the cwd (`package.json`/`tsconfig.json` → TypeScript; `pyproject.toml`/`requirements.txt`/`*.py` → Python; ask only if you can't tell):
 ```bash
-# Python (Python 3.10+ required for the x402 extra)
+# Python (needs 3.10+ for the x402 extra)
 pip install "browser-use-sdk[x402]"
-
 # TypeScript
 npm install browser-use-sdk @x402/fetch @x402/evm viem
 ```
 
-If the project uses `uv` / `pnpm` / `yarn`, prefer those over `pip` / `npm`.
+**Ask:** (header: `Test run`) — question: `Ready to test? This spends exactly $1 USDC from your wallet to check payment + run work end to end.`
+- **Use the default task** — "Go to example.com and tell me the heading text." (~5 seconds, cheap)
+- **I'll give you a task** — Tell me a short task to run instead.
+- **Skip the test** — Skip the test and go straight to using x402.
 
-## Step 4: Verification run
+**Do:**
+- "I'll give you a task" → **Say:** `What's the task? Keep it short.` Wait for it.
+- "Skip the test" → go to Step 6.
+- Otherwise use the default task.
 
-**Do not run anything yet.** First, ask the user for permission and explain what's about to happen:
-
-> Ready to verify your x402 setup. Here's what I'll do:
->
-> - Spend exactly **$1 USDC** from your wallet — the minimum x402 top-up. Settled on-chain to Browser Use's prod payee.
-> - Run a tiny test task to confirm payment + credit grant + execution all work end-to-end.
-> - Show you the Basescan transaction so you can see settlement.
->
-> Default test task: *"Go to example.com and tell me the heading text."* (cheap, ~5 seconds).
->
-> Want to use the default task, suggest your own (keep it short), or skip the verification?
-
-Wait for confirmation. If they suggest a custom task, use that.
-
-To force the **$1** option (instead of the $5 default that the SDK would normally pick when the wallet has ≥ $5), use the raw x402 client with a `max_value` constraint of $1.50. This skips the $5 option in the 402 challenge and pays $1:
-
+**Do:** Run the test. Use the raw x402 client with `max_value` of $1.50 so it pays $1, not the $5 the SDK uses by default:
 ```python
 import asyncio, os
 from decimal import Decimal
@@ -196,88 +218,89 @@ async def main():
         client,
         EthAccountSigner(Account.from_key(os.environ["BROWSER_USE_X402_PRIVATE_KEY"])),
     )
-    # max_value caps what the client is willing to pay per challenge —
-    # forces the $1 fallback instead of the $5 default in our [$5, $1] accepts list.
+    # max_value caps the spend per request — picks the $1 option over the $5 default.
     async with x402HttpxClient(client, max_value=Decimal("1.5"), timeout=180.0) as http:
         resp = await http.post(
             "https://x402.api.browser-use.com/api/v3/sessions",
-            json={"task": "<the task the user agreed to>"},
+            json={"task": "<the task>"},
         )
         print(resp.status_code, resp.json())
 
 asyncio.run(main())
 ```
-
-If the installed `x402` version doesn't accept `max_value` on `x402HttpxClient`, fall back to using our SDK (`AsyncBrowserUse()`) — but **tell the user first** that this will cost $5 instead of $1, and re-confirm before running.
-
-**For Mode B (top-up):** the verification above must also send the existing API key, otherwise the $1 lands in a brand-new wallet-derived project instead of the one the user is actually trying to top up. Add a `headers=` arg to the `x402HttpxClient` call:
-
+If `MODE = B`, add the API key header, or the $1 goes to a new wallet project instead of the one being topped up:
 ```python
 async with x402HttpxClient(
-    client,
-    max_value=Decimal("1.5"),
-    timeout=180.0,
+    client, max_value=Decimal("1.5"), timeout=180.0,
     headers={"X-Browser-Use-API-Key": os.environ["BROWSER_USE_API_KEY"]},
 ) as http:
     ...
 ```
+If the installed `x402` lib has no `max_value`, **Say:** `That x402 version can't force a $1 charge, so the test will cost $5 instead. Want me to go ahead?` — wait for a yes before running.
 
-Once verified, switch to the SDK for real use — it forwards both credentials automatically:
+**Say:**
+> Paid. On-chain proof: https://basescan.org/address/<address>#tokentxns — look for a USDC transfer out of exactly $1.000000.
 
-```python
-client = AsyncBrowserUse(
-    api_key="bu_...",                    # the existing API key getting topped up
-    x402_private_key="0x...",            # wallet that pays
-    base_url="https://x402.api.browser-use.com/api/v3",
-)
-```
-
-After verification returns, show the user proof of settlement:
-
-> Onchain proof: https://basescan.org/address/<wallet-address>#tokentxns
-
-Look for an outbound USDC transfer of exactly `$1.000000`.
-
-Once verification passes, transition the user to the SDK (`AsyncBrowserUse()` / `new BrowserUse()`) for real tasks — that path uses the $5 default top-up.
-
-## Step 5: Show the Browser Use credit balance
-
-After verification (and any time the user asks "how much do I have left?"), read the wallet's Browser Use credit balance — the prepaid USD in their account, **not** their on-chain USDC. This is a free, off-chain call: the SDK signs a message proving wallet ownership.
-
-Requires `browser-use-sdk` ≥ 3.8.0. If the installed version is older, tell the user to upgrade (`pip install -U "browser-use-sdk[x402]"` / `npm install browser-use-sdk@latest`) — or skip this step.
-
+**Do:** Read the balance. If `MODE = A` (needs `browser-use-sdk` ≥ 3.8.0; if older, say to run `pip install -U "browser-use-sdk[x402]"` or skip this):
 ```python
 import asyncio, os
 from browser_use_sdk.v3 import get_wallet_balance
 
 async def main():
     bal = await get_wallet_balance(os.environ["BROWSER_USE_X402_PRIVATE_KEY"])
-    print(f"Browser Use credits: ${bal['total_credits_usd']}")
+    print(bal['total_credits_usd'])
 
 asyncio.run(main())
 ```
-
-```typescript
-import { getWalletBalance } from "browser-use-sdk/v3";
-
-const bal = await getWalletBalance(process.env.BROWSER_USE_X402_PRIVATE_KEY!);
-console.log(`Browser Use credits: $${bal.total_credits_usd}`);
-```
-
-Then summarize for the user, e.g.:
-
-> Verification passed. Your Browser Use credit balance is now **$0.99** (you spent ~$0.01 of the $1 top-up on the test task). Tasks will draw from this balance, and the SDK will auto-top-up $5 each time you run out.
-
-For **Mode B (top-up)**: skip this step. The credits live in the API-key's project, not a wallet-derived one — read the balance the normal way:
-
+If `MODE = B`, skip `get_wallet_balance` (it returns 404 — the credits sit in the API key's project, that's normal, don't show it as an error) and read it the normal way:
 ```python
 from browser_use_sdk.v3 import AsyncBrowserUse
 client = AsyncBrowserUse(api_key=os.environ["BROWSER_USE_API_KEY"])
 acct = await client.billing.account()
-print(f"Browser Use credits: ${acct.total_credits_balance_usd}")
+print(acct.total_credits_balance_usd)
 ```
 
-`get_wallet_balance` returns `404` for Mode B because the wallet has no wallet-derived project — its payments topped up the API key's project instead. That's expected; don't surface it as an error to the user.
+**Say:**
+> Done. Your Browser Use balance is now $<balance> (the test cost about $<cost>). Tasks draw from this, and the SDK adds another $5 when it runs out.
+
+---
+
+## Step 6 — Wrap up
+
+**If `SETUP = A`:**
+
+**Say:**
+> All set. Ask me to run any browser task and I'll run it through the SDK, paid from your wallet.
+
+**Do:** When they ask for a task, write a throwaway script (in `/tmp`, or a background job for long ones), run it, report the result, and delete it — don't leave files in their cwd. The SDK reads `BROWSER_USE_X402_PRIVATE_KEY` and finds the x402 endpoint on its own:
+```python
+import asyncio, os
+from browser_use_sdk.v3 import AsyncBrowserUse
+
+async def main():
+    client = AsyncBrowserUse()  # Mode B: AsyncBrowserUse(api_key=os.environ["BROWSER_USE_API_KEY"])
+    result = await client.run(task="<the task>")
+    print(result.output)
+
+asyncio.run(main())
+```
+
+**If `SETUP = B`:**
+
+**Say:**
+> All set. Here's the client to use in your code — it reads the key and endpoint from your `.env`:
+
+**Do:** Add the client in the project's language and point them at the `cloud` skill / SDK docs for the rest:
+```python
+from browser_use_sdk.v3 import AsyncBrowserUse
+
+client = AsyncBrowserUse()                                  # Mode A (accountless)
+# client = AsyncBrowserUse(api_key="bu_...")                # Mode B (top up existing account)
+```
+
+(x402 needs the **async** client — the sync `BrowserUse` won't run when the x402 env var is set.)
+
+---
 
 ## TypeScript equivalents
 
@@ -285,26 +308,24 @@ print(f"Browser Use credits: ${acct.total_credits_balance_usd}")
 |---|---|
 | `from browser_use_sdk.v3 import AsyncBrowserUse` | `import { BrowserUse } from "browser-use-sdk/v3"` |
 | `AsyncBrowserUse()` | `new BrowserUse()` |
+| `await client.run(task=...)` → `.output` | `await client.run({ task })` → `.output` |
+| `get_wallet_balance(key)` | `getWalletBalance(key)` (`from "browser-use-sdk/v3"`) |
 | `pip install "browser-use-sdk[x402]"` | `npm install browser-use-sdk @x402/fetch @x402/evm viem` |
 
-Both SDKs auto-detect `BROWSER_USE_X402_PRIVATE_KEY` from env.
+Both SDKs read `BROWSER_USE_X402_PRIVATE_KEY` from the env.
 
-## Behavior rules
+## Rules
 
-- **Add `.env` to `.gitignore`** before writing keys. Verify first.
-- **Confirm `.env` location** if ambiguous (project root vs cwd).
-- **Never spend the user's USDC without explicit consent.** Step 4 must always pause for permission before running, explain that it costs $1, and accept a custom task or a "skip verification" response.
-- **Never accept a private key pasted in chat.** Refuse to process it, tell the user it's now compromised, have them rotate, and restart with the new key written to `.env` by their own hand.
-- **In Mode B (top-up), the verification request must include `X-Browser-Use-API-Key`.** Without it, the $1 settles into a fresh wallet-derived project instead of the API key's project — exactly what top-up mode is meant to prevent.
-- **If you can't force a $1 charge** (e.g. installed `x402` lib doesn't support `max_value`), tell the user the verification will instead cost $5 and re-confirm before running.
-- **Python <3.10:** the `[x402]` extra won't install. Tell the user to upgrade Python or use the free-tier path (`browser-use cloud signup`).
-- **Wallets hold real money.** Anyone with the private key can drain them. Tell the user to keep keys out of source control, logs, and screenshots, and to only fund with what they're okay losing if something leaked.
+- **Follow the script in order. Say the Say blocks word for word.**
+- **Never spend the user's USDC without a clear yes** (the Step 5 question is that yes).
+- **Always offer both ways to add the key**: paste it in chat (you write it to `.env`) or the user adds it themselves. If they paste it, write it straight to `.env` and never echo it back or store it anywhere else.
+- **Add `.env` to `.gitignore` before saving keys.**
+- **Wallets hold real money.** Keep keys out of source control, logs, and screenshots; only add what you can afford to lose if it leaks.
 
 ## Reference
 
 - x402 user docs: https://docs.browser-use.com/cloud/guides/x402
+- Claude Code + Browser Use Cloud: https://docs.browser-use.com/cloud/tutorials/integrations/claude-code
 - x402 protocol: https://www.x402.org
-- Coinbase x402 launch: https://www.coinbase.com/developer-platform/discover/launches/x402
 - USDC on Base contract: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-- Base RPC: https://mainnet.base.org
-- Basescan: https://basescan.org
+- Base RPC: https://mainnet.base.org · Basescan: https://basescan.org
