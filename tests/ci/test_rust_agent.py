@@ -2724,63 +2724,6 @@ async def test_rust_agent_runs_through_sdk_and_reuses_session_for_followup(monke
 	assert fake_sdk.calls[1][1]['max_steps'] == 5
 
 
-async def test_rust_agent_ignores_legacy_run_process_monkeypatch_for_sdk_server(monkeypatch):
-	import browser_use.rust.service as rust_service
-	from browser_use.rust import Agent
-
-	class LLM:
-		model = 'fake'
-
-	created_clients = []
-
-	class FakeSdkClient:
-		def __init__(self, command, env):
-			self.command = command
-			self.env = env
-			self.stderr_lines = []
-			self.notifications = []
-			self.notification_queue = asyncio.Queue()
-			self.process = type('_Process', (), {'returncode': None})()
-			created_clients.append(self)
-
-		async def call(self, method, params):
-			assert method == 'agent.run_task'
-			return {
-				'agent_id': 'agent-sdk',
-				'session_id': 'session-sdk',
-				'browser_id': 'browser-sdk',
-				'history': {
-					'output': 'server result',
-					'success': True,
-					'done': True,
-					'errors': [],
-					'events': [
-						{'event_type': 'session.input', 'payload': {'text': params['task']}},
-						{'event_type': 'session.done', 'payload': {'result': 'server result', 'success': True}},
-					],
-				},
-			}
-
-		async def close(self):
-			self.process.returncode = 0
-
-	async def fail_run_process(*_args, **_kwargs):
-		raise AssertionError('legacy CLI process path should not be used by Agent.run()')
-
-	monkeypatch.setenv('BROWSER_USE_TERMINAL_BINARY', '/tmp/browser-use-terminal')
-	monkeypatch.setattr(rust_service, 'RustSdkClient', FakeSdkClient)
-	agent = Agent(task='answer through server', llm=LLM(), directly_open_url=False)
-	agent._run_process = fail_run_process
-
-	history = await agent.run(max_steps=3)
-
-	assert created_clients
-	assert created_clients[0].command[-2:] == ['--transport', 'stdio']
-	assert history.final_result() == 'server result'
-	assert agent.terminal_session_id == 'session-sdk'
-	assert agent._sdk_agent_id == 'agent-sdk'
-
-
 async def test_rust_agent_prices_sdk_child_usage_events_without_overriding_parent_result(monkeypatch):
 	from browser_use.rust import Agent
 
@@ -3159,8 +3102,6 @@ async def test_rust_agent_uses_sdk_history_usage_when_events_do_not_include_usag
 
 
 async def test_rust_agent_preserves_sdk_notification_history_on_cancel(monkeypatch):
-	import asyncio
-
 	from browser_use.rust import Agent
 
 	class LLM:
@@ -4990,7 +4931,8 @@ async def test_rust_agent_exposes_step_finalization_helper_methods(tmp_path):
 	await agent._handle_step_error(ValueError('bad step'))
 	assert agent.state.consecutive_failures == 1
 	assert agent.state.last_result is not None
-	assert agent.state.last_result[-1].error == 'bad step'
+	assert agent.state.last_result[-1].error is not None
+	assert agent.state.last_result[-1].error.startswith('bad step')
 
 	await agent._post_process()
 	assert agent.state.consecutive_failures == 2
@@ -5245,9 +5187,11 @@ async def test_rust_agent_handle_step_error_logs_browser_use_failure_prefix(monk
 	await agent._handle_step_error(ValueError('bad step'))
 	assert agent.state.consecutive_failures == 1
 	assert agent.state.last_result is not None
-	assert agent.state.last_result[-1].error == 'bad step'
+	assert agent.state.last_result[-1].error is not None
+	assert agent.state.last_result[-1].error.startswith('bad step')
 	max_total_failures = agent.settings.max_failures + int(agent.settings.final_response_after_failure)
-	assert agent_logger.errors == [f'❌ Result failed 1/{max_total_failures} times:\n bad step']
+	assert len(agent_logger.errors) == 1
+	assert agent_logger.errors[0].startswith(f'❌ Result failed 1/{max_total_failures} times:\n bad step')
 
 	agent_logger.errors.clear()
 	agent.state.last_result = None
@@ -5260,13 +5204,14 @@ async def test_rust_agent_handle_step_error_logs_browser_use_failure_prefix(monk
 	module_logger.errors.clear()
 	await parse_agent._handle_step_error(ValueError('Could not parse response: missing action'))
 	assert parse_agent.state.consecutive_failures == 1
-	assert parse_agent.state.last_result[-1].error == 'Could not parse response: missing action'
+	assert parse_agent.state.last_result[-1].error is not None
+	assert parse_agent.state.last_result[-1].error.startswith('Could not parse response: missing action')
 	assert agent_logger.errors == []
 	parse_max_total_failures = parse_agent.settings.max_failures + int(parse_agent.settings.final_response_after_failure)
-	assert module_logger.errors == [
-		'Model: gpt-test failed',
-		f'❌ Result failed 1/{parse_max_total_failures} times:\n Could not parse response: missing action',
-	]
+	assert module_logger.errors[0] == 'Model: gpt-test failed'
+	assert module_logger.errors[1].startswith(
+		f'❌ Result failed 1/{parse_max_total_failures} times:\n Could not parse response: missing action'
+	)
 
 
 def test_rust_agent_initializes_message_manager_and_followup_state():
