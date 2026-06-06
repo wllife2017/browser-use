@@ -4840,6 +4840,7 @@ def test_rust_agent_telemetry_filters_empty_reconstructed_urls():
 
 	agent._log_agent_event(max_steps=3)
 
+	assert captured_events[0].agent_type == 'rust_core'
 	assert captured_events[0].urls_visited == ['https://example.com']
 
 
