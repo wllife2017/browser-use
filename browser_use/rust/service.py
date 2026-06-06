@@ -314,11 +314,7 @@ class RustSdkClient:
 					if not self._handle_stdout_line(raw_line):
 						return
 				if len(buffer) > self.max_line_bytes:
-					self._fail_all(
-						RustAgentError(
-							f'Rust SDK JSON-RPC line exceeded {self.max_line_bytes} bytes without newline'
-						)
-					)
+					self._fail_all(RustAgentError(f'Rust SDK JSON-RPC line exceeded {self.max_line_bytes} bytes without newline'))
 					return
 		except Exception as exc:
 			message = f'Rust SDK stdout reader failed: {exc}'
@@ -1215,10 +1211,7 @@ def _task_with_completed_initial_navigation_context(
 				initial_action_urls.append(url)
 	if initial_action_urls == urls:
 		actions = json.dumps(initial_actions, indent=2, default=str)
-		prefix = (
-			f'Before the task, perform these Browser Use initial actions in order:\n{actions}\n\n'
-			'Then complete the task.\n\n'
-		)
+		prefix = f'Before the task, perform these Browser Use initial actions in order:\n{actions}\n\nThen complete the task.\n\n'
 		if cleaned_task.startswith(prefix):
 			cleaned_task = cleaned_task[len(prefix) :]
 	completed = ', '.join(repr(url) for url in urls)
@@ -2601,10 +2594,15 @@ def _browser_url(value: Any) -> str:
 
 def _internal_browser_endpoint_url(url: str) -> bool:
 	parsed = urlparse(url)
-	return parsed.scheme in {'http', 'https'} and parsed.hostname in {'127.0.0.1', 'localhost', '::1'} and parsed.path in {
-		'',
-		'/',
-	}
+	return (
+		parsed.scheme in {'http', 'https'}
+		and parsed.hostname in {'127.0.0.1', 'localhost', '::1'}
+		and parsed.path
+		in {
+			'',
+			'/',
+		}
+	)
 
 
 def _browser_state_candidates(value: Any) -> list[tuple[str, str, str]]:
@@ -2617,7 +2615,11 @@ def _browser_state_candidates(value: Any) -> list[tuple[str, str, str]]:
 			nested_target_id = ''
 			if isinstance(raw_target, dict):
 				nested_target_id = str(
-					raw_target.get('target_id') or raw_target.get('targetId') or raw_target.get('tab_id') or raw_target.get('tabId') or ''
+					raw_target.get('target_id')
+					or raw_target.get('targetId')
+					or raw_target.get('tab_id')
+					or raw_target.get('tabId')
+					or ''
 				)
 			target_id = str(
 				value.get('target_id')
@@ -3469,9 +3471,7 @@ def _terminal_laminar_semconv_messages(
 		content = message.get('content')
 		parts: list[dict[str, Any]]
 		if isinstance(content, list):
-			parts = [
-				_terminal_laminar_semconv_content_part(part, inline_image_data=inline_image_data) for part in content
-			]
+			parts = [_terminal_laminar_semconv_content_part(part, inline_image_data=inline_image_data) for part in content]
 		elif isinstance(content, str):
 			parts = [{'type': 'text', 'content': content}]
 		else:
@@ -5180,7 +5180,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			return
 		finished = time.time()
 		self.last_stdout = str(getattr(sdk, 'stdout_text', '') or '')
-		self.last_stderr = str(getattr(sdk, 'stderr_text', '') or '\n'.join(line for line in getattr(sdk, 'stderr_lines', []) if line))
+		self.last_stderr = str(
+			getattr(sdk, 'stderr_text', '') or '\n'.join(line for line in getattr(sdk, 'stderr_lines', []) if line)
+		)
 		effective_error = process_error
 		if _result_from_events(events) is not None and (
 			process_error == 'CancelledError' or _sdk_transport_error_after_final_result(process_error)
@@ -5882,9 +5884,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			tab_url = str(tab.get('url') or '')
 			if not tab_url:
 				continue
-			initial_state_tabs.append(
-				TabInfo(url=tab_url, title=str(tab.get('title') or ''), target_id=f'initial-tab-{index}')
-			)
+			initial_state_tabs.append(TabInfo(url=tab_url, title=str(tab.get('title') or ''), target_id=f'initial-tab-{index}'))
 		state_history = BrowserStateHistory(
 			url=initial_state_url,
 			title=initial_state_title,
@@ -6002,9 +6002,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			return False
 
 	@staticmethod
-	def _direct_initial_navigation_state_context(
-		requested_url: str, state: BrowserStateSummary | None
-	) -> dict[str, Any]:
+	def _direct_initial_navigation_state_context(requested_url: str, state: BrowserStateSummary | None) -> dict[str, Any]:
 		context: dict[str, Any] = {'requested_url': requested_url}
 		if state is None:
 			return context
