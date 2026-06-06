@@ -54,7 +54,6 @@ from browser_use.agent.views import (
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.profile import CHROME_DETERMINISTIC_RENDERING_ARGS, CHROME_DISABLE_SECURITY_ARGS, CHROME_DOCKER_ARGS
 from browser_use.browser.views import BrowserStateHistory, BrowserStateSummary, TabInfo
-from browser_use.dom.views import DOMInteractedElement
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, ContentPartImageParam, ContentPartTextParam
@@ -5779,27 +5778,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			return True, True
 		return False, False
 
-	async def _execute_step(
-		self,
-		step: int,
-		max_steps: int,
-		step_info: AgentStepInfo,
-		on_step_start: AgentHookFunc | None = None,
-		on_step_end: AgentHookFunc | None = None,
-	) -> bool:
-		"""Execute one Browser Use-style run step through the Rust terminal core."""
-		self.state.n_steps = max(self.state.n_steps, step_info.step_number)
-		try:
-			history = await self.run(max_steps=1, on_step_start=on_step_start, on_step_end=on_step_end)
-		except TimeoutError:
-			error_msg = f'Step {step + 1} timed out after {self.settings.step_timeout} seconds'
-			self.state.consecutive_failures += 1
-			self.state.last_result = [ActionResult(error=error_msg)]
-			await self._call_callback(on_step_end, self)
-			return False
-		_ = max_steps
-		return history.is_done()
-
 	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
 		"""Execute Browser Use action models through the Rust-backed session.
 
@@ -6023,57 +6001,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			if tab_summaries:
 				context['tabs'] = tab_summaries
 		return context
-
-	async def _execute_history_step(self, history_item: AgentHistory, delay: float) -> list[ActionResult]:
-		"""Replay a Browser Use history step when Python action models are available."""
-		if self.browser_session is None:
-			raise ValueError('BrowserSession is not set up')
-		get_state = getattr(self.browser_session, 'get_browser_state_summary', None)
-		if not callable(get_state):
-			raise ValueError('BrowserSession does not expose get_browser_state_summary')
-		state = await get_state(include_screenshot=False)
-		if not state or not history_item.model_output:
-			raise ValueError('Invalid state or model output')
-
-		updated_actions = []
-		for index, action in enumerate(history_item.model_output.action):
-			historical_element = history_item.state.interacted_element[index]
-			updated_action = await self._update_action_indices(historical_element, action, state)
-			if updated_action is None:
-				raise ValueError(f'Could not find matching element {index} in current page')
-			updated_actions.append(updated_action)
-
-		result = await self.multi_act(updated_actions)
-		await asyncio.sleep(delay)
-		return result
-
-	async def _update_action_indices(
-		self,
-		historical_element: DOMInteractedElement | None,
-		action: ActionModel,
-		browser_state_summary: BrowserStateSummary,
-	) -> ActionModel | None:
-		"""Update an action index when a historical DOM element moved."""
-		selector_map = getattr(getattr(browser_state_summary, 'dom_state', None), 'selector_map', {})
-		if not historical_element or not selector_map:
-			return action
-		historical_hash = getattr(historical_element, 'element_hash', None)
-		highlight_index = None
-		for candidate_index, element in selector_map.items():
-			if getattr(element, 'element_hash', None) == historical_hash:
-				highlight_index = candidate_index
-				break
-		if highlight_index is None:
-			return None
-
-		get_index = getattr(action, 'get_index', None)
-		set_index = getattr(action, 'set_index', None)
-		if callable(get_index) and callable(set_index):
-			old_index = get_index()
-			if old_index != highlight_index:
-				set_index(highlight_index)
-				self.logger.info(f'Element moved in DOM, updated index from {old_index} to {highlight_index}')
-		return action
 
 	def add_new_task(self, new_task: str) -> None:
 		"""Add a follow-up task while keeping the same Browser Use-style agent object."""

@@ -182,7 +182,7 @@ def test_rust_agent_action_model_helper_type_hints_match_browser_use():
 	from browser_use.agent.service import _PythonAgent as BrowserUseAgent
 	from browser_use.rust import Agent as RustAgent
 
-	for method_name in ('_convert_initial_actions', '_update_action_indices', 'multi_act'):
+	for method_name in ('_convert_initial_actions', 'multi_act'):
 		browser_use_hints = get_type_hints(getattr(BrowserUseAgent, method_name))
 		rust_hints = get_type_hints(getattr(RustAgent, method_name))
 
@@ -6364,9 +6364,7 @@ async def test_rust_agent_direct_initial_navigation_can_be_disabled(monkeypatch)
 	assert agent.history.history == []
 
 
-async def test_rust_agent_exposes_action_replay_helper_methods(monkeypatch):
-	from types import SimpleNamespace
-
+async def test_rust_agent_records_initial_actions_in_history(monkeypatch):
 	from browser_use.agent.views import ActionResult
 	from browser_use.rust import Agent
 
@@ -6388,23 +6386,6 @@ async def test_rust_agent_exposes_action_replay_helper_methods(monkeypatch):
 
 	class BrowserSession:
 		browser_profile = BrowserProfile()
-
-		async def get_browser_state_summary(self, include_screenshot=False):
-			assert include_screenshot is False
-			return SimpleNamespace(dom_state=SimpleNamespace(selector_map={7: SimpleNamespace(element_hash='matching-hash')}))
-
-	class FakeAction:
-		def __init__(self):
-			self.index = 2
-
-		def get_index(self):
-			return self.index
-
-		def set_index(self, index):
-			self.index = index
-
-		def model_dump(self, **kwargs):
-			return {'click_element': {'index': self.index}}
 
 	agent = Agent(
 		task='Replay actions.',
@@ -6431,32 +6412,6 @@ async def test_rust_agent_exposes_action_replay_helper_methods(monkeypatch):
 		'📝 Saved initial actions to history as step 0',
 		'Initial actions completed',
 	]
-
-	action = FakeAction()
-	replay_calls = []
-
-	async def fake_replay_multi_act(actions):
-		replay_calls.append(actions)
-		return [ActionResult(extracted_content='replayed')]
-
-	agent.multi_act = fake_replay_multi_act
-	history_item = SimpleNamespace(
-		model_output=SimpleNamespace(action=[action]),
-		state=SimpleNamespace(interacted_element=[SimpleNamespace(element_hash='matching-hash')]),
-	)
-	results = await agent._execute_history_step(history_item, delay=0)
-
-	assert action.index == 7
-	assert replay_calls == [[action]]
-	assert results[0].extracted_content == 'replayed'
-	assert (
-		await agent._update_action_indices(
-			SimpleNamespace(element_hash='missing-hash'),
-			FakeAction(),
-			SimpleNamespace(dom_state=SimpleNamespace(selector_map={1: SimpleNamespace(element_hash='other-hash')})),
-		)
-		is None
-	)
 
 
 async def test_rust_agent_exposes_model_output_helper_methods(monkeypatch, tmp_path):
