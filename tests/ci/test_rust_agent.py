@@ -4792,6 +4792,7 @@ async def test_rust_agent_exposes_logging_helper_methods(monkeypatch):
 	assert captured_events
 	assert captured_events[0].model == 'gpt-test'
 	assert captured_events[0].model_provider == 'test-provider'
+	assert captured_events[0].agent_type == 'rust_core'
 	assert captured_events[0].cdp_url == 'browser.example'
 	assert captured_events[0].action_history == [[{'done': {'text': 'done', 'success': True}}]]
 	assert captured_events[0].urls_visited == ['https://example.com']
@@ -4880,6 +4881,7 @@ def test_rust_agent_telemetry_records_cloud_cdp_hostname():
 	agent._log_agent_event(max_steps=3)
 
 	assert captured_events[0].name == 'agent_event'
+	assert captured_events[0].agent_type == 'rust_core'
 	assert captured_events[0].cdp_url == 'cloud-browser.example'
 	assert captured_events[0].urls_visited == ['https://example.com']
 

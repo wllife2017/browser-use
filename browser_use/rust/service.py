@@ -4612,7 +4612,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				version=self.version or '',
 				source=self.source,
 				cdp_url=urlparse(cdp_url).hostname if cdp_url else None,
-				agent_type=None,
+				agent_type='rust_core',
 				action_errors=self.history.errors(),
 				action_history=action_history_data,
 				urls_visited=[url for url in self.history.urls() if url],
