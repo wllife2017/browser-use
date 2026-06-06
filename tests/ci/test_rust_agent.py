@@ -2603,6 +2603,7 @@ def test_rust_agent_translates_browser_use_args_to_terminal(monkeypatch):
 	assert "First navigate to 'https://example.com'" in agent.task
 	assert env['BU_CDP_URL'] == 'wss://browser.example/devtools/browser/1'
 	assert env['LLM_BROWSER_BROWSER_MODE'] == 'remote-cdp'
+	assert 'BUT_FULL_LLM_INPUT_EVENTS' not in env
 
 	params = agent._sdk_run_params(max_steps=12, task=agent.task)
 	assert params['max_steps'] == 12
@@ -2610,8 +2611,52 @@ def test_rust_agent_translates_browser_use_args_to_terminal(monkeypatch):
 	assert params['llm'] == {'provider': 'browser-use', 'model': 'gpt-test', 'timeout': 75}
 	assert params['browser']['cdp_url'] == 'wss://browser.example/devtools/browser/1'
 	assert 'cdp_headers' not in params['browser']
-	assert 'config_overrides' not in params
+	assert params['config_overrides'] == {'full_llm_input_events': True}
 	assert "First navigate to 'https://example.com'" in params['task']
+
+
+def test_rust_terminal_binary_missing_error_mentions_install(monkeypatch):
+	import browser_use.rust.service as rust_service
+
+	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
+	monkeypatch.setattr(rust_service.Path, 'exists', lambda self: False)
+	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary: None)
+
+	with pytest.raises(rust_service.RustAgentError) as exc_info:
+		rust_service.find_browser_use_terminal_binary()
+
+	message = str(exc_info.value)
+	assert 'https://browser-use.com/terminal/install.sh' in message
+	assert 'BROWSER_USE_TERMINAL_BINARY' in message
+
+
+def test_rust_terminal_binary_finds_default_terminal_install(monkeypatch, tmp_path):
+	import browser_use.rust.service as rust_service
+
+	binary = tmp_path / '.browser-use-terminal' / 'packages' / 'standalone' / 'current' / 'bin' / 'browser-use-terminal'
+	binary.parent.mkdir(parents=True)
+	binary.write_text('#!/bin/sh\n')
+
+	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
+	monkeypatch.chdir(tmp_path)
+	monkeypatch.setenv('BUT_HOME', str(tmp_path / '.browser-use-terminal'))
+	monkeypatch.setenv('BUT_INSTALL_DIR', str(tmp_path / '.local' / 'bin'))
+	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary_name: None)
+
+	assert rust_service.find_browser_use_terminal_binary() == str(binary)
+
+
+async def test_rust_sdk_client_start_wraps_missing_binary_error():
+	import browser_use.rust.service as rust_service
+
+	client = rust_service.RustSdkClient(['/definitely/missing-browser-use-terminal'], env={})
+
+	with pytest.raises(rust_service.RustAgentError) as exc_info:
+		await client.start()
+
+	message = str(exc_info.value)
+	assert '/definitely/missing-browser-use-terminal' in message
+	assert 'https://browser-use.com/terminal/install.sh' in message
 
 
 def test_rust_agent_sdk_params_leave_terminal_tools_unrestricted(monkeypatch):
@@ -2625,7 +2670,7 @@ def test_rust_agent_sdk_params_leave_terminal_tools_unrestricted(monkeypatch):
 
 	params = agent._sdk_run_params(max_steps=8, task=agent.task)
 
-	assert 'config_overrides' not in params
+	assert params['config_overrides'] == {'full_llm_input_events': True}
 	assert 'tool_allowlist' not in json.dumps(params)
 
 

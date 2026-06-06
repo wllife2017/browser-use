@@ -274,7 +274,7 @@ This branch keeps the Python `Agent` unchanged unless callers explicitly import
 - browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_agent_recovers_final_result_from_sdk_notifications_after_transport_error tests/ci/test_rust_agent.py::test_rust_agent_recovers_nested_sdk_notification_events tests/ci/test_rust_agent.py::test_rust_agent_prices_sdk_child_usage_events_without_overriding_parent_result -q`
 - browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_agent_recovers_nested_sdk_notification_events tests/ci/test_rust_agent.py::test_rust_agent_prefers_notification_final_when_response_history_lacks_result tests/ci/test_rust_agent.py::test_rust_agent_uses_sdk_history_usage_when_events_do_not_include_usage tests/ci/test_rust_agent.py::test_rust_agent_prices_sdk_child_usage_events_without_overriding_parent_result -q`
 - browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_agent_recovers_final_result_from_sdk_notifications_after_transport_error tests/ci/test_rust_agent.py::test_rust_agent_recovers_nested_sdk_notification_events tests/ci/test_rust_agent.py::test_rust_agent_recovers_projected_sdk_final_events tests/ci/test_rust_agent.py::test_rust_agent_prefers_notification_final_when_response_history_lacks_result tests/ci/test_rust_agent.py::test_rust_agent_uses_sdk_history_usage_when_events_do_not_include_usage tests/ci/test_rust_agent.py::test_rust_agent_prices_sdk_child_usage_events_without_overriding_parent_result -q`
-- browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_agent_runs_through_sdk_and_reuses_session_for_followup tests/ci/test_rust_agent.py::test_rust_agent_ignores_legacy_run_process_monkeypatch_for_sdk_server -q`
+- browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_agent_runs_through_sdk_and_reuses_session_for_followup -q`
 - terminal `cargo fmt --check`
 - terminal `cargo test -p browser-use-cli sdk_json_rpc_browser_create_preserves_browser_use_settings -- --nocapture`
 - terminal `cargo test -p browser-use-cli sdk_provider_run_config_maps_browser_use_options_to_rust_core -- --nocapture`
@@ -283,7 +283,7 @@ This branch keeps the Python `Agent` unchanged unless callers explicitly import
 - browser-use `uv run python -m py_compile browser_use/rust/service.py`
 - browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_sdk_event_dedupe_removes_projected_usage_duplicates tests/ci/test_rust_agent.py::test_rust_history_ignores_internal_browser_connection_url tests/ci/test_rust_agent.py::test_rust_agent_default_llm_matches_browser_use_default tests/ci/test_rust_agent.py::test_rust_agent_default_llm_respects_default_llm_env tests/ci/test_rust_agent.py::test_rust_agent_exposes_logging_helper_methods tests/ci/test_rust_agent.py::test_rust_agent_telemetry_filters_empty_reconstructed_urls -q`
 - browser-use `uv run pytest tests/ci/test_rust_agent.py::test_rust_agent_translates_browser_use_args_to_terminal tests/ci/test_rust_agent.py::test_rust_agent_sdk_params_leave_terminal_tools_unrestricted -q`
-- browser-use `uv run pytest tests/ci/test_rust_agent.py -q` (192 passed, 42 skipped legacy CLI-process tests)
+- browser-use `uv run pytest tests/ci/test_rust_agent.py -q`
 - browser-use `uv run ruff check browser_use/rust/service.py tests/ci/test_rust_agent.py tests/ci/models/test_llm_model_factory.py`
 - terminal `cargo test -p browser-use-browser browser_script_http_get_many_preserves_order_and_errors -- --nocapture`
 - terminal `cargo test -p browser-use-browser browser_script_browser_fetch_single_returns_structured_errors_by_default -- --nocapture`
@@ -345,5 +345,4 @@ This branch keeps the Python `Agent` unchanged unless callers explicitly import
 
 - The production Rust path no longer uses `_run_process`/`_load_events`, legacy
   process-backed SDK adapter code, or direct CLI `run-*` command construction.
-  Older process-monkeypatch tests remain as test-suite debt while the production
-  wrapper now goes through the SDK server protocol.
+  The production wrapper now goes through the SDK server protocol.

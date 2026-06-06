@@ -85,6 +85,7 @@ AgentNewStepCallback = (
 )
 AgentDoneCallback = Callable[[AgentHistoryList], Awaitable[None]] | Callable[[AgentHistoryList], None]
 logger = logging.getLogger(__name__)
+TERMINAL_INSTALL_COMMAND = 'curl -fsSL https://browser-use.com/terminal/install.sh | sh'
 
 try:
 	from lmnr import Laminar  # type: ignore
@@ -184,9 +185,13 @@ def find_browser_use_terminal_binary() -> str:
 	env_path = os.environ.get('BROWSER_USE_TERMINAL_BINARY')
 	if env_path:
 		return env_path
+	but_home = Path(os.environ.get('BUT_HOME', '~/.browser-use-terminal')).expanduser()
+	but_install_dir = Path(os.environ.get('BUT_INSTALL_DIR', '~/.local/bin')).expanduser()
 	candidates = [
 		Path.cwd() / 'target' / 'debug' / 'browser-use-terminal',
 		Path.cwd().parent / 'terminal' / 'target' / 'debug' / 'browser-use-terminal',
+		but_home / 'packages' / 'standalone' / 'current' / 'bin' / 'browser-use-terminal',
+		but_install_dir / 'browser-use-terminal',
 	]
 	for candidate in candidates:
 		if candidate.exists():
@@ -194,7 +199,10 @@ def find_browser_use_terminal_binary() -> str:
 	path_binary = shutil.which('browser-use-terminal')
 	if path_binary:
 		return path_binary
-	raise RustAgentError('Could not find browser-use-terminal. Set BROWSER_USE_TERMINAL_BINARY or build the terminal CLI.')
+	raise RustAgentError(
+		f'Could not find browser-use-terminal. Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
+		'or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
+	)
 
 
 class RustSdkJsonRpcError(RustAgentError):
@@ -228,14 +236,22 @@ class RustSdkClient:
 	async def start(self) -> None:
 		if self.process is not None and self.process.returncode is None:
 			return
-		self.process = await asyncio.create_subprocess_exec(
-			*self.command,
-			stdin=asyncio.subprocess.PIPE,
-			stdout=asyncio.subprocess.PIPE,
-			stderr=asyncio.subprocess.PIPE,
-			env=self.env,
-			limit=self.stream_limit,
-		)
+		try:
+			self.process = await asyncio.create_subprocess_exec(
+				*self.command,
+				stdin=asyncio.subprocess.PIPE,
+				stdout=asyncio.subprocess.PIPE,
+				stderr=asyncio.subprocess.PIPE,
+				env=self.env,
+				limit=self.stream_limit,
+			)
+		except (FileNotFoundError, PermissionError) as exc:
+			command = self.command[0] if self.command else 'browser-use-terminal'
+			raise RustAgentError(
+				f'Could not start Rust SDK server command {command!r}. '
+				f'Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
+				'or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
+			) from exc
 		self._reader_task = asyncio.create_task(self._read_stdout())
 		self._stderr_task = asyncio.create_task(self._read_stderr())
 
@@ -6306,6 +6322,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			'calculate_cost': bool(self.settings.calculate_cost),
 			'use_vision': self.settings.use_vision,
 			'max_actions_per_step': int(self.settings.max_actions_per_step),
+			'config_overrides': {'full_llm_input_events': True},
 		}
 		if self._sdk_agent_id:
 			params['agent_id'] = self._sdk_agent_id

@@ -55,6 +55,11 @@ uv init && uv add browser-use && uv sync
 # uvx browser-use install  # Run if you don't have Chromium installed
 ```
 
+**Experimental Rust agent:** install Browser Use Terminal for `from browser_use.rust import Agent`:
+```bash
+curl -fsSL https://browser-use.com/terminal/install.sh | sh
+```
+
 **2. [Optional] Get your API key from [Browser Use Cloud](https://cloud.browser-use.com/new-api-key?utm_source=github&utm_medium=readme-quickstart-api-key):**
 ```
 # .env
