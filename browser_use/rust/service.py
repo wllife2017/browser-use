@@ -12,6 +12,7 @@ import mimetypes
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -185,6 +186,9 @@ def find_browser_use_terminal_binary() -> str:
 	env_path = os.environ.get('BROWSER_USE_TERMINAL_BINARY')
 	if env_path:
 		return env_path
+	packaged_path = _find_packaged_browser_use_terminal_binary()
+	if packaged_path:
+		return packaged_path
 	but_home = Path(os.environ.get('BUT_HOME', '~/.browser-use-terminal')).expanduser()
 	but_install_dir = Path(os.environ.get('BUT_INSTALL_DIR', '~/.local/bin')).expanduser()
 	candidates = [
@@ -201,8 +205,19 @@ def find_browser_use_terminal_binary() -> str:
 		return path_binary
 	raise RustAgentError(
 		f'Could not find browser-use-terminal. Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
-		'or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
+		'install browser-use-rust, or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
 	)
+
+
+def _find_packaged_browser_use_terminal_binary() -> str | None:
+	try:
+		from browser_use_rust import binary_path
+	except Exception:
+		return None
+	try:
+		return binary_path('browser-use-terminal')
+	except Exception:
+		return None
 
 
 class RustSdkJsonRpcError(RustAgentError):
@@ -6245,6 +6260,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._sdk_browser_id = None
 			self.terminal_session_id = None
 		self._sdk_client = RustSdkClient(self._sdk_server_argv(), self._run_env())
+		ping = await self._sdk_client.call('runtime.ping')
+		protocol_version = ping.get('sdk_protocol_version') if isinstance(ping, dict) else None
+		if protocol_version != 1:
+			await self._sdk_client.close()
+			self._sdk_client = None
+			raise RustAgentError(
+				f'Unsupported browser-use-terminal SDK protocol {protocol_version!r}; expected 1. '
+				'Install a compatible browser-use-rust package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
+			)
 		return self._sdk_client
 
 	def _sdk_llm_payload(self) -> dict[str, Any]:
@@ -6512,6 +6536,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				env['LLM_BROWSER_OPENAI_COMPAT_INCLUDE_USAGE'] = 'true'
 		browser_mode = self._browser_mode()
 		env['LLM_BROWSER_BROWSER_MODE'] = browser_mode
+		env.setdefault('BROWSER_USE_PYTHON', sys.executable)
 		cdp_url = _extract_cdp_url(self.browser_session) or _extract_profile_cdp_url(self.browser_profile)
 		if cdp_url:
 			env['BU_CDP_URL'] = cdp_url

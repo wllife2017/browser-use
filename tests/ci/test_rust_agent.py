@@ -2603,6 +2603,7 @@ def test_rust_agent_translates_browser_use_args_to_terminal(monkeypatch):
 	assert "First navigate to 'https://example.com'" in agent.task
 	assert env['BU_CDP_URL'] == 'wss://browser.example/devtools/browser/1'
 	assert env['LLM_BROWSER_BROWSER_MODE'] == 'remote-cdp'
+	assert env['BROWSER_USE_PYTHON'] == sys.executable
 	assert 'BUT_FULL_LLM_INPUT_EVENTS' not in env
 
 	params = agent._sdk_run_params(max_steps=12, task=agent.task)
@@ -2619,6 +2620,7 @@ def test_rust_terminal_binary_missing_error_mentions_install(monkeypatch):
 	import browser_use.rust.service as rust_service
 
 	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
+	monkeypatch.setitem(sys.modules, 'browser_use_rust', None)
 	monkeypatch.setattr(rust_service.Path, 'exists', lambda self: False)
 	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary: None)
 
@@ -2627,7 +2629,25 @@ def test_rust_terminal_binary_missing_error_mentions_install(monkeypatch):
 
 	message = str(exc_info.value)
 	assert 'https://browser-use.com/terminal/install.sh' in message
+	assert 'browser-use-rust' in message
 	assert 'BROWSER_USE_TERMINAL_BINARY' in message
+
+
+def test_rust_terminal_binary_prefers_packaged_binary(monkeypatch):
+	import browser_use.rust.service as rust_service
+
+	class PackagedRust:
+		@staticmethod
+		def binary_path(binary_name):
+			assert binary_name == 'browser-use-terminal'
+			return '/tmp/packaged-browser-use-terminal'
+
+	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
+	monkeypatch.setitem(sys.modules, 'browser_use_rust', PackagedRust)
+	monkeypatch.setattr(rust_service.Path, 'exists', lambda self: False)
+	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary_name: None)
+
+	assert rust_service.find_browser_use_terminal_binary() == '/tmp/packaged-browser-use-terminal'
 
 
 def test_rust_terminal_binary_finds_default_terminal_install(monkeypatch, tmp_path):
@@ -2638,6 +2658,7 @@ def test_rust_terminal_binary_finds_default_terminal_install(monkeypatch, tmp_pa
 	binary.write_text('#!/bin/sh\n')
 
 	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
+	monkeypatch.setitem(sys.modules, 'browser_use_rust', None)
 	monkeypatch.chdir(tmp_path)
 	monkeypatch.setenv('BUT_HOME', str(tmp_path / '.browser-use-terminal'))
 	monkeypatch.setenv('BUT_INSTALL_DIR', str(tmp_path / '.local' / 'bin'))
@@ -3257,6 +3278,29 @@ print(json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}), flush=Tru
 	assert second_notification['params']['event']['kind'] == 'item_started'
 	assert rust_service._sdk_notification_summary(first_notification) == 'AgentStarted task=inspect'
 	assert rust_service._sdk_notification_summary(second_notification) == 'projected.item_started name=browser_script'
+
+
+async def test_rust_agent_rejects_incompatible_sdk_protocol(monkeypatch):
+	import browser_use.rust.service as rust_service
+	from browser_use.rust import Agent
+
+	class LLM:
+		model = 'gpt-test'
+
+	script = r"""
+import json
+import sys
+
+request = json.loads(sys.stdin.readline())
+print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"ok": True}}), flush=True)
+"""
+	agent = Agent(task='answer', llm=LLM())
+	monkeypatch.setattr(agent, '_sdk_server_argv', lambda: [sys.executable, '-c', script])
+
+	with pytest.raises(rust_service.RustAgentError) as exc_info:
+		await agent._ensure_sdk_client()
+
+	assert 'Unsupported browser-use-terminal SDK protocol' in str(exc_info.value)
 
 
 def test_rust_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):

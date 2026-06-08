@@ -2,7 +2,7 @@
 name = "browser-use"
 description = "Make websites accessible for AI agents"
 authors = [{ name = "Gregor Zunic" }]
-version = "0.12.9"
+version = "0.13.0"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 classifiers = [
@@ -59,6 +59,7 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["textual==7.4.0"]
+rust = ["browser-use-rust==0.13.0"]
 aws = ["boto3==1.42.37"]
 oci = ["oci==2.166.0"]
 video = ["imageio[ffmpeg]==2.37.2", "numpy==2.4.1"]
