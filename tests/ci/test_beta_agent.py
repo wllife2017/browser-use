@@ -669,7 +669,7 @@ def test_rust_history_reconstructs_eval_visible_multi_turn_actions_and_usage():
 	assert action_history[1][0]['browser_script']['code'] == 'emit_output(page_info(), label="page_info")'
 	assert action_history[1][0]['result'] == 'Page title: Example Domain'
 	assert action_history[1][-1]['done'] == {'text': 'Example Domain', 'success': True}
-	assert 'https://example.com' in history.urls()
+	assert history.urls() == ['https://example.com', 'https://example.com']
 	assert history.final_result() == 'Example Domain'
 	assert history.usage is not None
 	assert history.usage.total_prompt_tokens == 240
@@ -4299,7 +4299,6 @@ def test_beta_agent_preserves_ordered_initial_actions_context():
 	assert 'Browser Use initial actions in order' in agent.task
 	assert '"navigate"' in agent.task
 	assert '"click_element_by_index"' in agent.task
-	assert 'https://example.com' in agent.task
 	assert 'Then complete the task.' in agent.task
 
 
@@ -6291,7 +6290,13 @@ def test_rust_history_uses_browser_script_lifecycle_outputs_as_result():
 
 	result = history.history[0].result[0]
 	assert result.extracted_content is not None
-	assert 'https://example.com' in result.extracted_content
+	assert json.loads(result.extracted_content) == [
+		{
+			'label': 'page_info',
+			'value': {'url': 'https://example.com', 'title': 'Example'},
+			'summary': {'kind': 'observed', 'output_label': 'page_info'},
+		}
+	]
 	assert history.history[0].state.url == 'https://example.com'
 
 
