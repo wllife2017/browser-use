@@ -6260,16 +6260,24 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._sdk_browser_id = None
 			self.terminal_session_id = None
 		self._sdk_client = RustSdkClient(self._sdk_server_argv(), self._run_env())
-		ping = await self._sdk_client.call('runtime.ping')
-		protocol_version = ping.get('sdk_protocol_version') if isinstance(ping, dict) else None
-		if protocol_version != 1:
+		try:
+			ping = await self._sdk_client.call('runtime.ping')
+			protocol_version = ping.get('sdk_protocol_version') if isinstance(ping, dict) else None
+			if protocol_version == 1:
+				return self._sdk_client
+		except Exception as exc:
 			await self._sdk_client.close()
 			self._sdk_client = None
 			raise RustAgentError(
-				f'Unsupported browser-use-terminal SDK protocol {protocol_version!r}; expected 1. '
+				'Failed to negotiate browser-use-terminal SDK protocol via runtime.ping. '
 				'Install a compatible browser-use-core package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
-			)
-		return self._sdk_client
+			) from exc
+		await self._sdk_client.close()
+		self._sdk_client = None
+		raise RustAgentError(
+			f'Unsupported browser-use-terminal SDK protocol {protocol_version!r}; expected 1. '
+			'Install a compatible browser-use-core package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
+		)
 
 	def _sdk_llm_payload(self) -> dict[str, Any]:
 		provider = _llm_provider_name(self.llm) or 'browser-use'

@@ -3326,6 +3326,34 @@ print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"ok": True}}
 	assert 'Unsupported browser-use-terminal SDK protocol' in str(exc_info.value)
 
 
+async def test_rust_agent_clears_sdk_client_when_protocol_ping_fails(monkeypatch):
+	import browser_use.rust.service as rust_service
+	from browser_use.rust import Agent
+
+	class LLM:
+		model = 'gpt-test'
+
+	script = r"""
+import json
+import sys
+
+request = json.loads(sys.stdin.readline())
+print(json.dumps({
+	"jsonrpc": "2.0",
+	"id": request["id"],
+	"error": {"code": -32000, "message": "ping failed"},
+}), flush=True)
+"""
+	agent = Agent(task='answer', llm=LLM())
+	monkeypatch.setattr(agent, '_sdk_server_argv', lambda: [sys.executable, '-c', script])
+
+	with pytest.raises(rust_service.RustAgentError) as exc_info:
+		await agent._ensure_sdk_client()
+
+	assert 'Failed to negotiate browser-use-terminal SDK protocol via runtime.ping' in str(exc_info.value)
+	assert agent._sdk_client is None
+
+
 def test_rust_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):
 	from browser_use.rust import Agent
 
