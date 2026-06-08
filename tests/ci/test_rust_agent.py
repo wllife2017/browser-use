@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, cast, get_args, get_origin, get_type_hints
@@ -2665,6 +2666,28 @@ def test_rust_terminal_binary_finds_default_terminal_install(monkeypatch, tmp_pa
 	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary_name: None)
 
 	assert rust_service.find_browser_use_terminal_binary() == str(binary)
+
+
+def test_rust_terminal_binary_from_installed_browser_use_core_answers_ping(monkeypatch):
+	browser_use_core = pytest.importorskip('browser_use_core')
+	import browser_use.rust.service as rust_service
+
+	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
+
+	binary = rust_service.find_browser_use_terminal_binary()
+	assert binary == browser_use_core.binary_path('browser-use-terminal')
+
+	proc = subprocess.run(
+		[binary, 'sdk-server', '--transport', 'stdio'],
+		input='{"jsonrpc":"2.0","id":1,"method":"runtime.ping","params":{}}\n',
+		text=True,
+		capture_output=True,
+		timeout=10,
+		check=True,
+	)
+	response = json.loads(proc.stdout.strip())
+	assert response['result']['ok'] is True
+	assert response['result']['sdk_protocol_version'] == 1
 
 
 async def test_rust_sdk_client_start_wraps_missing_binary_error():

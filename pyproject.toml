@@ -59,6 +59,10 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = ["textual==7.4.0"]
+rust = [
+    "browser-use-core==0.13.0rc1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "browser-use-core==0.13.0rc1; sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
 aws = ["boto3==1.42.37"]
 oci = ["oci==2.166.0"]
 video = ["imageio[ffmpeg]==2.37.2", "numpy==2.4.1"]
