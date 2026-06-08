@@ -1162,6 +1162,11 @@ def _llm_env_overrides(llm: Any) -> dict[str, str]:
 			overrides['OPENROUTER_BASE_URL'] = base_url
 	elif provider == 'deepseek' and api_key:
 		overrides['DEEPSEEK_API_KEY'] = api_key
+	elif provider == 'browser-use':
+		if api_key:
+			overrides['LLM_BROWSER_BROWSER_USE_API_KEY'] = api_key
+		if base_url:
+			overrides['LLM_BROWSER_BROWSER_USE_BASE_URL'] = base_url.rstrip('/').removesuffix('/v1')
 	return overrides
 
 
