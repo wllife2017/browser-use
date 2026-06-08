@@ -12,6 +12,7 @@ import mimetypes
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -192,16 +193,14 @@ def find_browser_use_terminal_binary() -> str:
 	but_home = Path(os.environ.get('BUT_HOME', '~/.browser-use-terminal')).expanduser()
 	but_install_dir = Path(os.environ.get('BUT_INSTALL_DIR', '~/.local/bin')).expanduser()
 	candidates = [
-		Path.cwd() / 'target' / 'debug' / 'browser-use-terminal',
-		Path.cwd().parent / 'terminal' / 'target' / 'debug' / 'browser-use-terminal',
 		but_home / 'packages' / 'standalone' / 'current' / 'bin' / 'browser-use-terminal',
 		but_install_dir / 'browser-use-terminal',
 	]
 	for candidate in candidates:
-		if candidate.exists():
+		if candidate.exists() and _terminal_supports_sdk_server(candidate):
 			return str(candidate)
 	path_binary = shutil.which('browser-use-terminal')
-	if path_binary:
+	if path_binary and _terminal_supports_sdk_server(Path(path_binary)):
 		return path_binary
 	raise BetaAgentError(
 		f'Could not find browser-use-terminal. Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
@@ -218,6 +217,21 @@ def _find_packaged_browser_use_terminal_binary() -> str | None:
 		return binary_path('browser-use-terminal')
 	except Exception:
 		return None
+
+
+def _terminal_supports_sdk_server(binary: Path) -> bool:
+	"""Return whether a terminal binary supports the SDK server subcommand required by this wrapper."""
+	try:
+		result = subprocess.run(
+			[str(binary), '--help'],
+			capture_output=True,
+			text=True,
+			timeout=5,
+			check=False,
+		)
+	except (OSError, subprocess.SubprocessError):
+		return False
+	return 'sdk-server' in f'{result.stdout}\n{result.stderr}'
 
 
 class RustSdkJsonRpcError(BetaAgentError):
