@@ -94,8 +94,8 @@ except ImportError:
 	Laminar = None  # type: ignore
 
 
-class RustAgentError(RuntimeError):
-	"""Raised when the Rust terminal core cannot run a task."""
+class BetaAgentError(RuntimeError):
+	"""Raised when the beta agent cannot run a task."""
 
 
 def _laminar_ready() -> bool:
@@ -203,7 +203,7 @@ def find_browser_use_terminal_binary() -> str:
 	path_binary = shutil.which('browser-use-terminal')
 	if path_binary:
 		return path_binary
-	raise RustAgentError(
+	raise BetaAgentError(
 		f'Could not find browser-use-terminal. Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
 		'install browser-use-core, or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
 	)
@@ -220,7 +220,7 @@ def _find_packaged_browser_use_terminal_binary() -> str | None:
 		return None
 
 
-class RustSdkJsonRpcError(RustAgentError):
+class RustSdkJsonRpcError(BetaAgentError):
 	"""Raised when the Rust SDK server returns a JSON-RPC error."""
 
 	def __init__(self, code: int, message: str) -> None:
@@ -262,7 +262,7 @@ class RustSdkClient:
 			)
 		except (FileNotFoundError, PermissionError) as exc:
 			command = self.command[0] if self.command else 'browser-use-terminal'
-			raise RustAgentError(
+			raise BetaAgentError(
 				f'Could not start Rust SDK server command {command!r}. '
 				f'Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
 				'or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
@@ -273,7 +273,7 @@ class RustSdkClient:
 	async def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
 		await self.start()
 		if self.process is None or self.process.stdin is None:
-			raise RustAgentError('Rust SDK server stdin is unavailable')
+			raise BetaAgentError('Rust SDK server stdin is unavailable')
 		loop = asyncio.get_running_loop()
 		async with self._write_lock:
 			request_id = self._next_id
@@ -291,7 +291,7 @@ class RustSdkClient:
 				await self.process.stdin.drain()
 			except (BrokenPipeError, ConnectionResetError) as exc:
 				self._pending.pop(request_id, None)
-				raise RustAgentError(f'Rust SDK server pipe closed while sending {method}') from exc
+				raise BetaAgentError(f'Rust SDK server pipe closed while sending {method}') from exc
 		try:
 			return await future
 		except asyncio.CancelledError:
@@ -320,7 +320,7 @@ class RustSdkClient:
 			*(task for task in (self._reader_task, self._stderr_task) if task is not None and task is not asyncio.current_task()),
 			return_exceptions=True,
 		)
-		self._fail_all(RustAgentError('Rust SDK server closed'))
+		self._fail_all(BetaAgentError('Rust SDK server closed'))
 		self.process = None
 
 	async def _read_stdout(self) -> None:
@@ -344,19 +344,19 @@ class RustSdkClient:
 					if not self._handle_stdout_line(raw_line):
 						return
 				if len(buffer) > self.max_line_bytes:
-					self._fail_all(RustAgentError(f'Rust SDK JSON-RPC line exceeded {self.max_line_bytes} bytes without newline'))
+					self._fail_all(BetaAgentError(f'Rust SDK JSON-RPC line exceeded {self.max_line_bytes} bytes without newline'))
 					return
 		except Exception as exc:
 			message = f'Rust SDK stdout reader failed: {exc}'
 			self.stderr_lines.append(message)
-			self._fail_all(RustAgentError(message))
+			self._fail_all(BetaAgentError(message))
 		finally:
 			if self._pending:
 				detail = '\n'.join(self.stderr_lines[-20:])
 				message = 'Rust SDK server exited before responding'
 				if detail:
 					message = f'{message}: {detail}'
-				self._fail_all(RustAgentError(message))
+				self._fail_all(BetaAgentError(message))
 
 	def _handle_stdout_line(self, raw_line: bytes) -> bool:
 		line = raw_line.decode('utf-8', errors='replace').strip()
@@ -365,7 +365,7 @@ class RustSdkClient:
 		try:
 			message = json.loads(line)
 		except json.JSONDecodeError as exc:
-			self._fail_all(RustAgentError(f'Invalid Rust SDK JSON-RPC line: {line}: {exc}'))
+			self._fail_all(BetaAgentError(f'Invalid Rust SDK JSON-RPC line: {line}: {exc}'))
 			return False
 		self._handle_message(message)
 		return True
@@ -379,7 +379,7 @@ class RustSdkClient:
 
 	def _handle_message(self, message: Any) -> None:
 		if not isinstance(message, dict):
-			self._fail_all(RustAgentError(f'Rust SDK server emitted non-object JSON-RPC message: {message!r}'))
+			self._fail_all(BetaAgentError(f'Rust SDK server emitted non-object JSON-RPC message: {message!r}'))
 			return
 		method = message.get('method')
 		if method in {'agent.event', 'agent.projected_event'}:
@@ -395,7 +395,7 @@ class RustSdkClient:
 			return
 		request_id = message.get('id')
 		if not isinstance(request_id, int):
-			self._fail_all(RustAgentError('Rust SDK JSON-RPC response id must be an integer'))
+			self._fail_all(BetaAgentError('Rust SDK JSON-RPC response id must be an integer'))
 			return
 		future = self._pending.pop(request_id, None)
 		if future is None or future.done():
@@ -3743,7 +3743,7 @@ def _record_laminar_terminal_tool_spans(events: list[dict[str, Any]], *, max_spa
 		with _laminar_start_span(f'rust_core.tool.{tool_call.get("name") or "tool"}', input=input_messages, span_type='TOOL'):
 			_laminar_set_span_attributes(
 				{
-					'runtime': 'browser_use.rust',
+					'runtime': 'browser_use.beta',
 					'tool_name': tool_call.get('name'),
 					'tool_call_id': tool_call_id,
 					'tool_index': span_index,
@@ -3798,7 +3798,7 @@ def _record_laminar_terminal_llm_spans(
 			span_output_messages = _terminal_laminar_span_output_messages(span_output)
 			_laminar_set_span_attributes(
 				{
-					'runtime': 'browser_use.rust',
+					'runtime': 'browser_use.beta',
 					'model': str(span_input.get('model') or default_model),
 					'provider': str(span_input.get('provider') or default_provider),
 					'turn_index': span_index,
@@ -3904,7 +3904,7 @@ def _load_rust_history(file_path: str | Path) -> AgentHistoryList:
 	with open(file_path, encoding='utf-8') as history_file:
 		data = json.load(history_file)
 	if not isinstance(data, dict):
-		raise RustAgentError(f'Invalid Browser Use history file: {file_path}')
+		raise BetaAgentError(f'Invalid Browser Use history file: {file_path}')
 	for item in data.get('history', []):
 		if isinstance(item, dict):
 			item['model_output'] = None
@@ -4669,7 +4669,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		model = getattr(self.llm, 'model', None) or self.model
 		provider = getattr(self.llm, 'provider', None) or 'rust-terminal'
 		summary = {
-			'runtime': 'browser_use.rust',
+			'runtime': 'browser_use.beta',
 			'model': model,
 			'provider': provider,
 			'max_steps': max_steps,
@@ -4914,7 +4914,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				started=started,
 				finished=finished,
 				output_model_schema=self.output_model_schema,
-				process_error='Rust agent stopped before terminal run.',
+				process_error='Beta agent stopped before terminal run.',
 			)
 			self.history = self.result
 			await self._apply_terminal_usage_costs([])
@@ -4922,9 +4922,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._record_laminar_run_observability(
 				max_steps=max_steps,
 				duration_seconds=finished - started,
-				process_error='Rust agent stopped before terminal run.',
+				process_error='Beta agent stopped before terminal run.',
 			)
-			self._record_run_telemetry(max_steps=max_steps, agent_run_error='Rust agent stopped before terminal run.')
+			self._record_run_telemetry(max_steps=max_steps, agent_run_error='Beta agent stopped before terminal run.')
 			self._dispatch_run_update_event()
 			self._log_final_outcome_messages()
 			await self._finalize_run_cleanup()
@@ -4944,7 +4944,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					started=started,
 					finished=finished,
 					output_model_schema=self.output_model_schema,
-					process_error='Rust agent stopped before terminal run.',
+					process_error='Beta agent stopped before terminal run.',
 				)
 				self.history = self.result
 				await self._apply_terminal_usage_costs([])
@@ -4952,9 +4952,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self._record_laminar_run_observability(
 					max_steps=max_steps,
 					duration_seconds=finished - started,
-					process_error='Rust agent stopped before terminal run.',
+					process_error='Beta agent stopped before terminal run.',
 				)
-				self._record_run_telemetry(max_steps=max_steps, agent_run_error='Rust agent stopped before terminal run.')
+				self._record_run_telemetry(max_steps=max_steps, agent_run_error='Beta agent stopped before terminal run.')
 				self._dispatch_run_update_event()
 				self._log_final_outcome_messages()
 				await self._finalize_run_cleanup()
@@ -4994,7 +4994,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		enqueue_timeout: int | None = None,
 	) -> AgentHistoryList[AgentStructuredOutput]:
 		if not self.terminal_session_id or not self._sdk_agent_id:
-			raise RustAgentError('No active Rust session. Call run() before follow_up().')
+			raise BetaAgentError('No active Rust session. Call run() before follow_up().')
 		resolved_max_steps = max_steps if max_steps is not None else self.kwargs.get('max_steps', 100)
 		self.add_new_task(task)
 		self.state.follow_up_task = False
@@ -5913,7 +5913,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.debug('Initial actions completed')
 
 	async def _execute_direct_initial_navigation_actions(self) -> list[ActionResult] | None:
-		"""Pre-navigate existing CDP-backed browser sessions before the Rust agent starts."""
+		"""Pre-navigate existing CDP-backed browser sessions before the Beta agent starts."""
 		self._completed_initial_navigation_urls = []
 		self._completed_initial_navigation_states = []
 		if not _direct_initial_navigation_enabled():
@@ -6268,13 +6268,13 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		except Exception as exc:
 			await self._sdk_client.close()
 			self._sdk_client = None
-			raise RustAgentError(
+			raise BetaAgentError(
 				'Failed to negotiate browser-use-terminal SDK protocol via runtime.ping. '
 				'Install a compatible browser-use-core package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
 			) from exc
 		await self._sdk_client.close()
 		self._sdk_client = None
-		raise RustAgentError(
+		raise BetaAgentError(
 			f'Unsupported browser-use-terminal SDK protocol {protocol_version!r}; expected 1. '
 			'Install a compatible browser-use-core package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
 		)
@@ -6450,7 +6450,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def _conversation_snapshot(self) -> dict[str, Any]:
 		return {
-			'agent': 'browser_use.rust.Agent',
+			'agent': 'browser_use.beta.Agent',
 			'task_id': self.task_id,
 			'session_id': self.session_id,
 			'terminal_session_id': self.terminal_session_id,
@@ -6598,12 +6598,12 @@ def _align_browser_use_agent_signatures() -> None:
 	for name, browser_use_method in vars(_PythonAgent).items():
 		if name.startswith('__') and name != '__init__':
 			continue
-		rust_method = getattr(Agent, name, None)
-		if rust_method is None or not callable(browser_use_method) or not callable(rust_method):
+		beta_method = getattr(Agent, name, None)
+		if beta_method is None or not callable(browser_use_method) or not callable(beta_method):
 			continue
 		try:
-			rust_method.__signature__ = inspect.signature(browser_use_method)
-			rust_method.__annotations__ = dict(getattr(browser_use_method, '__annotations__', {}))
+			beta_method.__signature__ = inspect.signature(browser_use_method)
+			beta_method.__annotations__ = dict(getattr(browser_use_method, '__annotations__', {}))
 		except (TypeError, ValueError, AttributeError):
 			continue
 	try:
@@ -6612,12 +6612,12 @@ def _align_browser_use_agent_signatures() -> None:
 		pass
 	agent_hook_func = Callable[[_PythonAgent], Awaitable[None]]
 	for name in ('run', 'run_sync'):
-		rust_method = getattr(Agent, name, None)
-		if rust_method is None:
+		beta_method = getattr(Agent, name, None)
+		if beta_method is None:
 			continue
 		try:
-			rust_method.__annotations__['on_step_start'] = agent_hook_func | None
-			rust_method.__annotations__['on_step_end'] = agent_hook_func | None
+			beta_method.__annotations__['on_step_start'] = agent_hook_func | None
+			beta_method.__annotations__['on_step_end'] = agent_hook_func | None
 		except (TypeError, AttributeError, KeyError):
 			continue
 
