@@ -2635,7 +2635,8 @@ def test_rust_terminal_binary_finds_default_terminal_install(monkeypatch, tmp_pa
 
 	binary = tmp_path / '.browser-use-terminal' / 'packages' / 'standalone' / 'current' / 'bin' / 'browser-use-terminal'
 	binary.parent.mkdir(parents=True)
-	binary.write_text('#!/bin/sh\n')
+	binary.write_text('#!/bin/sh\nif [ "$1" = "--help" ]; then\n  echo "sdk-server"\nfi\n')
+	binary.chmod(0o755)
 
 	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
 	monkeypatch.chdir(tmp_path)
