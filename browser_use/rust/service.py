@@ -205,13 +205,13 @@ def find_browser_use_terminal_binary() -> str:
 		return path_binary
 	raise RustAgentError(
 		f'Could not find browser-use-terminal. Install Browser Use Terminal with `{TERMINAL_INSTALL_COMMAND}`, '
-		'install browser-use-rust, or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
+		'install browser-use-core, or set BROWSER_USE_TERMINAL_BINARY to a built terminal CLI.'
 	)
 
 
 def _find_packaged_browser_use_terminal_binary() -> str | None:
 	try:
-		from browser_use_rust import binary_path
+		from browser_use_core import binary_path
 	except Exception:
 		return None
 	try:
@@ -6267,7 +6267,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._sdk_client = None
 			raise RustAgentError(
 				f'Unsupported browser-use-terminal SDK protocol {protocol_version!r}; expected 1. '
-				'Install a compatible browser-use-rust package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
+				'Install a compatible browser-use-core package or set BROWSER_USE_TERMINAL_BINARY to a compatible binary.'
 			)
 		return self._sdk_client
 

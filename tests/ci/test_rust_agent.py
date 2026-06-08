@@ -2620,7 +2620,7 @@ def test_rust_terminal_binary_missing_error_mentions_install(monkeypatch):
 	import browser_use.rust.service as rust_service
 
 	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
-	monkeypatch.setitem(sys.modules, 'browser_use_rust', None)
+	monkeypatch.setitem(sys.modules, 'browser_use_core', None)
 	monkeypatch.setattr(rust_service.Path, 'exists', lambda self: False)
 	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary: None)
 
@@ -2629,21 +2629,21 @@ def test_rust_terminal_binary_missing_error_mentions_install(monkeypatch):
 
 	message = str(exc_info.value)
 	assert 'https://browser-use.com/terminal/install.sh' in message
-	assert 'browser-use-rust' in message
+	assert 'browser-use-core' in message
 	assert 'BROWSER_USE_TERMINAL_BINARY' in message
 
 
 def test_rust_terminal_binary_prefers_packaged_binary(monkeypatch):
 	import browser_use.rust.service as rust_service
 
-	class PackagedRust:
+	class PackagedCore:
 		@staticmethod
 		def binary_path(binary_name):
 			assert binary_name == 'browser-use-terminal'
 			return '/tmp/packaged-browser-use-terminal'
 
 	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
-	monkeypatch.setitem(sys.modules, 'browser_use_rust', PackagedRust)
+	monkeypatch.setitem(sys.modules, 'browser_use_core', PackagedCore)
 	monkeypatch.setattr(rust_service.Path, 'exists', lambda self: False)
 	monkeypatch.setattr(rust_service.shutil, 'which', lambda binary_name: None)
 
@@ -2658,7 +2658,7 @@ def test_rust_terminal_binary_finds_default_terminal_install(monkeypatch, tmp_pa
 	binary.write_text('#!/bin/sh\n')
 
 	monkeypatch.delenv('BROWSER_USE_TERMINAL_BINARY', raising=False)
-	monkeypatch.setitem(sys.modules, 'browser_use_rust', None)
+	monkeypatch.setitem(sys.modules, 'browser_use_core', None)
 	monkeypatch.chdir(tmp_path)
 	monkeypatch.setenv('BUT_HOME', str(tmp_path / '.browser-use-terminal'))
 	monkeypatch.setenv('BUT_INSTALL_DIR', str(tmp_path / '.local' / 'bin'))
