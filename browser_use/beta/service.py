@@ -3216,7 +3216,9 @@ def _terminal_turn_usage_payload(events: list[dict[str, Any]]) -> dict[str, Any]
 def _terminal_laminar_usage_summary(raw_usage: dict[str, Any] | None) -> dict[str, Any] | None:
 	if raw_usage is None:
 		return None
-	input_tokens, cached_input_tokens, cache_creation_tokens, _, _ = _input_usage_buckets(raw_usage)
+	input_tokens, cached_input_tokens, cache_creation_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens = (
+		_input_usage_buckets(raw_usage)
+	)
 	output_tokens = _usage_completion_tokens(raw_usage)
 	total_tokens = _usage_total_tokens(raw_usage, input_tokens, cache_creation_tokens, output_tokens)
 	cost = _float_value(raw_usage.get('cost_usd') or raw_usage.get('cost') or raw_usage.get('total_cost'))
@@ -3228,6 +3230,11 @@ def _terminal_laminar_usage_summary(raw_usage: dict[str, Any] | None) -> dict[st
 	}
 	if cache_creation_tokens:
 		summary['cache_creation_input_tokens'] = cache_creation_tokens
+	if cache_creation_5m_tokens or cache_creation_1h_tokens:
+		summary['cache_creation'] = {
+			'ephemeral_5m_input_tokens': cache_creation_5m_tokens,
+			'ephemeral_1h_input_tokens': cache_creation_1h_tokens,
+		}
 	reasoning_output_tokens = _reasoning_output_tokens(raw_usage)
 	if reasoning_output_tokens:
 		summary['reasoning_output_tokens'] = reasoning_output_tokens

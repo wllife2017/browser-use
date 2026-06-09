@@ -102,7 +102,7 @@ class ChatAnthropic(BaseChatModel):
 	def _get_betas_for_invoke(self) -> list[str] | None:
 		betas = self.betas
 
-		if not self.fallbacks:
+		if self.fallbacks is None:
 			return betas
 
 		betas = list(betas or [])
