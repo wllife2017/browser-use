@@ -88,6 +88,14 @@ class ChatAnthropic(BaseChatModel):
 		model = self.name.lower()
 		return 'claude-fable-5' in model or 'claude-mythos-5' in model
 
+	def _requires_auto_tool_choice(self) -> bool:
+		model = self.name.lower()
+		if 'claude-fable-5' in model or 'claude-mythos-5' in model:
+			return True
+		if self.thinking is None:
+			return False
+		return self.thinking.get('type') != 'disabled'
+
 	def _validate_thinking_config(self) -> None:
 		if not self.thinking or not self._is_adaptive_thinking_only_model():
 			return
@@ -313,8 +321,11 @@ class ChatAnthropic(BaseChatModel):
 					cache_control=CacheControlEphemeralParam(type='ephemeral'),
 				)
 
-				# Force the model to use this tool
-				tool_choice = ToolChoiceToolParam(type='tool', name=tool_name)
+				if self._requires_auto_tool_choice():
+					tool_choice = {'type': 'auto'}
+				else:
+					# Force the model to use this tool
+					tool_choice = ToolChoiceToolParam(type='tool', name=tool_name)
 
 				response = await self._create_message(
 					model=self.model,
