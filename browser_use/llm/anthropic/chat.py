@@ -88,6 +88,14 @@ class ChatAnthropic(BaseChatModel):
 		model = self.name.lower()
 		return 'claude-fable-5' in model or 'claude-mythos-5' in model
 
+	def _requires_auto_tool_choice(self) -> bool:
+		model = self.name.lower()
+		if 'claude-fable-5' in model or 'claude-mythos-5' in model:
+			return True
+		if self.thinking is None:
+			return False
+		return self.thinking.get('type') != 'disabled'
+
 	def _validate_thinking_config(self) -> None:
 		if not self.thinking or not self._is_adaptive_thinking_only_model():
 			return
@@ -252,6 +260,47 @@ class ChatAnthropic(BaseChatModel):
 		redacted_thinking = '\n'.join(redacted_thinking_parts) if redacted_thinking_parts else None
 		return completion, thinking, redacted_thinking
 
+	def _json_candidates_from_text(self, text: str) -> list[str]:
+		candidates: list[str] = []
+		stripped = text.strip()
+		if stripped:
+			candidates.append(stripped)
+
+		if stripped.startswith('```') and stripped.endswith('```'):
+			lines = stripped.splitlines()
+			if len(lines) >= 3:
+				candidates.append('\n'.join(lines[1:-1]).strip())
+
+		for start_char, end_char in (('{', '}'), ('[', ']')):
+			start = stripped.find(start_char)
+			end = stripped.rfind(end_char)
+			if start != -1 and end > start:
+				candidates.append(stripped[start : end + 1])
+
+		return list(dict.fromkeys(candidate for candidate in candidates if candidate))
+
+	def _completion_from_text_response(
+		self, response: Any, output_format: type[T], usage: ChatInvokeUsage | None
+	) -> ChatInvokeCompletion[T] | None:
+		response_text, thinking, redacted_thinking = self._extract_content_blocks(response)
+		for candidate in self._json_candidates_from_text(response_text):
+			try:
+				completion = output_format.model_validate_json(candidate)
+			except Exception:
+				try:
+					completion = output_format.model_validate(json.loads(candidate))
+				except Exception:
+					continue
+			return ChatInvokeCompletion(
+				completion=completion,
+				thinking=thinking,
+				redacted_thinking=redacted_thinking,
+				usage=usage,
+				stop_reason=response.stop_reason,
+				stop_details=self._get_stop_details(response),
+			)
+		return None
+
 	@overload
 	async def ainvoke(
 		self, messages: list[BaseMessage], output_format: None = None, **kwargs: Any
@@ -313,8 +362,11 @@ class ChatAnthropic(BaseChatModel):
 					cache_control=CacheControlEphemeralParam(type='ephemeral'),
 				)
 
-				# Force the model to use this tool
-				tool_choice = ToolChoiceToolParam(type='tool', name=tool_name)
+				if self._requires_auto_tool_choice():
+					tool_choice = {'type': 'auto'}
+				else:
+					# Force the model to use this tool
+					tool_choice = ToolChoiceToolParam(type='tool', name=tool_name)
 
 				response = await self._create_message(
 					model=self.model,
@@ -371,6 +423,11 @@ class ChatAnthropic(BaseChatModel):
 								stop_reason=response.stop_reason,
 								stop_details=self._get_stop_details(response),
 							)
+
+				if self._requires_auto_tool_choice():
+					text_completion = self._completion_from_text_response(response, output_format, usage)
+					if text_completion is not None:
+						return text_completion
 
 				# If no tool use block found, raise an error
 				raise ValueError('Expected tool use in response but none found')
