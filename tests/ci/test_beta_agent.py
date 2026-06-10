@@ -3460,6 +3460,8 @@ def test_beta_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):
 		'OPENROUTER_API_KEY',
 		'OPENROUTER_BASE_URL',
 		'DEEPSEEK_API_KEY',
+		'LLM_BROWSER_BROWSER_USE_API_KEY',
+		'LLM_BROWSER_BROWSER_USE_BASE_URL',
 	):
 		monkeypatch.delenv(key, raising=False)
 	monkeypatch.setenv('LLM_BROWSER_OPENAI_API_KEY', 'ambient-openai-key')
@@ -3485,6 +3487,10 @@ def test_beta_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):
 		task='DeepSeek credentials.',
 		llm=LLM('deepseek', 'deepseek-chat', api_key='llm-deepseek-key', base_url='https://ignored.example'),
 	)
+	browser_use_agent = Agent(
+		task='Browser Use credentials.',
+		llm=LLM('browser-use', 'bu-3-max', api_key='llm-browser-use-key', base_url='https://llm.example/v1'),
+	)
 	ambient_env = Agent(
 		task='Ambient credentials.',
 		llm=LLM('anthropic', 'claude-test'),
@@ -3492,6 +3498,7 @@ def test_beta_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):
 	anthropic_env = anthropic_agent._run_env()
 	openrouter_env = openrouter_agent._run_env()
 	deepseek_env = deepseek_agent._run_env()
+	browser_use_env = browser_use_agent._run_env()
 
 	assert openai_env['LLM_BROWSER_OPENAI_API_KEY'] == 'llm-openai-key'
 	assert openai_env['LLM_BROWSER_OPENAI_BASE_URL'] == 'https://openai.example/v1'
@@ -3501,6 +3508,8 @@ def test_beta_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):
 	assert openrouter_env['OPENROUTER_BASE_URL'] == 'https://openrouter.example/api/v1'
 	assert deepseek_env['DEEPSEEK_API_KEY'] == 'llm-deepseek-key'
 	assert 'LLM_BROWSER_OPENAI_COMPAT_BASE_URL' not in deepseek_env
+	assert browser_use_env['LLM_BROWSER_BROWSER_USE_API_KEY'] == 'llm-browser-use-key'
+	assert browser_use_env['LLM_BROWSER_BROWSER_USE_BASE_URL'] == 'https://llm.example'
 	assert ambient_env['LLM_BROWSER_ANTHROPIC_API_KEY'] == 'ambient-anthropic-key'
 
 	assert openai_agent._sdk_run_params(max_steps=3, task=openai_agent.task)['llm'] | {'timeout': None} == {
@@ -3521,6 +3530,11 @@ def test_beta_agent_bridges_llm_credentials_to_terminal_env(monkeypatch):
 	assert deepseek_agent._sdk_run_params(max_steps=3, task=deepseek_agent.task)['llm'] | {'timeout': None} == {
 		'provider': 'deepseek',
 		'model': 'deepseek-chat',
+		'timeout': None,
+	}
+	assert browser_use_agent._sdk_run_params(max_steps=3, task=browser_use_agent.task)['llm'] | {'timeout': None} == {
+		'provider': 'browser-use',
+		'model': 'bu-3-max',
 		'timeout': None,
 	}
 
