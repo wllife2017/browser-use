@@ -88,8 +88,11 @@ _DEFAULT_PDF_HEADER_TEMPLATE = (
 _DEFAULT_PDF_FOOTER_TEMPLATE = (
 	'<div style="font-size:9px; color:#666; width:100%; padding:0 0.4in; '
 	'box-sizing:border-box; display:flex; justify-content:space-between;">'
-	'<span class="url"></span>'
-	'<span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>'
+	# A flex item defaults to min-width:auto and won't shrink below its content,
+	# so a long/unbroken URL would overflow and push the page count off-page.
+	# min-width:0 + ellipsis lets the URL truncate while page numbers stay put.
+	'<span class="url" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>'
+	'<span style="flex-shrink:0; padding-left:8px;"><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>'
 )
 
 

@@ -332,6 +332,33 @@ class TestSaveAsPdf:
 
 			assert 'CONFIDENTIALDRAFT' in text_no_ws, f'Custom header not found in PDF text: {text_no_ws!r}'
 
+	async def test_save_as_pdf_long_url_keeps_page_number(self, tools, browser_session, base_url):
+		"""A long footer URL truncates instead of pushing the page number off the printable area."""
+		import pypdf
+
+		# Long, unbroken URL — without min-width:0 + ellipsis on the url span this
+		# overflows the footer and pushes the page count past the page edge.
+		long_url = f'{base_url}/pdf-test?q={"x" * 400}'
+		await tools.navigate(url=long_url, new_tab=False, browser_session=browser_session)
+		await asyncio.sleep(0.5)
+
+		with tempfile.TemporaryDirectory() as temp_dir:
+			file_system = FileSystem(temp_dir)
+			result = await tools.save_as_pdf(
+				file_name='long-url',
+				# Suppress the header date so the page-number check below is unambiguous.
+				header_template='<span></span>',
+				browser_session=browser_session,
+				file_system=file_system,
+			)
+
+			pdf_path = _get_attachments(result)[0]
+			reader = pypdf.PdfReader(pdf_path)
+			text_no_ws = ''.join(reader.pages[0].extract_text().split())
+
+			# The footer page count must still render despite the very long URL.
+			assert '1/1' in text_no_ws, f'page number pushed off-page by long URL: {text_no_ws!r}'
+
 	async def test_save_as_pdf_param_model_schema(self):
 		"""SaveAsPdfAction schema exposes the right fields with defaults."""
 		from browser_use.tools.views import SaveAsPdfAction
