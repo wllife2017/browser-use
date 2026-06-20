@@ -34,7 +34,7 @@ If you're unsure whether you can see images, assume you can't and use v2.
 
 Rule of thumb (**vision agents only** — text-only agents use v2 for everything, see above): **one flow → browser-harness directly; many flows → subagents (v2 recommended).** Either way `browser-harness` is required — as the direct driver, the subagent driver, the v2 key store, and the localhost tunnel.
 
-## Dependency: browser-harness (required)
+## Dependency: browser-harness (required — install it yourself)
 
 This skill runs the test through **browser-harness** — a separate tool you install once. It is not optional; QA must run on a real Browser Use cloud browser, never the user's local Chrome.
 
@@ -46,13 +46,23 @@ print("browser-harness OK")
 PY
 ```
 
-If `browser-harness` is **not** on `PATH`, stop and tell the user to install it — it's a one-time setup — then resume. Don't try to QA without it.
+If `browser-harness` is **not** on `PATH`, **install it yourself — don't make the user do it.** QA runs on a *cloud* browser, so the CLI is all you need: **none** of browser-harness's local-browser setup (`chrome://inspect`, `--remote-debugging-port`, the "Allow remote debugging" popup) applies here — skip all of it. The install is one-time (~30s), no clone:
 
-The simplest install: open **https://www.browser-harness.com/**, copy its **"prompt for LLMs,"** and paste it into an agent (Claude Code, Codex, etc.). That prompt drives the whole setup — clone the repo, run `install.md` to install and connect a browser, then read `SKILL.md`/`helpers.py` for usage. The page is canonical; reproduced here for convenience:
+```bash
+command -v uv || curl -LsSf https://astral.sh/uv/install.sh | sh   # the uv installer, only if missing
+uv tool install "git+https://github.com/browser-use/browser-harness"
+command -v browser-harness                                         # verify it's on PATH now
+```
+
+(No `uv` and can't `curl | sh`? Install uv per https://docs.astral.sh/uv/getting-started/installation/ then re-run the `uv tool install` line — or `pipx install "git+https://github.com/browser-use/browser-harness"`.)
+
+The only other thing a run needs is a `BROWSER_USE_API_KEY`, and that **also** auto-resolves with no human — see `references/methodology.md` step 0 (it can self-sign-up for a free key). So a fresh machine goes from "just installed `qa`" to a working test without the user doing any setup.
+
+**Last resort only** — if you genuinely can't install it (no network, no Python): stop and have the user open **https://www.browser-harness.com/** and paste its **"prompt for LLMs"** into an agent:
 
 > Set up https://github.com/browser-use/browser-harness for me. Read `install.md` first to install and connect this repo to my real browser. Then read `SKILL.md` for normal usage. Always read `helpers.py` because that is where the functions are. When you open a setup or verification tab, activate it so I can see the active browser tab. After it is installed, open this repository in my browser and, if I am logged in to GitHub, ask me whether you should star it for me as a quick demo that the interaction works — only click the star if I say yes. If I am not logged in, just go to browser-use.com.
 
-Manual alternative: install the `browser-harness` package straight from the repo — https://github.com/browser-use/browser-harness (follow its `install.md`). Either way, re-run `command -v browser-harness` and don't continue until it succeeds.
+Re-run `command -v browser-harness` and don't continue until it succeeds. Never fall back to the user's local Chrome.
 
 Do not attempt to QA with anything other than browser-harness + a cloud browser.
 
