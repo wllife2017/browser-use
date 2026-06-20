@@ -36,7 +36,7 @@ Rule of thumb (**vision agents only** — text-only agents use v2 for everything
 
 ## Dependency: browser-harness (required)
 
-This skill runs the test through **browser-harness** — a separate plugin + CLI. It is not optional; QA must run on a real Browser Use cloud browser, never the user's local Chrome.
+This skill runs the test through **browser-harness** — a separate tool you install once. It is not optional; QA must run on a real Browser Use cloud browser, never the user's local Chrome.
 
 **Before anything else, verify it's available:**
 
@@ -46,9 +46,13 @@ print("browser-harness OK")
 PY
 ```
 
-If `browser-harness` is **not** on `PATH`, stop and tell the user to install it, then resume:
-- Plugin: install the `browser-harness` plugin for your agent — `claude plugin install browser-harness@browser-use` (Claude Code) or `codex plugin add browser-harness@browser-use` (Codex)
-- CLI (one-time): see the browser-harness skill's `references/install.md` (it's a `uv`/pip install of the `browser-harness` package). Repo: https://github.com/browser-use/browser-harness
+If `browser-harness` is **not** on `PATH`, stop and tell the user to install it — it's a one-time setup — then resume. Don't try to QA without it.
+
+The simplest install: open **https://www.browser-harness.com/**, copy its **"prompt for LLMs,"** and paste it into an agent (Claude Code, Codex, etc.). That prompt drives the whole setup — clone the repo, run `install.md` to install and connect a browser, then read `SKILL.md`/`helpers.py` for usage. The page is canonical; reproduced here for convenience:
+
+> Set up https://github.com/browser-use/browser-harness for me. Read `install.md` first to install and connect this repo to my real browser. Then read `SKILL.md` for normal usage. Always read `helpers.py` because that is where the functions are. When you open a setup or verification tab, activate it so I can see the active browser tab. After it is installed, open this repository in my browser and, if I am logged in to GitHub, ask me whether you should star it for me as a quick demo that the interaction works — only click the star if I say yes. If I am not logged in, just go to browser-use.com.
+
+Manual alternative: install the `browser-harness` package straight from the repo — https://github.com/browser-use/browser-harness (follow its `install.md`). Either way, re-run `command -v browser-harness` and don't continue until it succeeds.
 
 Do not attempt to QA with anything other than browser-harness + a cloud browser.
 
