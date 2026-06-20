@@ -77,7 +77,10 @@ Do not attempt to QA with anything other than browser-harness + a cloud browser.
      - **Claude subagents** → spawn one Agent per flow, each following `references/methodology.md` on browser-harness.
 
    *Whenever you use the v2 backend (either the no-vision case or the recommended fan-out): as each task is created, open its dashboard thread `https://cloud.browser-use.com/thread/{sessionId}` (the **session id** from the create response — not the task id) in the user's local Chrome so they can watch the agent run — the reference's `open_local(...)` helper does this. Always print the URL too.*
-3. **Tear down** what you started — only the **one-flow / Claude** paths have anything to stop (cloud browser + tunnel). A v2 task on a public URL has nothing to tear down (its one-off session auto-closes).
+3. **Tear down** what you started — stop **everything you opened**, on every path:
+   - **Tunnel** — if you tunneled a `localhost` target, kill the tunnel process. This applies to **every** path that tunnels, **v2 included** (a v2 run against localhost still starts a tunnel) — don't leave it orphaned.
+   - **Cloud browser** — the one-flow / Claude paths drive a browser-harness cloud browser; stop it.
+   - A v2 task against a **public** URL has nothing to tear down (its one-off session auto-closes); a v2 task against **localhost** still leaves the tunnel, so close that.
 4. **Return the verdict**: lead with `Score: N/5`, then task, result, what worked, issues (tagged), edge cases, and evidence — per the rubric and output format in `references/methodology.md`. **Fanning out?** Give a per-flow `Score: N/5` line and an **overall score that reflects the weakest critical path** (don't average a broken flow up because others passed).
 
 Scale effort to the ask: a quick "does X work?" is a few interactions and one score; "thoroughly QA this" warrants more flows and edge cases. Keep the verdict honest, specific, and reproducible.
