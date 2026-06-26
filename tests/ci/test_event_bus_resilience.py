@@ -1,13 +1,8 @@
 """Regression tests for ENG-5280: V2 worker crash on warm-Lambda resume.
 
-When a ``keep_alive`` ``BrowserSession`` is reused across warm Lambda invocations, its
-event bus is stopped and has its async primitives (``event_queue`` / ``_on_idle``) nulled
-out by ``Agent.close()`` to release the event loop. On resume the worker can ``step()`` the
-torn-down bus before any ``dispatch()`` restarts it. Stock ``bubus.EventBus.step()`` asserts
-``EventBus._start() must be called before step()`` in that state, crashing the run.
-
-``BrowserSession`` therefore uses ``ResilientEventBus``, whose ``step()`` / ``wait_until_idle()``
-are safe no-ops on a torn-down bus while a later ``dispatch()`` still restarts it.
+A reused keep_alive session bus is stopped and nulled by Agent.close(); on resume the worker
+can step() it before a dispatch() restarts it, which makes stock bubus assert. ResilientEventBus
+no-ops step()/wait_until_idle() in that state while still restarting on the next dispatch().
 """
 
 import asyncio

@@ -104,27 +104,16 @@ class CDPSession(BaseModel):
 
 
 class ResilientEventBus(EventBus):
-	"""``EventBus`` whose ``step()``/``wait_until_idle()`` tolerate a torn-down bus.
+	"""EventBus whose step()/wait_until_idle() no-op on a torn-down bus instead of asserting.
 
-	On a warm-Lambda resume the V2 worker can reuse a ``keep_alive`` ``BrowserSession``
-	whose event bus was already stopped and had its async primitives (``event_queue`` /
-	``_on_idle``) nulled out by ``Agent.close()`` (done to release the event loop). In that
-	state bubus's ``EventBus.step()`` asserts ``EventBus._start() must be called before
-	step()``, which crashed the worker mid-run and dead-lettered the task (ENG-5280).
-
-	The nulling is deliberate — it lets the next ``dispatch()`` recreate a fresh queue and
-	``_start()`` the bus again — so instead of changing teardown we make ``step()`` and
-	``wait_until_idle()`` safe no-ops when the bus has not been started. A later
-	``dispatch()`` still restarts the bus as usual.
+	Agent.close() stops a keep_alive session's bus and nulls its async primitives to release
+	the event loop. On warm-Lambda resume the worker can step() it before a dispatch() restarts
+	it; stock bubus then asserts "_start() must be called before step()" (ENG-5280).
 	"""
 
 	def __init__(self, name: str | None = None, **kwargs: Any) -> None:
-		# bubus derives the default bus name from the class name, which would make session
-		# buses ``ResilientEventBus_*`` instead of ``EventBus_*``. Keep the original prefix so
-		# bus names stay stable for logging/identification (matches EventBus's own scheme).
-		if name is None:
-			name = f'EventBus_{uuid7str()[-8:]}'
-		super().__init__(name=name, **kwargs)
+		# Keep the EventBus_ name prefix (bubus would otherwise derive it from the class name).
+		super().__init__(name=name or f'EventBus_{uuid7str()[-8:]}', **kwargs)
 
 	async def step(
 		self,
