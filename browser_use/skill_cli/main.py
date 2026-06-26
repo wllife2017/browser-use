@@ -41,13 +41,39 @@ if '--mcp' in sys.argv:
 	sys.exit(0)
 
 
-# Helper to find the subcommand (first non-flag argument)
-def _get_subcommand() -> str | None:
-	"""Get the first non-flag argument (the subcommand)."""
-	for arg in sys.argv[1:]:
-		if not arg.startswith('-'):
-			return arg
+_GLOBAL_FLAGS_WITH_VALUES = {
+	'--cdp-url',
+	'--profile',
+	'--session',
+	'--template',
+}
+
+
+# Helper to find the subcommand before building argparse.
+def _get_subcommand_index() -> int | None:
+	"""Get the sys.argv index of the first subcommand, skipping global flag values."""
+	i = 1
+	while i < len(sys.argv):
+		arg = sys.argv[i]
+		if arg == '--':
+			return i + 1 if i + 1 < len(sys.argv) else None
+		if any(arg.startswith(f'{flag}=') for flag in _GLOBAL_FLAGS_WITH_VALUES):
+			i += 1
+			continue
+		if arg in _GLOBAL_FLAGS_WITH_VALUES:
+			i += 2 if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('-') else 1
+			continue
+		if arg.startswith('-'):
+			i += 1
+			continue
+		return i
 	return None
+
+
+def _get_subcommand() -> str | None:
+	"""Get the first subcommand, if present."""
+	index = _get_subcommand_index()
+	return sys.argv[index] if index is not None else None
 
 
 # Handle 'install' command - installs Chromium browser + system dependencies
@@ -96,7 +122,9 @@ if _get_subcommand() == 'init':
 			pass
 
 	# Remove 'init' from sys.argv so click doesn't see it as an unexpected argument
-	sys.argv.remove('init')
+	init_idx = _get_subcommand_index()
+	if init_idx is not None:
+		sys.argv.pop(init_idx)
 	init_main()
 	sys.exit(0)
 
@@ -133,11 +161,22 @@ if '--template' in sys.argv:
 	init_main()
 	sys.exit(0)
 
+# Read skill package/write SKILL.md
+if _get_subcommand() == 'skill':
+	from browser_use.skill_cli.commands.skill import handle as handle_skill_command
+
+	skill_idx = _get_subcommand_index()
+	if skill_idx is None:
+		sys.exit(1)
+	sys.exit(handle_skill_command(sys.argv[skill_idx + 1 :]))
+
 # Handle 'cloud --help' / 'cloud -h' early — argparse intercepts --help before
 # REMAINDER can capture it, so we route to our custom usage printer directly.
 # Only intercept when --help is immediately after 'cloud' (not 'cloud v2 --help').
 if _get_subcommand() == 'cloud':
-	cloud_idx = sys.argv.index('cloud')
+	cloud_idx = _get_subcommand_index()
+	if cloud_idx is None:
+		sys.exit(1)
 	if cloud_idx + 1 < len(sys.argv) and sys.argv[cloud_idx + 1] in ('--help', '-h'):
 		from browser_use.skill_cli.commands.cloud import handle_cloud_command
 
@@ -680,6 +719,10 @@ Setup:
 
 	# doctor
 	subparsers.add_parser('doctor', help='Check browser-use installation and dependencies')
+
+	# skill
+	skill_p = subparsers.add_parser('skill', help='Print or install the Browser Use assistant skill', add_help=False)
+	skill_p.add_argument('skill_args', nargs=argparse.REMAINDER, help='skill subcommand args')
 
 	# connect (to local Chrome)
 	subparsers.add_parser('connect', help='Connect to running Chrome via CDP')
@@ -1284,6 +1327,12 @@ def main() -> int:
 			print(f'  Docs: {CLI_DOCS_URL}')
 
 		return 0
+
+	# Handle skill command
+	if args.command == 'skill':
+		from browser_use.skill_cli.commands import skill
+
+		return skill.handle(getattr(args, 'skill_args', []))
 
 	# Handle config command
 	if args.command == 'config':

@@ -5,6 +5,7 @@ from browser_use.skill_cli.commands import (
 	doctor,
 	python_exec,
 	setup,
+	skill,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
 	'doctor',
 	'python_exec',
 	'setup',
+	'skill',
 ]

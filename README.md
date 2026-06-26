@@ -205,9 +205,7 @@ The CLI keeps the browser running between commands for fast iteration. See [CLI 
 For [Claude Code](https://claude.ai/code), install the skill to enable AI-assisted browser automation:
 
 ```bash
-mkdir -p ~/.claude/skills/browser-use
-curl -o ~/.claude/skills/browser-use/SKILL.md \
-  https://raw.githubusercontent.com/browser-use/browser-use/main/skills/browser-use/SKILL.md
+browser-use skill install
 ```
 
 <br/>

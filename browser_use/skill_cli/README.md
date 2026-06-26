@@ -352,9 +352,7 @@ browser.screenshot('scrolled.png')
 For [Claude Code](https://claude.ai/code), a skill provides richer context for browser automation:
 
 ```bash
-mkdir -p ~/.claude/skills/browser-use
-curl -o ~/.claude/skills/browser-use/SKILL.md \
-  https://raw.githubusercontent.com/browser-use/browser-use/main/skills/browser-use/SKILL.md
+browser-use skill install
 ```
 
 ## How It Works
