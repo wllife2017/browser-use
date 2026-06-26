@@ -118,6 +118,14 @@ class ResilientEventBus(EventBus):
 	``dispatch()`` still restarts the bus as usual.
 	"""
 
+	def __init__(self, name: str | None = None, **kwargs: Any) -> None:
+		# bubus derives the default bus name from the class name, which would make session
+		# buses ``ResilientEventBus_*`` instead of ``EventBus_*``. Keep the original prefix so
+		# bus names stay stable for logging/identification (matches EventBus's own scheme).
+		if name is None:
+			name = f'EventBus_{uuid7str()[-8:]}'
+		super().__init__(name=name, **kwargs)
+
 	async def step(
 		self,
 		event: 'BaseEvent[Any] | None' = None,

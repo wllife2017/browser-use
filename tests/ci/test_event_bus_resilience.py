@@ -34,6 +34,13 @@ def test_browser_session_uses_resilient_event_bus():
 	assert isinstance(session.event_bus, ResilientEventBus)
 
 
+def test_resilient_event_bus_keeps_event_bus_name_prefix():
+	"""The subclass must keep the ``EventBus_`` default name (not ``ResilientEventBus_``)."""
+	assert ResilientEventBus().name.startswith('EventBus_')
+	# Explicit names are still honored.
+	assert ResilientEventBus(name='EventBus_custom').name == 'EventBus_custom'
+
+
 async def test_step_on_torn_down_bus_is_noop_not_assertion():
 	"""Stepping a stopped+nulled bus returns None instead of raising AssertionError."""
 	bus = ResilientEventBus(name='ResilientWarmResumeStep')
