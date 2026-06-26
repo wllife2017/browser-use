@@ -11,7 +11,7 @@ from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
 import httpx
-from bubus import EventBus
+from bubus import BaseEvent, EventBus
 from cdp_use import CDPClient
 from cdp_use.cdp.fetch import AuthRequiredEvent, RequestPausedEvent
 from cdp_use.cdp.network import Cookie
@@ -101,6 +101,37 @@ class CDPSession(BaseModel):
 	# Lifecycle monitoring (populated by SessionManager)
 	_lifecycle_events: Any = PrivateAttr(default=None)
 	_lifecycle_lock: Any = PrivateAttr(default=None)
+
+
+class ResilientEventBus(EventBus):
+	"""``EventBus`` whose ``step()``/``wait_until_idle()`` tolerate a torn-down bus.
+
+	On a warm-Lambda resume the V2 worker can reuse a ``keep_alive`` ``BrowserSession``
+	whose event bus was already stopped and had its async primitives (``event_queue`` /
+	``_on_idle``) nulled out by ``Agent.close()`` (done to release the event loop). In that
+	state bubus's ``EventBus.step()`` asserts ``EventBus._start() must be called before
+	step()``, which crashed the worker mid-run and dead-lettered the task (ENG-5280).
+
+	The nulling is deliberate — it lets the next ``dispatch()`` recreate a fresh queue and
+	``_start()`` the bus again — so instead of changing teardown we make ``step()`` and
+	``wait_until_idle()`` safe no-ops when the bus has not been started. A later
+	``dispatch()`` still restarts the bus as usual.
+	"""
+
+	async def step(
+		self,
+		event: 'BaseEvent[Any] | None' = None,
+		timeout: float | None = None,
+		wait_for_timeout: float = 0.1,
+	) -> 'BaseEvent[Any] | None':
+		if self._on_idle is None or self.event_queue is None:
+			return None
+		return await super().step(event, timeout, wait_for_timeout)
+
+	async def wait_until_idle(self, timeout: float | None = None) -> None:
+		if self._on_idle is None or self.event_queue is None:
+			return None
+		return await super().wait_until_idle(timeout)
 
 
 class BrowserSession(BaseModel):
@@ -518,7 +549,7 @@ class BrowserSession(BaseModel):
 		return self._demo_mode
 
 	# Main shared event bus for all browser session + all watchdogs
-	event_bus: EventBus = Field(default_factory=EventBus)
+	event_bus: EventBus = Field(default_factory=ResilientEventBus)
 
 	# Mutable public state - which target has agent focus
 	agent_focus_target_id: TargetID | None = None
@@ -713,7 +744,7 @@ class BrowserSession(BaseModel):
 		# Reset all state
 		await self.reset()
 		# Create fresh event bus
-		self.event_bus = EventBus()
+		self.event_bus = ResilientEventBus()
 
 	async def stop(self) -> None:
 		"""Stop the browser session without killing the browser process.
@@ -738,7 +769,7 @@ class BrowserSession(BaseModel):
 		# Reset all state
 		await self.reset()
 		# Create fresh event bus
-		self.event_bus = EventBus()
+		self.event_bus = ResilientEventBus()
 
 	async def close(self) -> None:
 		"""Alias for stop()."""
