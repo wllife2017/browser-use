@@ -187,7 +187,7 @@ uvx browser-use init --template default --output my_agent.py
 
 # 💻 CLI
 
-Fast, persistent browser automation from the command line:
+**Browser Use CLI 3.0** is less a new command than a change in posture. It is powered by Browser Harness, and it applies what we learned from [the bitter lesson of agent harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses) and [the bitter lesson of agent frameworks](https://browser-use.com/posts/bitter-lesson-agent-frameworks): the model does not need a maze of clever abstractions so much as a direct, dependable surface for acting in the browser. The result is a CLI that gives agents room to route around failure, while keeping installation, auth, diagnostics, and browser control simple enough to trust.
 
 ```bash
 browser-use <<'PY'
