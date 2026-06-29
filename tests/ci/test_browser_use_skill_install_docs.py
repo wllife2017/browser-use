@@ -133,7 +133,7 @@ def test_browser_use_skill_cli_validates_destination_before_installing_harness(t
 	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)
 
 	result = subprocess.run(
-		[sys.executable, '-m', 'browser_use.skill_cli.main', 'skill', 'install', '--path', str(blocking_file)],
+		[sys.executable, '-m', 'browser_use.skill_cli.main', 'skill', 'install', '--path', str(blocking_file / 'nested')],
 		cwd=ROOT,
 		env=env,
 		capture_output=True,

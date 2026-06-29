@@ -112,8 +112,13 @@ def _validate_output_paths(output_paths: list[Path]) -> None:
 	for output_path in output_paths:
 		if output_path.exists() and output_path.is_dir():
 			raise RuntimeError(f'{output_path} is a directory, expected a SKILL.md file path.')
-		if output_path.parent.exists() and not output_path.parent.is_dir():
-			raise RuntimeError(f'{output_path.parent} is not a directory.')
+		ancestor = output_path.parent
+		while not ancestor.exists():
+			if ancestor.parent == ancestor:
+				break
+			ancestor = ancestor.parent
+		if ancestor.exists() and not ancestor.is_dir():
+			raise RuntimeError(f'{ancestor} is not a directory.')
 
 
 def handle(argv: list[str]) -> int:
