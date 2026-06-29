@@ -82,7 +82,11 @@ def _build_parser() -> argparse.ArgumentParser:
 		type=Path,
 		help='Custom output directory or SKILL.md path',
 	)
-	install.add_argument('--force', action='store_true', help='Overwrite an existing SKILL.md')
+	install.add_argument(
+		'--force',
+		action='store_true',
+		help='Accepted for compatibility; install overwrites existing SKILL.md files by default',
+	)
 	install.add_argument(
 		'--no-install',
 		action='store_true',
@@ -128,14 +132,7 @@ def handle(argv: list[str]) -> int:
 			print(f'Error: {exc}', file=sys.stderr)
 			return 1
 
-		output_paths = _resolve_output_paths(args.target, args.path)
-		existing = [path for path in output_paths if path.exists()]
-		if existing and not args.force:
-			paths = ', '.join(str(path) for path in existing)
-			print(f'Error: {paths} already exists. Use --force to overwrite.', file=sys.stderr)
-			return 1
-
-		for output_path in output_paths:
+		for output_path in _resolve_output_paths(args.target, args.path):
 			output_path.parent.mkdir(parents=True, exist_ok=True)
 			output_path.write_text(text, encoding='utf-8')
 			print(f'Installed Browser Use skill to {output_path}')

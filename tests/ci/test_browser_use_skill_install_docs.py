@@ -79,6 +79,14 @@ def test_browser_use_skill_cli_installs_browser_harness_package_skill(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
 
 	home = tmp_path / 'home'
+	for stale in (
+		home / '.claude' / 'skills' / 'browser-use' / 'SKILL.md',
+		home / '.codex' / 'skills' / 'browser-use' / 'SKILL.md',
+		home / '.agents' / 'skills' / 'browser-use' / 'SKILL.md',
+	):
+		stale.parent.mkdir(parents=True)
+		stale.write_text('stale browser-use skill', encoding='utf-8')
+
 	uv_args = tmp_path / 'uv-args.txt'
 	env = os.environ.copy()
 	env['HOME'] = str(home)
