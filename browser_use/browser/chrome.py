@@ -7,6 +7,34 @@ import subprocess
 from pathlib import Path
 
 
+def _chrome_user_data_dir_for_executable(executable_path: str | None) -> Path | None:
+	if executable_path is None:
+		return None
+
+	system = platform.system()
+	path = Path(executable_path)
+	if system == 'Darwin':
+		app_path = str(path)
+		base = Path.home() / 'Library' / 'Application Support'
+		if 'Chromium.app' in app_path:
+			return base / 'Chromium'
+		if 'Google Chrome Canary.app' in app_path:
+			return base / 'Google' / 'Chrome Canary'
+		if 'Google Chrome.app' in app_path:
+			return base / 'Google' / 'Chrome'
+	if system == 'Linux':
+		name = path.name
+		base = Path.home() / '.config'
+		if name in {'chromium', 'chromium-browser'}:
+			return base / 'chromium'
+		if name in {'google-chrome', 'google-chrome-stable'}:
+			return base / 'google-chrome'
+	if system == 'Windows' and path.name.lower() == 'chrome.exe':
+		return Path(os.path.expandvars(r'%LocalAppData%\Google\Chrome\User Data'))
+
+	return None
+
+
 def find_chrome_executable() -> str | None:
 	"""Find Chrome/Chromium executable on the system."""
 	system = platform.system()
@@ -41,10 +69,13 @@ def find_chrome_executable() -> str | None:
 	return None
 
 
-def get_chrome_profile_path(profile: str | None) -> str | None:
+def get_chrome_profile_path(profile: str | None, executable_path: str | None = None) -> str | None:
 	"""Get Chrome user data directory, or return a specific profile directory name."""
 	if profile is not None:
 		return profile
+
+	if browser_user_data_dir := _chrome_user_data_dir_for_executable(executable_path):
+		return str(browser_user_data_dir)
 
 	system = platform.system()
 	if system == 'Darwin':
@@ -63,7 +94,7 @@ def get_chrome_profile_path(profile: str | None) -> str | None:
 
 def list_chrome_profiles() -> list[dict[str, str]]:
 	"""List available Chrome profiles with their display names."""
-	user_data_dir = get_chrome_profile_path(None)
+	user_data_dir = get_chrome_profile_path(None, executable_path=find_chrome_executable())
 	if user_data_dir is None:
 		return []
 
@@ -75,7 +106,11 @@ def list_chrome_profiles() -> list[dict[str, str]]:
 		with open(local_state_path, encoding='utf-8') as f:
 			local_state = json.load(f)
 
+		if not isinstance(local_state, dict):
+			return []
 		info_cache = local_state.get('profile', {}).get('info_cache', {})
+		if not isinstance(info_cache, dict):
+			return []
 		return sorted(
 			[
 				{
@@ -83,8 +118,9 @@ def list_chrome_profiles() -> list[dict[str, str]]:
 					'name': info.get('name', directory),
 				}
 				for directory, info in info_cache.items()
+				if isinstance(info, dict)
 			],
 			key=lambda profile: profile['directory'],
 		)
-	except (json.JSONDecodeError, KeyError, OSError):
+	except (json.JSONDecodeError, KeyError, OSError, TypeError):
 		return []
