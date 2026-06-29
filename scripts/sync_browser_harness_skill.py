@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -8,7 +7,8 @@ from pathlib import Path
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE_URL = 'https://raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md'
+sys.path.insert(0, str(ROOT))
+DEFAULT_SOURCE_URL = 'https://raw.githubusercontent.com/browser-use/browser-harness/refs/heads/main/SKILL.md'
 DEFAULT_REPO_OUTPUT_PATH = ROOT / 'skills' / 'browser-use' / 'SKILL.md'
 DEFAULT_PACKAGE_OUTPUT_PATH = ROOT / 'browser_use' / 'skills' / 'browser-use' / 'SKILL.md'
 
