@@ -7,12 +7,18 @@ on:
     paths:
       - 'browser_use/cli.py'
       - 'browser_use/skills/**'
+      - 'skills/browser-use/SKILL.md'
+      - 'browser_use/skills/browser-use/SKILL.md'
+      - 'scripts/sync_browser_harness_skill.py'
       - 'pyproject.toml'
       - '.github/workflows/install-script.yml'
   pull_request:
     paths:
       - 'browser_use/cli.py'
       - 'browser_use/skills/**'
+      - 'skills/browser-use/SKILL.md'
+      - 'browser_use/skills/browser-use/SKILL.md'
+      - 'scripts/sync_browser_harness_skill.py'
       - 'pyproject.toml'
       - '.github/workflows/install-script.yml'
   workflow_dispatch:
@@ -25,6 +31,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-browser-use-skill:
+    name: browser-use skill sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Check generated Browser Use skill
+        run: uv run --no-sync python scripts/sync_browser_harness_skill.py --check
+
   test-pip-install:
     name: uv pip install (${{ matrix.os }})
     strategy:

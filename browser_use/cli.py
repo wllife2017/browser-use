@@ -7,6 +7,67 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 
 
+def _run_mcp_server() -> None:
+	import asyncio
+	import logging
+	import os
+
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'critical'
+	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
+	logging.disable(logging.CRITICAL)
+
+	from browser_use.mcp.server import main as mcp_main
+
+	asyncio.run(mcp_main())
+
+
+def _run_install_command(argv: list[str]) -> int:
+	if any(arg in {'-h', '--help'} for arg in argv):
+		print('usage: browser-use install')
+		print()
+		print('Install Chromium browser and system dependencies.')
+		return 0
+
+	import platform
+	import subprocess
+
+	print('Installing Chromium browser + system dependencies...')
+	print('This may take a few minutes...\n')
+
+	cmd = ['uvx', 'playwright', 'install', 'chromium']
+	if platform.system() == 'Linux':
+		cmd.append('--with-deps')
+	cmd.append('--no-shell')
+
+	result = subprocess.run(cmd)
+	if result.returncode == 0:
+		print('\nInstallation complete.')
+		print('Ready to use. Run: uvx browser-use')
+		return 0
+
+	print('\nInstallation failed', file=sys.stderr)
+	return result.returncode or 1
+
+
+def _run_init_command(argv: list[str]) -> int | None:
+	from browser_use.init_cmd import main as init_main
+
+	original_argv = sys.argv
+	try:
+		sys.argv = [original_argv[0], *argv]
+		init_main()
+	except SystemExit as exc:
+		if exc.code is None:
+			return 0
+		if isinstance(exc.code, int):
+			return exc.code
+		print(exc.code, file=sys.stderr)
+		return 1
+	finally:
+		sys.argv = original_argv
+	return 0
+
+
 def _as_browser_use_cli_text(text: str) -> str:
 	return text.replace('Browser Harness', 'Browser Use').replace('browser-harness', 'browser-use')
 
@@ -82,6 +143,15 @@ def browser_use_tui_main() -> int | None:
 
 def main() -> int | None:
 	args = sys.argv[1:]
+	if '--mcp' in args:
+		_run_mcp_server()
+		return 0
+	if args and args[0] == 'install':
+		return _run_install_command(args[1:])
+	if args and args[0] == 'init':
+		return _run_init_command(args[1:])
+	if '--template' in args or '-t' in args:
+		return _run_init_command(args)
 	if args and args[0] == 'skill':
 		from browser_use.skills.install import handle as handle_skill_command
 

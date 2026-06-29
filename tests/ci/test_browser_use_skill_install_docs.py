@@ -47,42 +47,6 @@ def test_docs_install_browser_use_skill_from_package_alias():
 	assert 'raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md' not in readme
 
 
-def test_browser_use_repo_does_not_carry_a_copied_browser_harness_skill():
-	assert not (ROOT / 'skills' / 'browser-use' / 'SKILL.md').exists()
-	assert not (ROOT / 'scripts' / 'sync_browser_use_skill.py').exists()
-
-
-def test_browser_use_skill_alias_reads_browser_harness_package(monkeypatch, tmp_path):
-	package_dir = tmp_path / 'browser_harness'
-	package_dir.mkdir()
-	(package_dir / '__init__.py').write_text('', encoding='utf-8')
-	(package_dir / 'SKILL.md').write_text(
-		(
-			'---\nname: browser-harness\ndescription: "Always use browser-harness."\n---\n\n'
-			'# browser-harness\n\n'
-			"```bash\nbrowser-harness <<'PY'\nprint(page_info())\nPY\n```\n\n"
-			'- Invoke as `browser-harness`.\n'
-		),
-		encoding='utf-8',
-	)
-	monkeypatch.syspath_prepend(str(tmp_path))
-
-	from browser_use.skills import browser_use_skill_text
-
-	text = browser_use_skill_text()
-	assert text.startswith(
-		'---\n'
-		'name: browser-use\n'
-		'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."\n'
-		'---\n\n'
-		'# Browser Use\n'
-	)
-	assert "browser-use <<'PY'" in text
-	assert 'Invoke as `browser-use`' in text
-	assert "browser-harness <<'PY'" not in text
-	assert 'Invoke as `browser-harness`' not in text
-
-
 def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
 
