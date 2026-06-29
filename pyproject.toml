@@ -102,11 +102,10 @@ Telemetry = "https://docs.browser-use.com/development/monitoring/telemetry"
 "Privacy Policy" = "https://browser-use.com/privacy/"
 
 [project.scripts]
-browser-use = "browser_use.skill_cli.main:main"  # Fast CLI for browser automation
-browseruse = "browser_use.skill_cli.main:main"  # Alias for browser-use
-bu = "browser_use.skill_cli.main:main"  # Alias for browser-use
-browser = "browser_use.skill_cli.main:main"  # Alias for browser-use
-browser-use-tui = "browser_use.cli:main"  # Legacy TUI interface
+browser-use = "browser_use.cli:main"  # Browser Use CLI for agents
+browseruse = "browser_use.cli:main"  # Alias for browser-use
+bu = "browser_use.cli:main"  # Alias for browser-use
+browser = "browser_use.cli:main"  # Alias for browser-use
 
 [build-system]
 requires = ["hatchling"]

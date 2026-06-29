@@ -190,19 +190,17 @@ uvx browser-use init --template default --output my_agent.py
 Fast, persistent browser automation from the command line:
 
 ```bash
-browser-use open https://example.com    # Navigate to URL
-browser-use state                       # See clickable elements
-browser-use click 5                     # Click element by index
-browser-use type "Hello"                # Type text
-browser-use screenshot page.png         # Take screenshot
-browser-use close                       # Close browser
+browser-use <<'PY'
+new_tab("https://example.com")
+print(page_info())
+PY
 ```
 
-The CLI keeps the browser running between commands for fast iteration. See [CLI docs](browser_use/skill_cli/README.md) for all commands.
+The CLI allows your agent to control the browser via Python, and it manages the browser in the background.
 
-### Claude Code Skill
+### Agent Skill
 
-For [Claude Code](https://claude.ai/code), install the skill to enable AI-assisted browser automation:
+For Claude Code, Codex, and other agents, install the Browser Use skill:
 
 ```bash
 browser-use skill install

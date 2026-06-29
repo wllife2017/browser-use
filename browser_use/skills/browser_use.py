@@ -39,6 +39,11 @@ def as_browser_use_skill(text: str) -> str:
 		)
 
 	body = body.replace('# browser-harness', '# Browser Use', 1).replace('# Browser Harness', '# Browser Use', 1)
+	body = body.replace('`browser-harness`', '`browser-use`')
+	body = body.replace('browser-harness <<', 'browser-use <<')
+	body = body.replace('browser-harness --', 'browser-use --')
+	body = body.replace('browser-harness auth', 'browser-use auth')
+	body = body.replace('browser-harness doctor', 'browser-use doctor')
 	frontmatter_text = '\n'.join(lines)
 	return f'---\n{frontmatter_text}\n---\n{body}'
 

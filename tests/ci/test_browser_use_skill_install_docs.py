@@ -38,15 +38,13 @@ def _fake_browser_harness_tools(tmp_path: Path, skill_text: str) -> Path:
 
 def test_docs_install_browser_use_skill_from_package_alias():
 	readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-	cli_readme = (ROOT / 'browser_use' / 'skill_cli' / 'README.md').read_text(encoding='utf-8')
-	combined = readme + '\n' + cli_readme
 
-	assert 'browser-use skill install' in combined
-	assert 'mkdir -p ~/.claude/skills/browser-use' not in combined
-	assert 'uv run --with "browser-use[browser-harness]" python -c' not in combined
-	assert 'from browser_use.skills import browser_use_skill_text' not in combined
-	assert BROWSER_USE_REPO_SKILL_URL not in combined
-	assert 'raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md' not in combined
+	assert 'browser-use skill install' in readme
+	assert 'mkdir -p ~/.claude/skills/browser-use' not in readme
+	assert 'uv run --with "browser-use[browser-harness]" python -c' not in readme
+	assert 'from browser_use.skills import browser_use_skill_text' not in readme
+	assert BROWSER_USE_REPO_SKILL_URL not in readme
+	assert 'raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md' not in readme
 
 
 def test_browser_use_repo_does_not_carry_a_copied_browser_harness_skill():
@@ -59,23 +57,33 @@ def test_browser_use_skill_alias_reads_browser_harness_package(monkeypatch, tmp_
 	package_dir.mkdir()
 	(package_dir / '__init__.py').write_text('', encoding='utf-8')
 	(package_dir / 'SKILL.md').write_text(
-		'---\nname: browser-harness\ndescription: "Always use browser-harness."\n---\n\n# browser-harness\n',
+		(
+			'---\nname: browser-harness\ndescription: "Always use browser-harness."\n---\n\n'
+			'# browser-harness\n\n'
+			"```bash\nbrowser-harness <<'PY'\nprint(page_info())\nPY\n```\n\n"
+			'- Invoke as `browser-harness`.\n'
+		),
 		encoding='utf-8',
 	)
 	monkeypatch.syspath_prepend(str(tmp_path))
 
 	from browser_use.skills import browser_use_skill_text
 
-	assert browser_use_skill_text() == (
+	text = browser_use_skill_text()
+	assert text.startswith(
 		'---\n'
 		'name: browser-use\n'
 		'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."\n'
 		'---\n\n'
 		'# Browser Use\n'
 	)
+	assert "browser-use <<'PY'" in text
+	assert 'Invoke as `browser-use`' in text
+	assert "browser-harness <<'PY'" not in text
+	assert 'Invoke as `browser-harness`' not in text
 
 
-def test_browser_use_skill_cli_installs_browser_harness_package_skill(tmp_path):
+def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
 
 	home = tmp_path / 'home'
@@ -95,7 +103,7 @@ def test_browser_use_skill_cli_installs_browser_harness_package_skill(tmp_path):
 	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)
 
 	result = subprocess.run(
-		[sys.executable, '-m', 'browser_use.skill_cli.main', 'skill', 'install'],
+		[sys.executable, '-m', 'browser_use.cli', 'skill', 'install'],
 		cwd=ROOT,
 		env=env,
 		capture_output=True,
@@ -104,7 +112,7 @@ def test_browser_use_skill_cli_installs_browser_harness_package_skill(tmp_path):
 	)
 
 	assert result.returncode == 0, result.stderr
-	assert uv_args.read_text(encoding='utf-8') == 'tool install --python 3.12 --upgrade --force browser-harness'
+	assert uv_args.read_text(encoding='utf-8') == 'tool install --python 3.12 --upgrade --force browser-use'
 	expected = (
 		'---\n'
 		'name: browser-use\n'
@@ -120,7 +128,7 @@ def test_browser_use_skill_cli_installs_browser_harness_package_skill(tmp_path):
 		assert installed.read_text(encoding='utf-8') == expected
 
 
-def test_browser_use_skill_cli_validates_destination_before_installing_harness(tmp_path):
+def test_browser_use_cli_validates_destination_before_installing_harness(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
 	blocking_file = tmp_path / 'not-a-directory'
 	blocking_file.write_text('blocks skill directory creation', encoding='utf-8')
@@ -133,7 +141,7 @@ def test_browser_use_skill_cli_validates_destination_before_installing_harness(t
 	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)
 
 	result = subprocess.run(
-		[sys.executable, '-m', 'browser_use.skill_cli.main', 'skill', 'install', '--path', str(blocking_file / 'nested')],
+		[sys.executable, '-m', 'browser_use.cli', 'skill', 'install', '--path', str(blocking_file / 'nested')],
 		cwd=ROOT,
 		env=env,
 		capture_output=True,
@@ -144,48 +152,3 @@ def test_browser_use_skill_cli_validates_destination_before_installing_harness(t
 	assert result.returncode == 1
 	assert 'is not a directory' in result.stderr
 	assert not uv_args.exists()
-
-
-def test_browser_use_skill_cli_uses_real_subcommand_index_when_session_is_named_skill(tmp_path):
-	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# browser-harness\n')
-
-	env = os.environ.copy()
-	env['HOME'] = str(tmp_path / 'home')
-	env['PATH'] = os.pathsep.join(part for part in (str(bin_dir), env.get('PATH', '')) if part)
-	env['PYTHONPATH'] = os.pathsep.join(part for part in (str(ROOT), env.get('PYTHONPATH', '')) if part)
-
-	result = subprocess.run(
-		[sys.executable, '-m', 'browser_use.skill_cli.main', '--session', 'skill', 'skill', 'show'],
-		cwd=ROOT,
-		env=env,
-		capture_output=True,
-		text=True,
-		timeout=10,
-	)
-
-	assert result.returncode == 0, result.stderr
-	assert result.stdout == (
-		'---\n'
-		'name: browser-use\n'
-		'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."\n'
-		'---\n\n'
-		'# Browser Use\n'
-	)
-
-
-def test_browser_use_cli_does_not_treat_session_value_named_skill_as_skill_command(tmp_path):
-	env = os.environ.copy()
-	env['HOME'] = str(tmp_path / 'home')
-	env['PYTHONPATH'] = os.pathsep.join(part for part in (str(ROOT), env.get('PYTHONPATH', '')) if part)
-
-	result = subprocess.run(
-		[sys.executable, '-m', 'browser_use.skill_cli.main', '--session', 'skill', 'sessions'],
-		cwd=ROOT,
-		env=env,
-		capture_output=True,
-		text=True,
-		timeout=10,
-	)
-
-	assert result.returncode == 0, result.stderr
-	assert 'No active sessions' in result.stdout
