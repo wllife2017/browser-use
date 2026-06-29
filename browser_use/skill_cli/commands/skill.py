@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 SKILL_NAME = 'browser-use'
-DEFAULT_TARGET = 'claude'
+DEFAULT_TARGET = 'all'
 TARGET_DIRS = {
 	'claude': Path.home() / '.claude' / 'skills' / SKILL_NAME,
 	'codex': Path.home() / '.codex' / 'skills' / SKILL_NAME,
@@ -13,10 +15,50 @@ TARGET_DIRS = {
 }
 
 
-def _load_skill_text() -> str:
+def _load_skill_text_from_package() -> str:
 	from browser_use.skills.browser_use import skill_text
 
 	return skill_text()
+
+
+def _browser_harness_executable() -> str | None:
+	exe = shutil.which('browser-harness')
+	if exe:
+		return exe
+
+	local_bin = Path.home() / '.local' / 'bin'
+	for name in ('browser-harness', 'browser-harness.exe'):
+		path = local_bin / name
+		if path.exists():
+			return str(path)
+	return None
+
+
+def _install_browser_harness_tool() -> None:
+	uv = shutil.which('uv')
+	if not uv:
+		raise RuntimeError('Installing the Browser Use skill requires `uv`. Install uv, then rerun `browser-use skill install`.')
+
+	result = subprocess.run([uv, 'tool', 'install', '--python', '3.12', '--upgrade', '--force', 'browser-harness'])
+	if result.returncode != 0:
+		raise RuntimeError(
+			'Failed to install browser-harness with `uv tool install --python 3.12 --upgrade --force browser-harness`.'
+		)
+
+
+def _load_skill_text_from_browser_harness_cli() -> str:
+	exe = _browser_harness_executable()
+	if exe is None:
+		return _load_skill_text_from_package()
+
+	result = subprocess.run([exe, 'skill'], capture_output=True, text=True)
+	if result.returncode != 0:
+		error = result.stderr.strip() or result.stdout.strip() or 'unknown error'
+		raise RuntimeError(f'Failed to read skill from `{exe} skill`: {error}')
+
+	from browser_use.skills.browser_use import as_browser_use_skill
+
+	return as_browser_use_skill(result.stdout)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -31,7 +73,7 @@ def _build_parser() -> argparse.ArgumentParser:
 	install = subparsers.add_parser('install', help='Install the skill')
 	install.add_argument(
 		'--target',
-		choices=sorted(TARGET_DIRS),
+		choices=sorted([*TARGET_DIRS, 'all']),
 		default=DEFAULT_TARGET,
 		help='Assistant skill directory to install into',
 	)
@@ -41,18 +83,25 @@ def _build_parser() -> argparse.ArgumentParser:
 		help='Custom output directory or SKILL.md path',
 	)
 	install.add_argument('--force', action='store_true', help='Overwrite an existing SKILL.md')
+	install.add_argument(
+		'--no-install',
+		action='store_true',
+		help='Skip uv tool install/upgrade and use the existing browser-harness command or package',
+	)
 
 	return parser
 
 
-def _resolve_output_path(target: str, custom_path: Path | None) -> Path:
+def _resolve_output_paths(target: str, custom_path: Path | None) -> list[Path]:
 	if custom_path is None:
-		return TARGET_DIRS[target] / 'SKILL.md'
+		if target == 'all':
+			return [path / 'SKILL.md' for path in TARGET_DIRS.values()]
+		return [TARGET_DIRS[target] / 'SKILL.md']
 
 	path = custom_path.expanduser()
 	if path.name == 'SKILL.md':
-		return path
-	return path / 'SKILL.md'
+		return [path]
+	return [path / 'SKILL.md']
 
 
 def handle(argv: list[str]) -> int:
@@ -61,25 +110,35 @@ def handle(argv: list[str]) -> int:
 
 	command = args.command or 'show'
 
-	try:
-		text = _load_skill_text()
-	except RuntimeError as exc:
-		print(f'Error: {exc}', file=sys.stderr)
-		return 1
-
 	if command == 'show':
+		try:
+			text = _load_skill_text_from_browser_harness_cli()
+		except RuntimeError as exc:
+			print(f'Error: {exc}', file=sys.stderr)
+			return 1
 		print(text, end='')
 		return 0
 
 	if command == 'install':
-		output_path = _resolve_output_path(args.target, args.path)
-		if output_path.exists() and not args.force:
-			print(f'Error: {output_path} already exists. Use --force to overwrite.', file=sys.stderr)
+		try:
+			if not args.no_install:
+				_install_browser_harness_tool()
+			text = _load_skill_text_from_browser_harness_cli()
+		except RuntimeError as exc:
+			print(f'Error: {exc}', file=sys.stderr)
 			return 1
 
-		output_path.parent.mkdir(parents=True, exist_ok=True)
-		output_path.write_text(text, encoding='utf-8')
-		print(f'Installed Browser Use skill to {output_path}')
+		output_paths = _resolve_output_paths(args.target, args.path)
+		existing = [path for path in output_paths if path.exists()]
+		if existing and not args.force:
+			paths = ', '.join(str(path) for path in existing)
+			print(f'Error: {paths} already exists. Use --force to overwrite.', file=sys.stderr)
+			return 1
+
+		for output_path in output_paths:
+			output_path.parent.mkdir(parents=True, exist_ok=True)
+			output_path.write_text(text, encoding='utf-8')
+			print(f'Installed Browser Use skill to {output_path}')
 		return 0
 
 	parser.print_help()

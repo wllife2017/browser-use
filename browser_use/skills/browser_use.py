@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib import resources
 
 
-def _as_browser_use_skill(text: str) -> str:
+def as_browser_use_skill(text: str) -> str:
 	"""Expose the Browser Harness skill under the Browser Use skill identity."""
 	if not text.startswith('---\n'):
 		return text
@@ -51,4 +51,4 @@ def skill_text() -> str:
 		raise RuntimeError(
 			'The Browser Use skill relies on the browser-harness package. Install browser-use again or install `browser-harness`.'
 		) from exc
-	return _as_browser_use_skill(text)
+	return as_browser_use_skill(text)
