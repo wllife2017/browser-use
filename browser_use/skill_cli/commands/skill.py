@@ -108,6 +108,14 @@ def _resolve_output_paths(target: str, custom_path: Path | None) -> list[Path]:
 	return [path / 'SKILL.md']
 
 
+def _validate_output_paths(output_paths: list[Path]) -> None:
+	for output_path in output_paths:
+		if output_path.exists() and output_path.is_dir():
+			raise RuntimeError(f'{output_path} is a directory, expected a SKILL.md file path.')
+		if output_path.parent.exists() and not output_path.parent.is_dir():
+			raise RuntimeError(f'{output_path.parent} is not a directory.')
+
+
 def handle(argv: list[str]) -> int:
 	parser = _build_parser()
 	args = parser.parse_args(argv)
@@ -125,6 +133,8 @@ def handle(argv: list[str]) -> int:
 
 	if command == 'install':
 		try:
+			output_paths = _resolve_output_paths(args.target, args.path)
+			_validate_output_paths(output_paths)
 			if not args.no_install:
 				_install_browser_harness_tool()
 			text = _load_skill_text_from_browser_harness_cli()
@@ -132,7 +142,7 @@ def handle(argv: list[str]) -> int:
 			print(f'Error: {exc}', file=sys.stderr)
 			return 1
 
-		for output_path in _resolve_output_paths(args.target, args.path):
+		for output_path in output_paths:
 			output_path.parent.mkdir(parents=True, exist_ok=True)
 			output_path.write_text(text, encoding='utf-8')
 			print(f'Installed Browser Use skill to {output_path}')

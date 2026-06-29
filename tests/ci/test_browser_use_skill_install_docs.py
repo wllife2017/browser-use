@@ -120,6 +120,32 @@ def test_browser_use_skill_cli_installs_browser_harness_package_skill(tmp_path):
 		assert installed.read_text(encoding='utf-8') == expected
 
 
+def test_browser_use_skill_cli_validates_destination_before_installing_harness(tmp_path):
+	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
+	blocking_file = tmp_path / 'not-a-directory'
+	blocking_file.write_text('blocks skill directory creation', encoding='utf-8')
+
+	uv_args = tmp_path / 'uv-args.txt'
+	env = os.environ.copy()
+	env['HOME'] = str(tmp_path / 'home')
+	env['PATH'] = os.pathsep.join(part for part in (str(bin_dir), env.get('PATH', '')) if part)
+	env['PYTHONPATH'] = os.pathsep.join(part for part in (str(ROOT), env.get('PYTHONPATH', '')) if part)
+	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)
+
+	result = subprocess.run(
+		[sys.executable, '-m', 'browser_use.skill_cli.main', 'skill', 'install', '--path', str(blocking_file)],
+		cwd=ROOT,
+		env=env,
+		capture_output=True,
+		text=True,
+		timeout=10,
+	)
+
+	assert result.returncode == 1
+	assert 'is not a directory' in result.stderr
+	assert not uv_args.exists()
+
+
 def test_browser_use_skill_cli_uses_real_subcommand_index_when_session_is_named_skill(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# browser-harness\n')
 
