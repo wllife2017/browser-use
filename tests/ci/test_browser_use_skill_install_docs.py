@@ -48,7 +48,7 @@ def _fake_browser_harness_tools(tmp_path: Path, skill_text: str) -> Path:
 def test_docs_install_browser_use_skill_from_package_alias():
 	readme = (ROOT / 'README.md').read_text(encoding='utf-8')
 
-	assert 'browser-use skill install' in readme
+	assert 'npx skills add https://github.com/browser-use/browser-use --skill browser-use' in readme
 	assert 'mkdir -p ~/.claude/skills/browser-use' not in readme
 	assert 'uv run --with "browser-use[browser-harness]" python -c' not in readme
 	assert 'from browser_use.skills import browser_use_skill_text' not in readme
