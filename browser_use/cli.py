@@ -42,6 +42,12 @@ def _detect_model() -> tuple[str | None, str | None]:
 	return _first_env_value(('BROWSER_USE_AGENT_MODEL',)), _first_env_value(('BROWSER_USE_MODEL_PROVIDER',))
 
 
+def _redacted_task(task: str | None) -> str | None:
+	if task is None:
+		return None
+	return '[redacted]'
+
+
 def _capture_cli_event(
 	*,
 	action: str,
@@ -63,7 +69,8 @@ def _capture_cli_event(
 				action=action,
 				mode=mode,
 				command=command,
-				task=task,
+				task=_redacted_task(task),
+				task_length=len(task) if task is not None else None,
 				agent_client=_detect_agent_client(),
 				model=model,
 				model_provider=model_provider,
@@ -222,6 +229,20 @@ def _read_harness_task(args: list[str]) -> str | None:
 	return code
 
 
+def _command_context(args: list[str]) -> tuple[str, str]:
+	if '--mcp' in args:
+		return 'mcp_server', 'mcp'
+	if args and args[0] == 'install':
+		return 'install', 'install'
+	if args and args[0] == 'init':
+		return 'init', 'init'
+	if '--template' in args or '-t' in args:
+		return 'init', 'init'
+	if args and args[0] == 'skill':
+		return 'skill', 'skill'
+	return 'browser_harness', args[0] if args else 'run'
+
+
 def _dispatch(args: list[str]) -> tuple[int | None, str, str, str | None]:
 	if '--mcp' in args:
 		_run_mcp_server()
@@ -249,8 +270,7 @@ def browser_use_tui_main() -> int | None:
 def main() -> int | None:
 	args = sys.argv[1:]
 	start_time = time.monotonic()
-	mode = 'browser_harness'
-	command = args[0] if args else 'run'
+	mode, command = _command_context(args)
 	task = None
 	try:
 		result, mode, command, task = _dispatch(args)

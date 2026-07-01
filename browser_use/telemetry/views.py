@@ -97,6 +97,7 @@ class CLITelemetryEvent(BaseTelemetryEvent):
 	mode: str  # 'browser_harness', 'install', 'init', 'skill', 'mcp_server'
 	command: str | None = None
 	task: str | None = None
+	task_length: int | None = None
 	agent_client: str | None = None
 	model: str | None = None
 	model_provider: str | None = None

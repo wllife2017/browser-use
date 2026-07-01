@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -8,15 +9,25 @@ from pathlib import Path
 
 SKILL_NAME = 'browser-use'
 DEFAULT_TARGET = 'all'
-TARGET_DIRS = {
-	'agents': Path.home() / '.agents' / 'skills' / SKILL_NAME,
-	'claude': Path.home() / '.claude' / 'skills' / SKILL_NAME,
-	'codex': Path.home() / '.codex' / 'skills' / SKILL_NAME,
-	'copilot': Path.home() / '.copilot' / 'skills' / SKILL_NAME,
-	'cursor': Path.home() / '.cursor' / 'skills' / SKILL_NAME,
-	'gemini': Path.home() / '.gemini' / 'skills' / SKILL_NAME,
-	'opencode': Path.home() / '.config' / 'opencode' / 'skills' / SKILL_NAME,
-}
+
+
+def _xdg_config_home() -> Path:
+	return Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')).expanduser()
+
+
+def _target_dirs() -> dict[str, Path]:
+	return {
+		'agents': Path.home() / '.agents' / 'skills' / SKILL_NAME,
+		'claude': Path.home() / '.claude' / 'skills' / SKILL_NAME,
+		'codex': Path.home() / '.codex' / 'skills' / SKILL_NAME,
+		'copilot': Path.home() / '.copilot' / 'skills' / SKILL_NAME,
+		'cursor': Path.home() / '.cursor' / 'skills' / SKILL_NAME,
+		'gemini': Path.home() / '.gemini' / 'skills' / SKILL_NAME,
+		'opencode': _xdg_config_home() / 'opencode' / 'skills' / SKILL_NAME,
+	}
+
+
+TARGET_NAMES = ('agents', 'claude', 'codex', 'copilot', 'cursor', 'gemini', 'opencode')
 
 
 def _load_skill_text_from_package() -> str:
@@ -75,7 +86,7 @@ def _build_parser() -> argparse.ArgumentParser:
 	install = subparsers.add_parser('install', help='Install the skill')
 	install.add_argument(
 		'--target',
-		choices=sorted([*TARGET_DIRS, 'all']),
+		choices=sorted([*TARGET_NAMES, 'all']),
 		default=DEFAULT_TARGET,
 		help='Assistant skill directory to install into',
 	)
@@ -100,9 +111,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _resolve_output_paths(target: str, custom_path: Path | None) -> list[Path]:
 	if custom_path is None:
+		target_dirs = _target_dirs()
 		if target == 'all':
-			return [path / 'SKILL.md' for path in TARGET_DIRS.values()]
-		return [TARGET_DIRS[target] / 'SKILL.md']
+			return [path / 'SKILL.md' for path in target_dirs.values()]
+		return [target_dirs[target] / 'SKILL.md']
 
 	path = custom_path.expanduser()
 	if path.name == 'SKILL.md':
