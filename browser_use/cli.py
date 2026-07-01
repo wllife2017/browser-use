@@ -3,8 +3,78 @@
 from __future__ import annotations
 
 import sys
+import time
 from contextlib import redirect_stderr, redirect_stdout
+from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
+
+
+def _browser_use_version() -> str:
+	try:
+		return version('browser-use')
+	except PackageNotFoundError:
+		return 'unknown'
+
+
+def _exit_code(result: int | str | None) -> int:
+	if result is None:
+		return 0
+	if isinstance(result, int):
+		return result
+	return 1
+
+
+def _first_env_value(names: tuple[str, ...]) -> str | None:
+	import os
+
+	for name in names:
+		value = os.environ.get(name)
+		if value:
+			return value
+	return None
+
+
+def _detect_agent_client() -> str | None:
+	return _first_env_value(('BROWSER_USE_AGENT_CLIENT',))
+
+
+def _detect_model() -> tuple[str | None, str | None]:
+	return _first_env_value(('BROWSER_USE_AGENT_MODEL',)), _first_env_value(('BROWSER_USE_MODEL_PROVIDER',))
+
+
+def _capture_cli_event(
+	*,
+	action: str,
+	mode: str,
+	command: str,
+	start_time: float,
+	task: str | None = None,
+	result: int | str | None = None,
+	error_message: str | None = None,
+) -> None:
+	try:
+		from browser_use.telemetry import CLITelemetryEvent, ProductTelemetry
+
+		model, model_provider = _detect_model()
+		telemetry = ProductTelemetry()
+		telemetry.capture(
+			CLITelemetryEvent(
+				version=_browser_use_version(),
+				action=action,
+				mode=mode,
+				command=command,
+				task=task,
+				agent_client=_detect_agent_client(),
+				model=model,
+				model_provider=model_provider,
+				duration_seconds=time.monotonic() - start_time,
+				exit_code=_exit_code(result),
+				error_message=error_message,
+			)
+		)
+		telemetry.flush()
+	except Exception:
+		pass
 
 
 def _run_mcp_server() -> None:
@@ -121,8 +191,11 @@ def _patch_browser_harness_cli_text() -> None:
 
 
 def _run_browser_harness() -> int | None:
+	import os
+
 	from browser_harness import run
 
+	os.environ['BH_CLIENT'] = 'browser-use-cli'
 	_patch_browser_harness_cli_text()
 	args = sys.argv[1:]
 	if args and args[0] == 'doctor' and args[1:]:
@@ -136,6 +209,38 @@ def _run_browser_harness() -> int | None:
 	return None
 
 
+def _read_harness_task(args: list[str]) -> str | None:
+	for flag in ('-c', '--code'):
+		if flag in args:
+			index = args.index(flag)
+			if index + 1 < len(args):
+				return args[index + 1]
+	if args or sys.stdin.isatty():
+		return None
+	code = sys.stdin.read()
+	sys.stdin = StringIO(code)
+	return code
+
+
+def _dispatch(args: list[str]) -> tuple[int | None, str, str, str | None]:
+	if '--mcp' in args:
+		_run_mcp_server()
+		return 0, 'mcp_server', 'mcp', None
+	if args and args[0] == 'install':
+		return _run_install_command(args[1:]), 'install', 'install', None
+	if args and args[0] == 'init':
+		return _run_init_command(args[1:]), 'init', 'init', None
+	if '--template' in args or '-t' in args:
+		return _run_init_command(args), 'init', 'init', None
+	if args and args[0] == 'skill':
+		from browser_use.skills.install import handle as handle_skill_command
+
+		return handle_skill_command(args[1:]), 'skill', 'skill', None
+
+	task = _read_harness_task(args)
+	return _run_browser_harness(), 'browser_harness', args[0] if args else 'run', task
+
+
 def browser_use_tui_main() -> int | None:
 	print('browser-use-tui is deprecated; use browser-use instead.', file=sys.stderr)
 	return main()
@@ -143,21 +248,45 @@ def browser_use_tui_main() -> int | None:
 
 def main() -> int | None:
 	args = sys.argv[1:]
-	if '--mcp' in args:
-		_run_mcp_server()
-		return 0
-	if args and args[0] == 'install':
-		return _run_install_command(args[1:])
-	if args and args[0] == 'init':
-		return _run_init_command(args[1:])
-	if '--template' in args or '-t' in args:
-		return _run_init_command(args)
-	if args and args[0] == 'skill':
-		from browser_use.skills.install import handle as handle_skill_command
+	start_time = time.monotonic()
+	mode = 'browser_harness'
+	command = args[0] if args else 'run'
+	task = None
+	try:
+		result, mode, command, task = _dispatch(args)
+	except SystemExit as exc:
+		result = exc.code
+		_capture_cli_event(
+			action='error' if _exit_code(result) else 'completed',
+			mode=mode,
+			command=command,
+			start_time=start_time,
+			task=task,
+			result=result,
+			error_message=str(result) if isinstance(result, str) else None,
+		)
+		raise
+	except Exception as exc:
+		_capture_cli_event(
+			action='error',
+			mode=mode,
+			command=command,
+			start_time=start_time,
+			task=task,
+			result=1,
+			error_message=str(exc),
+		)
+		raise
 
-		return handle_skill_command(args[1:])
-
-	return _run_browser_harness()
+	_capture_cli_event(
+		action='error' if _exit_code(result) else 'completed',
+		mode=mode,
+		command=command,
+		start_time=start_time,
+		task=task,
+		result=result,
+	)
+	return result
 
 
 if __name__ == '__main__':

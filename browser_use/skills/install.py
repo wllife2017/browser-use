@@ -9,9 +9,13 @@ from pathlib import Path
 SKILL_NAME = 'browser-use'
 DEFAULT_TARGET = 'all'
 TARGET_DIRS = {
+	'agents': Path.home() / '.agents' / 'skills' / SKILL_NAME,
 	'claude': Path.home() / '.claude' / 'skills' / SKILL_NAME,
 	'codex': Path.home() / '.codex' / 'skills' / SKILL_NAME,
-	'agents': Path.home() / '.agents' / 'skills' / SKILL_NAME,
+	'copilot': Path.home() / '.copilot' / 'skills' / SKILL_NAME,
+	'cursor': Path.home() / '.cursor' / 'skills' / SKILL_NAME,
+	'gemini': Path.home() / '.gemini' / 'skills' / SKILL_NAME,
+	'opencode': Path.home() / '.config' / 'opencode' / 'skills' / SKILL_NAME,
 }
 
 

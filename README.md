@@ -1,8 +1,7 @@
 **Browser Use CLI 3.0 is here.** Give your coding agent a browser it can use reliably:
 
 ```bash
-uv tool install browser-use
-browser-use skill install
+npx skills add https://github.com/browser-use/browser-use --skill browser-use
 ```
 
 Or try the hosted agent in [Browser Use Cloud](https://cloud.browser-use.com?utm_source=github&utm_medium=readme&utm_campaign=cli_3_0_launch).
@@ -58,20 +57,11 @@ Or try the hosted agent in [Browser Use Cloud](https://cloud.browser-use.com?utm
 
 # 👋 Human Quickstart
 
-Browser Use 0.13 introduces a new beta agent powered by a Rust core and a browser harness built for current frontier models. It gives the model a real browser/computer action space, persistent tools, and recovery loops inspired by coding agents.
-
-```text
-Python API -> Rust core -> Browser harness -> Web task done
-```
-
-**1. Install Browser Use with the native core runtime (Python>=3.11):**
+**1. Install Browser Use (Python>=3.11):**
 ```bash
-uv add "browser-use[core]"
-# or: pip install "browser-use[core]"
-browser
+uv add browser-use
+# or: pip install browser-use
 ```
-
-The `[core]` extra installs the native Browser Use runtime for your platform.
 
 **2. [Optional] Get your API key from [Browser Use Cloud](https://cloud.browser-use.com/new-api-key?utm_source=github&utm_medium=readme-quickstart-api-key):**
 ```
@@ -83,18 +73,11 @@ BROWSER_USE_API_KEY=your-key
 
 **3. Run your first agent:**
 
-**Browser Use Terminal:** 
-```bash
-uv add "browser-use[core]"
-browser
-```
-
 **Python Script:**
 ```python
-from browser_use.beta import Agent, BrowserProfile, ChatBrowserUse
-# from browser_use.beta import ChatOpenAI  # ChatOpenAI(model='gpt-5.5')
-# from browser_use.beta import ChatAnthropic  # ChatAnthropic(model='claude-opus-4-8')
 import asyncio
+
+from browser_use import Agent, BrowserProfile, ChatBrowserUse
 
 async def main():
     agent = Agent(
@@ -114,8 +97,6 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ```
-
-Existing Python agent users can keep using `from browser_use import Agent`. The new Rust-powered beta agent is `from browser_use.beta import Agent`.
 
 Check out the [library docs](https://docs.browser-use.com/open-source/introduction) and the [cloud docs](https://docs.cloud.browser-use.com?utm_source=github&utm_medium=readme-cloud-docs) for more!
 
@@ -212,7 +193,7 @@ The CLI allows your agent to control the browser via Python, and it manages the 
 For Claude Code, Codex, and other agents, install the Browser Use skill:
 
 ```bash
-browser-use skill install
+npx skills add https://github.com/browser-use/browser-use --skill browser-use
 ```
 
 <br/>

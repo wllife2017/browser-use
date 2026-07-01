@@ -5,6 +5,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BROWSER_USE_REPO_SKILL_URL = 'https://raw.githubusercontent.com/browser-use/browser-use/main/skills/browser-use/SKILL.md'
+EXPECTED_SKILL_INSTALL_PATHS = (
+	Path('.agents') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.claude') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.codex') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.copilot') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.cursor') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.gemini') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.config') / 'opencode' / 'skills' / 'browser-use' / 'SKILL.md',
+)
 
 
 def _fake_browser_harness_tools(tmp_path: Path, skill_text: str) -> Path:
@@ -51,11 +60,7 @@ def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
 
 	home = tmp_path / 'home'
-	for stale in (
-		home / '.claude' / 'skills' / 'browser-use' / 'SKILL.md',
-		home / '.codex' / 'skills' / 'browser-use' / 'SKILL.md',
-		home / '.agents' / 'skills' / 'browser-use' / 'SKILL.md',
-	):
+	for stale in (home / path for path in EXPECTED_SKILL_INSTALL_PATHS):
 		stale.parent.mkdir(parents=True)
 		stale.write_text('stale browser-use skill', encoding='utf-8')
 
@@ -84,11 +89,7 @@ def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 		'---\n\n'
 		'# Browser Use\n'
 	)
-	for installed in (
-		home / '.claude' / 'skills' / 'browser-use' / 'SKILL.md',
-		home / '.codex' / 'skills' / 'browser-use' / 'SKILL.md',
-		home / '.agents' / 'skills' / 'browser-use' / 'SKILL.md',
-	):
+	for installed in (home / path for path in EXPECTED_SKILL_INSTALL_PATHS):
 		assert installed.read_text(encoding='utf-8') == expected
 
 
