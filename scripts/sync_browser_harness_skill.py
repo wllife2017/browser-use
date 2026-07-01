@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import importlib.util
 import sys
 from pathlib import Path
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 DEFAULT_SOURCE_URL = 'https://raw.githubusercontent.com/browser-use/browser-harness/refs/heads/main/SKILL.md'
 DEFAULT_REPO_OUTPUT_PATH = ROOT / 'skills' / 'browser-use' / 'SKILL.md'
 DEFAULT_PACKAGE_OUTPUT_PATH = ROOT / 'browser_use' / 'skills' / 'browser-use' / 'SKILL.md'
@@ -21,9 +21,14 @@ def _read_source(source: str) -> str:
 
 
 def _to_browser_use_skill(text: str) -> str:
-	from browser_use.skills.browser_use import as_browser_use_skill
+	module_path = ROOT / 'browser_use' / 'skills' / 'browser_use.py'
+	spec = importlib.util.spec_from_file_location('browser_use_skill_rewriter', module_path)
+	if spec is None or spec.loader is None:
+		raise RuntimeError(f'Could not load Browser Use skill rewriter from {module_path}')
+	module = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(module)
 
-	return as_browser_use_skill(text)
+	return module.as_browser_use_skill(text)
 
 
 def _build_parser() -> argparse.ArgumentParser:

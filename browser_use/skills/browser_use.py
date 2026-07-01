@@ -40,24 +40,21 @@ def as_browser_use_skill(text: str) -> str:
 		)
 
 	body = body.replace('# browser-harness', '# Browser Use', 1).replace('# Browser Harness', '# Browser Use', 1)
+	body = body.replace('`browser-harness`', '`browser-use`')
 	body = body.replace('browser-harness <<', 'browser-use <<')
 	body = body.replace('browser-harness --', 'browser-use --')
 	body = body.replace('browser-harness auth', 'browser-use auth')
 	body = body.replace('browser-harness doctor', 'browser-use doctor')
 	body = body.replace('Browser Harness', 'Browser Use')
-	body = body.replace('browser-harness', 'browser-use')
 	frontmatter_text = '\n'.join(lines)
 	return f'---\n{frontmatter_text}\n---\n{body}'
 
 
 def skill_text() -> str:
 	"""Return the canonical Browser Use skill."""
-	for skill_path in (
-		Path(__file__).resolve().parent / 'browser-use' / 'SKILL.md',
-		Path(__file__).resolve().parents[2] / 'skills' / 'browser-use' / 'SKILL.md',
-	):
-		if skill_path.exists():
-			return skill_path.read_text(encoding='utf-8')
+	skill_path = Path(__file__).resolve().parent / 'browser-use' / 'SKILL.md'
+	if skill_path.exists():
+		return skill_path.read_text(encoding='utf-8')
 
 	try:
 		text = resources.files('browser_harness').joinpath('SKILL.md').read_text(encoding='utf-8')
