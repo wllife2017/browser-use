@@ -1,7 +1,7 @@
 **Browser Use CLI 3.0 is here.** Give your coding agent a browser it can use reliably:
 
-```bash
-npx skills add https://github.com/browser-use/browser-use --skill browser-use
+```text
+Install or upgrade browser-use to the latest stable version with uv using Python 3.12, register the skill from `browser-use skill`, and connect it to my browser. Follow https://github.com/browser-use/browser-use if setup or connection fails.
 ```
 
 Or try the hosted agent in [Browser Use Cloud](https://cloud.browser-use.com?utm_source=github&utm_medium=readme&utm_campaign=cli_3_0_launch).
@@ -190,10 +190,10 @@ The CLI allows your agent to control the browser via Python, and it manages the 
 
 ### Agent Skill
 
-For Claude Code, Codex, and other agents, install the Browser Use skill:
+For Claude Code, Codex, and other agents, paste this setup prompt into your agent:
 
-```bash
-npx skills add https://github.com/browser-use/browser-use --skill browser-use
+```text
+Install or upgrade browser-use to the latest stable version with uv using Python 3.12, register the skill from `browser-use skill`, and connect it to my browser. Follow https://github.com/browser-use/browser-use if setup or connection fails.
 ```
 
 <br/>
