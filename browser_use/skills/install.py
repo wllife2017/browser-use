@@ -12,22 +12,27 @@ DEFAULT_TARGET = 'all'
 
 
 def _xdg_config_home() -> Path:
-	return Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')).expanduser()
+	config_home = os.environ.get('XDG_CONFIG_HOME')
+	if config_home:
+		return Path(config_home).expanduser()
+	return Path.home() / '.config'
 
 
-def _target_dirs() -> dict[str, Path]:
-	return {
-		'agents': Path.home() / '.agents' / 'skills' / SKILL_NAME,
-		'claude': Path.home() / '.claude' / 'skills' / SKILL_NAME,
-		'codex': Path.home() / '.codex' / 'skills' / SKILL_NAME,
-		'copilot': Path.home() / '.copilot' / 'skills' / SKILL_NAME,
-		'cursor': Path.home() / '.cursor' / 'skills' / SKILL_NAME,
-		'gemini': Path.home() / '.gemini' / 'skills' / SKILL_NAME,
-		'opencode': _xdg_config_home() / 'opencode' / 'skills' / SKILL_NAME,
-	}
+def _home_skill_dir(assistant: str) -> Path:
+	return Path.home() / f'.{assistant}' / 'skills' / SKILL_NAME
 
 
-TARGET_NAMES = ('agents', 'claude', 'codex', 'copilot', 'cursor', 'gemini', 'opencode')
+TARGET_DIR_BUILDERS = {
+	'agents': lambda: _home_skill_dir('agents'),
+	'claude': lambda: _home_skill_dir('claude'),
+	'codex': lambda: _home_skill_dir('codex'),
+	'copilot': lambda: _home_skill_dir('copilot'),
+	'cursor': lambda: _home_skill_dir('cursor'),
+	'gemini': lambda: _home_skill_dir('gemini'),
+	'opencode': lambda: _xdg_config_home() / 'opencode' / 'skills' / SKILL_NAME,
+}
+
+TARGET_NAMES = tuple(TARGET_DIR_BUILDERS)
 
 
 def _load_skill_text_from_package() -> str:
@@ -111,10 +116,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _resolve_output_paths(target: str, custom_path: Path | None) -> list[Path]:
 	if custom_path is None:
-		target_dirs = _target_dirs()
 		if target == 'all':
-			return [path / 'SKILL.md' for path in target_dirs.values()]
-		return [target_dirs[target] / 'SKILL.md']
+			return [build_dir() / 'SKILL.md' for build_dir in TARGET_DIR_BUILDERS.values()]
+		return [TARGET_DIR_BUILDERS[target]() / 'SKILL.md']
 
 	path = custom_path.expanduser()
 	if path.name == 'SKILL.md':

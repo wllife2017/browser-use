@@ -20,7 +20,7 @@ PY
 ```
 
 - Invoke as `browser-use`. Use heredocs for multi-line commands.
-- Helpers are pre-imported and the CLI starts or connects to the Browser Harness daemon before running your code.
+- Helpers are pre-imported. `run.py` calls `ensure_daemon()` before `exec`.
 - First navigation is `new_tab(url)`, not `goto_url(url)`.
 - The normal local flow attaches to the running Chrome/Chromium CDP endpoint. No browser ids or local profile selection.
 
@@ -48,11 +48,10 @@ Use Browser Use cloud for headless servers, parallel sub-agents, or isolated wor
 browser-use auth login
 ```
 
-Or use an API key in a noninteractive shell:
+Or import a key safely:
 
 ```bash
-export BROWSER_USE_API_KEY=bu_...
-browser-use auth status
+browser-use auth login --api-key-stdin
 ```
 
 Pick a short made-up name; `r7k2` below is just a placeholder:
