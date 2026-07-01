@@ -35,6 +35,14 @@ TARGET_DIR_BUILDERS = {
 TARGET_NAMES = tuple(TARGET_DIR_BUILDERS)
 
 
+def _all_target_skill_paths() -> list[Path]:
+	paths = [build_dir() / 'SKILL.md' for build_dir in TARGET_DIR_BUILDERS.values()]
+	legacy_opencode = Path.home() / '.config' / 'opencode' / 'skills' / SKILL_NAME / 'SKILL.md'
+	if legacy_opencode not in paths:
+		paths.append(legacy_opencode)
+	return paths
+
+
 def _load_skill_text_from_package() -> str:
 	from browser_use.skills.browser_use import skill_text
 
@@ -117,7 +125,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _resolve_output_paths(target: str, custom_path: Path | None) -> list[Path]:
 	if custom_path is None:
 		if target == 'all':
-			return [build_dir() / 'SKILL.md' for build_dir in TARGET_DIR_BUILDERS.values()]
+			return _all_target_skill_paths()
 		return [TARGET_DIR_BUILDERS[target]() / 'SKILL.md']
 
 	path = custom_path.expanduser()
