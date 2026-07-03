@@ -110,3 +110,30 @@ async def test_successful_navigation_returns_no_timeout_status(httpserver, brows
 
 	status = await browser_session._navigate_and_wait(httpserver.url_for('/ok'), target_id, wait_until='load')
 	assert status is None
+
+
+async def test_same_document_navigation_completes_immediately(httpserver, browser_session: BrowserSession):
+	"""Fragment/History-API navigations must not burn the readiness timeout.
+
+	Page.navigate returns no loaderId for same-document navigations and Chrome
+	emits no new load/DOMContentLoaded lifecycle events for them — the navigation
+	is already committed when Page.navigate returns.
+	"""
+	httpserver.expect_request('/page').respond_with_data(
+		'<html><body><a id="anchor" name="section">s</a></body></html>', content_type='text/html'
+	)
+
+	await browser_session.navigate_to(httpserver.url_for('/page'))
+	target_id = browser_session.agent_focus_target_id
+	assert target_id is not None
+
+	# Let the first load's trailing lifecycle events (networkIdle fires ~1s after
+	# load) drain, so a stale event can't accidentally satisfy the fragment wait.
+	await asyncio.sleep(1.5)
+
+	start = time.monotonic()
+	status = await browser_session._navigate_and_wait(httpserver.url_for('/page') + '#section', target_id, wait_until='load')
+	elapsed = time.monotonic() - start
+
+	assert elapsed < FAST_NAVIGATION_BOUND_S, f'same-document navigation took {elapsed:.2f}s — burned the readiness timeout'
+	assert status is None, f'same-document navigation reported a bogus timeout: {status!r}'

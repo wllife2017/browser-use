@@ -1062,6 +1062,15 @@ class BrowserSession(BaseModel):
 			return None
 
 		navigation_id = nav_result.get('loaderId')
+
+		# Page.navigate omits loaderId for same-document navigations (#fragment,
+		# History API): the navigation is already committed and Chrome emits no new
+		# load/DOMContentLoaded lifecycle events for it — waiting would only burn
+		# the timeout against stale events from the previous document load.
+		if not navigation_id:
+			duration_ms = (asyncio.get_event_loop().time() - nav_start_time) * 1000
+			self.logger.debug(f'✅ Page ready for {url} (same-document navigation, {duration_ms:.0f}ms)')
+			return None
 		start_time = asyncio.get_event_loop().time()
 		seen_events = []
 
@@ -1094,7 +1103,7 @@ class BrowserSession(BaseModel):
 
 					# Defense for events without a usable loaderId: only trust them if
 					# they arrived after this navigation started.
-					if event_data.get('timestamp', 0) < nav_start_time and (not event_loader_id or not navigation_id):
+					if not event_loader_id and event_data.get('timestamp', 0) < nav_start_time:
 						continue
 
 					if event_name in acceptable_events:
