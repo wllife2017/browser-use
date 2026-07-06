@@ -201,9 +201,14 @@ class ChatGoogle(BaseChatModel):
 		would truncate identically."""
 		stop_reason = self._get_stop_reason(response)
 		if stop_reason and 'MAX_TOKENS' in stop_reason:
+			cap = (
+				f'max_output_tokens={self.max_output_tokens}'
+				if self.max_output_tokens is not None
+				else "the model's output token limit"
+			)
 			raise ModelProviderError(
 				message=(
-					f'Model output was truncated at max_output_tokens={self.max_output_tokens};'
+					f'Model output was truncated at {cap};'
 					' the structured output is incomplete. Increase max_output_tokens or request'
 					' shorter output.'
 				),

@@ -63,3 +63,31 @@ async def test_openai_normal_structured_output_still_parses(httpserver):
 
 	result = await llm.ainvoke([UserMessage(content='answer briefly')], output_format=AnswerFormat)
 	assert result.completion.answer == 'complete answer'
+
+
+async def test_truncation_error_readable_when_cap_unset(httpserver):
+	"""With max_completion_tokens=None, the error must describe the limit without printing 'None'."""
+	httpserver.expect_request('/v1/chat/completions', method='POST').respond_with_json(
+		{
+			'id': 'chatcmpl-test',
+			'object': 'chat.completion',
+			'created': 0,
+			'model': 'gpt-4o',
+			'choices': [
+				{
+					'index': 0,
+					'message': {'role': 'assistant', 'content': '{"answer": "cut off mid'},
+					'finish_reason': 'length',
+				}
+			],
+			'usage': {'prompt_tokens': 10, 'completion_tokens': 16384, 'total_tokens': 16394},
+		}
+	)
+
+	llm = ChatOpenAI(model='gpt-4o', api_key='test-key', base_url=httpserver.url_for('/v1'), max_completion_tokens=None)
+
+	with pytest.raises(ModelProviderError) as exc_info:
+		await llm.ainvoke([UserMessage(content='answer at length')], output_format=AnswerFormat)
+
+	assert 'truncated' in str(exc_info.value)
+	assert 'None' not in str(exc_info.value), f'error message leaks None: {exc_info.value}'
