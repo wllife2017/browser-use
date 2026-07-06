@@ -25,7 +25,7 @@ from browser_use.agent.cloud_events import (
 )
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
+from browser_use.llm.exceptions import ModelOutputTruncatedError, ModelProviderError, ModelRateLimitError
 from browser_use.llm.messages import BaseMessage, ContentPartImageParam, ContentPartTextParam, UserMessage
 from browser_use.tokens.service import TokenCost
 
@@ -1991,8 +1991,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# 402: Insufficient credits/payment required - fallback to different provider
 		# 429: Rate limit exceeded
 		# 500, 502, 503, 504: Server errors
+		# ModelOutputTruncatedError: the same request would truncate identically on
+		# this model, but a fallback with a different output cap can succeed
 		retryable_status_codes = {401, 402, 429, 500, 502, 503, 504}
-		is_retryable = isinstance(error, ModelRateLimitError) or (
+		is_retryable = isinstance(error, (ModelRateLimitError, ModelOutputTruncatedError)) or (
 			hasattr(error, 'status_code') and error.status_code in retryable_status_codes
 		)
 

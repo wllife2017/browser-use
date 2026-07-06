@@ -14,7 +14,7 @@ from google.genai.types import MediaModality
 from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.exceptions import ModelProviderError
+from browser_use.llm.exceptions import ModelOutputTruncatedError, ModelProviderError
 from browser_use.llm.google.serializer import GoogleMessageSerializer
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.schema import SchemaOptimizer
@@ -206,13 +206,12 @@ class ChatGoogle(BaseChatModel):
 				if self.max_output_tokens is not None
 				else "the model's output token limit"
 			)
-			raise ModelProviderError(
+			raise ModelOutputTruncatedError(
 				message=(
 					f'Model output was truncated at {cap};'
 					' the structured output is incomplete. Increase max_output_tokens or request'
 					' shorter output.'
 				),
-				status_code=400,
 				model=self.name,
 			)
 

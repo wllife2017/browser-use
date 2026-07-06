@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from browser_use.llm.anthropic.serializer import AnthropicMessageSerializer
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
+from browser_use.llm.exceptions import ModelOutputTruncatedError, ModelProviderError, ModelRateLimitError
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
@@ -390,12 +390,11 @@ class ChatAnthropic(BaseChatModel):
 				# A tool_use block cut off at max_tokens produces incomplete JSON that fails
 				# validation with a misleading parse error — surface the real cause instead.
 				if response.stop_reason == 'max_tokens':
-					raise ModelProviderError(
+					raise ModelOutputTruncatedError(
 						message=(
 							f'Model output was truncated at max_tokens={self.max_tokens}; the structured'
 							' output is incomplete. Increase max_tokens or request shorter output.'
 						),
-						status_code=400,
 						model=self.name,
 					)
 

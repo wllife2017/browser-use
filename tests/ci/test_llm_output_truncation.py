@@ -91,3 +91,22 @@ async def test_truncation_error_readable_when_cap_unset(httpserver):
 
 	assert 'truncated' in str(exc_info.value)
 	assert 'None' not in str(exc_info.value), f'error message leaks None: {exc_info.value}'
+
+
+def test_truncation_error_triggers_fallback_llm_switch(tmp_path):
+	"""A truncation error must allow switching to a configured fallback LLM — a
+	fallback with a different output cap can succeed where the primary truncated."""
+	from browser_use.agent.service import Agent
+	from browser_use.llm.exceptions import ModelOutputTruncatedError
+	from tests.ci.conftest import create_mock_llm
+
+	agent = Agent(
+		task='test fallback on truncation',
+		llm=create_mock_llm(),
+		fallback_llm=create_mock_llm(),
+		file_system_path=str(tmp_path / 'agent-files'),
+	)
+
+	error = ModelOutputTruncatedError(message='Model output was truncated at max_completion_tokens=4096', model='gpt-4o')
+	assert agent._try_switch_to_fallback_llm(error) is True
+	assert agent._using_fallback_llm is True

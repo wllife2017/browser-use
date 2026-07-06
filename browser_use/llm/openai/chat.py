@@ -12,7 +12,7 @@ from openai.types.shared_params.response_format_json_schema import JSONSchema, R
 from pydantic import BaseModel
 
 from browser_use.llm.base import BaseChatModel
-from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
+from browser_use.llm.exceptions import ModelOutputTruncatedError, ModelProviderError, ModelRateLimitError
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.openai.serializer import OpenAIMessageSerializer
 from browser_use.llm.schema import SchemaOptimizer
@@ -289,13 +289,12 @@ class ChatOpenAI(BaseChatModel):
 						if self.max_completion_tokens is not None
 						else "the model's output token limit"
 					)
-					raise ModelProviderError(
+					raise ModelOutputTruncatedError(
 						message=(
 							f'Model output was truncated at {cap};'
 							' the structured output is incomplete. Increase max_completion_tokens or request'
 							' shorter output.'
 						),
-						status_code=400,
 						model=self.name,
 					)
 
