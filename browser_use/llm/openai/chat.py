@@ -272,17 +272,11 @@ class ChatOpenAI(BaseChatModel):
 						model=self.name,
 					)
 
-				if choice.message.content is None:
-					raise ModelProviderError(
-						message='Failed to parse structured output from model response',
-						status_code=500,
-						model=self.name,
-					)
-
-				usage = self._get_usage(response)
-
 				# Output cut off at the completion cap produces incomplete JSON that fails
 				# validation with a misleading parse error — surface the real cause instead.
+				# Checked BEFORE the missing-content guard: reasoning models can spend the
+				# whole budget on hidden reasoning, returning finish_reason='length' with
+				# content=None, which must also read as truncation.
 				if choice.finish_reason == 'length':
 					cap = (
 						f'max_completion_tokens={self.max_completion_tokens}'
@@ -297,6 +291,15 @@ class ChatOpenAI(BaseChatModel):
 						),
 						model=self.name,
 					)
+
+				if choice.message.content is None:
+					raise ModelProviderError(
+						message='Failed to parse structured output from model response',
+						status_code=500,
+						model=self.name,
+					)
+
+				usage = self._get_usage(response)
 
 				parsed = output_format.model_validate_json(choice.message.content)
 

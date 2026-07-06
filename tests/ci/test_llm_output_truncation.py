@@ -110,3 +110,32 @@ def test_truncation_error_triggers_fallback_llm_switch(tmp_path):
 	error = ModelOutputTruncatedError(message='Model output was truncated at max_completion_tokens=4096', model='gpt-4o')
 	assert agent._try_switch_to_fallback_llm(error) is True
 	assert agent._using_fallback_llm is True
+
+
+async def test_truncation_detected_when_content_is_null(httpserver):
+	"""Reasoning models can spend the whole completion budget on hidden reasoning:
+	finish_reason='length' with content=null. That must surface as truncation, not
+	the generic 'Failed to parse structured output'."""
+	httpserver.expect_request('/v1/chat/completions', method='POST').respond_with_json(
+		{
+			'id': 'chatcmpl-test',
+			'object': 'chat.completion',
+			'created': 0,
+			'model': 'o3',
+			'choices': [
+				{
+					'index': 0,
+					'message': {'role': 'assistant', 'content': None},
+					'finish_reason': 'length',
+				}
+			],
+			'usage': {'prompt_tokens': 10, 'completion_tokens': 4096, 'total_tokens': 4106},
+		}
+	)
+
+	llm = ChatOpenAI(model='o3', api_key='test-key', base_url=httpserver.url_for('/v1'))
+
+	with pytest.raises(ModelProviderError) as exc_info:
+		await llm.ainvoke([UserMessage(content='think hard')], output_format=AnswerFormat)
+
+	assert 'truncated' in str(exc_info.value), f'expected truncation signal, got: {exc_info.value}'
