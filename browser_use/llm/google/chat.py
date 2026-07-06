@@ -194,11 +194,7 @@ class ChatGoogle(BaseChatModel):
 		return None
 
 	def _raise_if_output_truncated(self, response: types.GenerateContentResponse) -> None:
-		"""Structured output cut off at max_output_tokens produces incomplete JSON that
-		fails parsing with a misleading error — surface the real cause instead.
-
-		Uses status 400 (not in retryable_status_codes): retrying the same request
-		would truncate identically."""
+		"""Raise ModelOutputTruncatedError when the response hit an output-token limit."""
 		stop_reason = self._get_stop_reason(response)
 		if stop_reason and 'MAX_TOKENS' in stop_reason:
 			cap = (

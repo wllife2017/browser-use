@@ -1991,8 +1991,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# 402: Insufficient credits/payment required - fallback to different provider
 		# 429: Rate limit exceeded
 		# 500, 502, 503, 504: Server errors
-		# ModelOutputTruncatedError: the same request would truncate identically on
-		# this model, but a fallback with a different output cap can succeed
+		# ModelOutputTruncatedError: not retryable on the same model, but a fallback may have a higher cap
 		retryable_status_codes = {401, 402, 429, 500, 502, 503, 504}
 		is_retryable = isinstance(error, (ModelRateLimitError, ModelOutputTruncatedError)) or (
 			hasattr(error, 'status_code') and error.status_code in retryable_status_codes

@@ -387,8 +387,6 @@ class ChatAnthropic(BaseChatModel):
 
 				usage = self._get_usage(response)
 
-				# A tool_use block cut off at max_tokens produces incomplete JSON that fails
-				# validation with a misleading parse error — surface the real cause instead.
 				if response.stop_reason == 'max_tokens':
 					raise ModelOutputTruncatedError(
 						message=(
@@ -450,8 +448,6 @@ class ChatAnthropic(BaseChatModel):
 		except APIStatusError as e:
 			raise ModelProviderError(message=e.message, status_code=e.status_code, model=self.name) from e
 		except ModelProviderError:
-			# Already carries an accurate message and status code (e.g. max_tokens
-			# truncation) — don't re-wrap it with the generic 502.
-			raise
+			raise  # don't re-wrap with the generic 502
 		except Exception as e:
 			raise ModelProviderError(message=str(e), model=self.name) from e

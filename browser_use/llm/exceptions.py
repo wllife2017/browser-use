@@ -30,12 +30,9 @@ class ModelRateLimitError(ModelProviderError):
 
 
 class ModelOutputTruncatedError(ModelProviderError):
-	"""Structured output was cut off at an output-token limit (finish_reason='length' /
-	stop_reason='max_tokens').
+	"""Output was cut off at an output-token limit (finish_reason='length' / stop_reason='max_tokens').
 
-	Retrying the same request would truncate identically (status 400 keeps it out of
-	same-provider retry loops), but switching to a fallback LLM with a different output
-	cap can succeed — the agent's fallback logic treats this as switchable.
+	Status 400 keeps it out of same-provider retry loops; the agent's fallback switch treats it as recoverable.
 	"""
 
 	def __init__(

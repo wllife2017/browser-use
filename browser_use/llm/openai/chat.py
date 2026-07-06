@@ -272,11 +272,8 @@ class ChatOpenAI(BaseChatModel):
 						model=self.name,
 					)
 
-				# Output cut off at the completion cap produces incomplete JSON that fails
-				# validation with a misleading parse error — surface the real cause instead.
-				# Checked BEFORE the missing-content guard: reasoning models can spend the
-				# whole budget on hidden reasoning, returning finish_reason='length' with
-				# content=None, which must also read as truncation.
+				# before the content-None guard: reasoning models can burn the whole budget
+				# on hidden reasoning, leaving finish_reason='length' with content=None
 				if choice.finish_reason == 'length':
 					cap = (
 						f'max_completion_tokens={self.max_completion_tokens}'
