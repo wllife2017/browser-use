@@ -26,3 +26,21 @@ async def test_browser_error_memory_survives_execute_action():
 		f'structured long_term_memory lost: {result.error!r}'
 	)
 	assert result.extracted_content == 'Available options: alpha, beta, gamma'
+
+
+async def test_plain_browser_error_still_returns_recoverable_action_result():
+	"""A BrowserError without long_term_memory must not escape Tools.act as an
+	exception — it must still come back as a recoverable ActionResult (as it did
+	when the generic execute_action handler flattened it)."""
+	tools = Tools()
+
+	@tools.registry.action(description='Test action that raises a plain BrowserError')
+	async def raise_plain_error():
+		raise BrowserError(message='element with index 5 does not exist')
+
+	ActionModel = tools.registry.create_action_model()
+	action = ActionModel(**{'raise_plain_error': {}})
+
+	result = await tools.act(action, browser_session=None)  # type: ignore[arg-type] -- action doesn't touch the browser
+
+	assert result.error is not None and 'element with index 5 does not exist' in result.error
