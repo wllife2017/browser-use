@@ -193,6 +193,24 @@ class ChatGoogle(BaseChatModel):
 			return str(response.candidates[0].finish_reason) if hasattr(response.candidates[0], 'finish_reason') else None
 		return None
 
+	def _raise_if_output_truncated(self, response: types.GenerateContentResponse) -> None:
+		"""Structured output cut off at max_output_tokens produces incomplete JSON that
+		fails parsing with a misleading error — surface the real cause instead.
+
+		Uses status 400 (not in retryable_status_codes): retrying the same request
+		would truncate identically."""
+		stop_reason = self._get_stop_reason(response)
+		if stop_reason and 'MAX_TOKENS' in stop_reason:
+			raise ModelProviderError(
+				message=(
+					f'Model output was truncated at max_output_tokens={self.max_output_tokens};'
+					' the structured output is incomplete. Increase max_output_tokens or request'
+					' shorter output.'
+				),
+				status_code=400,
+				model=self.name,
+			)
+
 	def _get_usage(self, response: types.GenerateContentResponse) -> ChatInvokeUsage | None:
 		usage: ChatInvokeUsage | None = None
 
@@ -374,6 +392,7 @@ class ChatGoogle(BaseChatModel):
 						self.logger.debug(f'✅ Got structured response in {elapsed:.2f}s')
 
 						usage = self._get_usage(response)
+						self._raise_if_output_truncated(response)
 
 						# Handle case where response.parsed might be None
 						if response.parsed is None:
@@ -458,6 +477,7 @@ class ChatGoogle(BaseChatModel):
 						self.logger.debug(f'✅ Got fallback response in {elapsed:.2f}s')
 
 						usage = self._get_usage(response)
+						self._raise_if_output_truncated(response)
 
 						# Try to extract JSON from the text response
 						if response.text:

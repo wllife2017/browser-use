@@ -281,6 +281,19 @@ class ChatOpenAI(BaseChatModel):
 
 				usage = self._get_usage(response)
 
+				# Output cut off at the completion cap produces incomplete JSON that fails
+				# validation with a misleading parse error — surface the real cause instead.
+				if choice.finish_reason == 'length':
+					raise ModelProviderError(
+						message=(
+							f'Model output was truncated at max_completion_tokens={self.max_completion_tokens};'
+							' the structured output is incomplete. Increase max_completion_tokens or request'
+							' shorter output.'
+						),
+						status_code=400,
+						model=self.name,
+					)
+
 				parsed = output_format.model_validate_json(choice.message.content)
 
 				return ChatInvokeCompletion(
