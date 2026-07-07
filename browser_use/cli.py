@@ -38,7 +38,6 @@ def _capture_via_harness(
 	result: int | str | None = None,
 	error_message: str | None = None,
 ) -> None:
-
 	try:
 		from browser_harness import telemetry as harness_telemetry
 
@@ -169,6 +168,7 @@ def _patch_browser_harness_cli_text() -> None:
 
 	auth.run_auth_cli = run_auth_cli
 	telemetry.run_telemetry_cli = run_telemetry_cli
+
 
 _delegated_to_harness = False
 
@@ -315,6 +315,9 @@ def browser_use_tui_main() -> int | None:
 
 
 def main() -> int | None:
+	global _delegated_to_harness
+
+	_delegated_to_harness = False
 	args = sys.argv[1:]
 	start_time = time.monotonic()
 	command = _command_name(args)
