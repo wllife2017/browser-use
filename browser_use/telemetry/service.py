@@ -89,7 +89,7 @@ def capture_detached(event: BaseTelemetryEvent) -> None:
 
 		job = {
 			'url': f'{POSTHOG_HOST}/i/v0/e/',
-			'timeout': float(os.environ.get('BROWSER_USE_TELEMETRY_TIMEOUT', '5')),
+			'timeout': 5.0,
 			'payload': {
 				'api_key': POSTHOG_PROJECT_API_KEY,
 				'distinct_id': get_or_create_device_id(),
@@ -97,7 +97,7 @@ def capture_detached(event: BaseTelemetryEvent) -> None:
 				'properties': {**event.properties, **POSTHOG_EVENT_SETTINGS},
 			},
 		}
-	
+
 		process = subprocess.Popen(
 			[sys.executable, '-c', _DETACHED_SENDER_SOURCE],
 			stdin=subprocess.PIPE,
@@ -120,10 +120,8 @@ class ProductTelemetry:
 	If the environment variable `ANONYMIZED_TELEMETRY=False`, anonymized telemetry will be disabled.
 	"""
 
-	USER_ID_PATH = DEVICE_ID_PATH
 	PROJECT_API_KEY = POSTHOG_PROJECT_API_KEY
 	HOST = POSTHOG_HOST
-	UNKNOWN_USER_ID = 'UNKNOWN'
 
 	_curr_user_id = None
 
