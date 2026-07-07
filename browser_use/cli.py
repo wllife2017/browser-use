@@ -248,8 +248,9 @@ Core helpers: new_tab(url), goto_url(url), page_info(), capture_screenshot(),
   click_at_xy(x, y), js(code), cdp(method, ...), wait_for_load()
 
 Read the full interface now:   browser-use skill show
-Install the skill so you remember it in future sessions (also upgrades the CLI):
+Install the CLI 3.0 skill (upgrades the CLI and replaces any pre-existing browser-use skill):
                                browser-use skill install
+Then load the freshly installed browser-use skill, and follow it to use the latest CLI.
 Skill reference:               https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
 Health check:                  browser-use --doctor"""
 

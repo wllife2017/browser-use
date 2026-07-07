@@ -42,12 +42,7 @@
 
 🌤️ Want to skip the setup? Use our <b>[cloud](https://cloud.browser-use.com?utm_source=github&utm_medium=readme-skip-setup)</b> for faster, scalable, stealth-enabled browser automation!
 
-# 🤖 LLM Quickstart
-
-1. Direct your favorite coding agent (Cursor, Claude Code, etc) to [Agents.md](https://docs.browser-use.com/llms-full.txt)
-2. Prompt away!
-
-<br/>
+🤖 Give our docs to your coding agent: [llms-full.txt](https://docs.browser-use.com/llms-full.txt)
 
 # 👋 Human Quickstart
 
