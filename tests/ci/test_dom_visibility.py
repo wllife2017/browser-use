@@ -76,15 +76,16 @@ class TestVisibilityDoesNotMutateBounds:
 
 	def test_visibility_check_is_idempotent(self):
 		"""Calling the check twice must return the same result (fails if bounds drift)."""
-		html = _make_html_frame(viewport_height=900, scroll_y=600)
-		# Element near the bottom edge of the threshold window: any bounds drift
-		# between calls flips the result.
-		element = _make_node('DIV', _make_snapshot(bounds=DOMRect(x=10, y=2400, width=100, height=50)))
+		html = _make_html_frame(viewport_height=900, scroll_y=1000)
+		# Element exactly inside the top threshold window: with in-place mutation
+		# the first check returns True, then the drifted second check returns False.
+		element = _make_node('DIV', _make_snapshot(bounds=DOMRect(x=10, y=0, width=100, height=50)))
 
 		first = DomService.is_element_visible_according_to_all_parents(element, [html], viewport_threshold=1000)
 		second = DomService.is_element_visible_according_to_all_parents(element, [html], viewport_threshold=1000)
 
-		assert first == second
+		assert first is True
+		assert second is True
 
 	def test_iframe_not_double_transformed_by_own_bounds(self):
 		"""An iframe checked against a frame chain containing itself must not have its
