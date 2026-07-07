@@ -38,13 +38,7 @@
 
 </br>
 
-**Browser Use CLI 3.0 is here.** Give your coding agent a browser it can use reliably.
-
-Paste this into Claude Code, Codex, etc:
-
-```text
-Install or upgrade browser-use to the latest stable version with uv using Python 3.12, register the skill from `browser-use skill`, and connect it to my browser. Follow https://github.com/browser-use/browser-use if setup or connection fails.
-```
+**[Browser Use CLI 3.0 is here.](#-cli)** Give your coding agent a browser it can use reliably.
 
 🌤️ Want to skip the setup? Use our <b>[cloud](https://cloud.browser-use.com?utm_source=github&utm_medium=readme-skip-setup)</b> for faster, scalable, stealth-enabled browser automation!
 
