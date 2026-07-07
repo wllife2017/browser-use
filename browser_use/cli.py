@@ -59,35 +59,26 @@ def _capture_cli_event(
 	error_message: str | None = None,
 ) -> None:
 	try:
-		import logging
-
-		from browser_use.telemetry import CLITelemetryEvent, ProductTelemetry
+		from browser_use.telemetry.service import capture_detached
+		from browser_use.telemetry.views import CLITelemetryEvent
 
 		model, model_provider = _detect_model()
-		telemetry_logger = logging.getLogger('browser_use.telemetry.service')
-		telemetry_logger_disabled = telemetry_logger.disabled
-		telemetry_logger.disabled = True
-		try:
-			telemetry = ProductTelemetry()
-			telemetry.capture(
-				CLITelemetryEvent(
-					version=_browser_use_version(),
-					action=action,
-					mode=mode,
-					command=command,
-					task=_redacted_task(task),
-					task_length=len(task) if task is not None else None,
-					agent_client=_detect_agent_client(),
-					model=model,
-					model_provider=model_provider,
-					duration_seconds=time.monotonic() - start_time,
-					exit_code=_exit_code(result),
-					error_message=error_message,
-				)
+		capture_detached(
+			CLITelemetryEvent(
+				version=_browser_use_version(),
+				action=action,
+				mode=mode,
+				command=command,
+				task=_redacted_task(task),
+				task_length=len(task) if task is not None else None,
+				agent_client=_detect_agent_client(),
+				model=model,
+				model_provider=model_provider,
+				duration_seconds=time.monotonic() - start_time,
+				exit_code=_exit_code(result),
+				error_message=error_message,
 			)
-			telemetry.flush()
-		finally:
-			telemetry_logger.disabled = telemetry_logger_disabled
+		)
 	except Exception:
 		pass
 
