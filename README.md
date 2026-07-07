@@ -155,26 +155,6 @@ https://github.com/user-attachments/assets/ac34f75c-057a-43ef-ad06-5b2c9d42bf06
 
 <br/>
 
-# 🚀 Template Quickstart
-
-**Want to get started even faster?** Generate a ready-to-run template:
-
-```bash
-uvx browser-use init --template default
-```
-
-This creates a `browser_use_default.py` file with a working example. Available templates:
-- `default` - Minimal setup to get started quickly
-- `advanced` - All configuration options with detailed comments
-- `tools` - Examples of custom tools and extending the agent
-
-You can also specify a custom output path:
-```bash
-uvx browser-use init --template default --output my_agent.py
-```
-
-<br/>
-
 # 💻 CLI
 
 **Browser Use CLI 3.0** lets your agents do work for you online with our highest accuracy yet. It is powered by [Browser Harness](https://github.com/browser-use/browser-harness), and it applies what we learned about [agent harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses) and [agent frameworks](https://browser-use.com/posts/bitter-lesson-agent-frameworks): the latest models do best when you give them freedom, rather than abstracting away complexity. We provide your agents with a direct, dependable surface for acting in the browser.
