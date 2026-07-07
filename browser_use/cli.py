@@ -34,18 +34,42 @@ def _first_env_value(names: tuple[str, ...]) -> str | None:
 	return None
 
 
+# Env markers each coding agent injects into subprocesses
+_AGENT_ENV_MARKERS: tuple[tuple[str, str], ...] = (
+	('AGENT=amp', 'amp'),
+	('CLAUDECODE', 'claude-code'),
+	('CODEX_SANDBOX', 'codex'),
+	('CODEX_THREAD_ID', 'codex'),
+	('GEMINI_CLI', 'gemini-cli'),
+	('COPILOT_CLI', 'copilot-cli'),
+	('COPILOT_AGENT_SESSION_ID', 'copilot-cli'),
+	('OPENCLAW_CLI', 'openclaw'),
+	('HERMES_SESSION_ID', 'hermes'),
+	('CURSOR_AGENT', 'cursor'),
+	('CURSOR_TRACE_ID', 'cursor'),
+	('OPENCODE', 'opencode'),
+)
+
+
 def _detect_agent_client() -> str | None:
-	return _first_env_value(('BROWSER_USE_AGENT_CLIENT',))
+	import os
+
+	for marker, client in _AGENT_ENV_MARKERS:
+		name, _, required = marker.partition('=')
+		value = os.environ.get(name)
+		if value and (not required or value == required):
+			return client
+	return None
 
 
 def _detect_model() -> tuple[str | None, str | None]:
 	return _first_env_value(('BROWSER_USE_AGENT_MODEL',)), _first_env_value(('BROWSER_USE_MODEL_PROVIDER',))
 
 
-def _redacted_task(task: str | None) -> str | None:
+def _task_for_telemetry(task: str | None) -> str | None:
 	if task is None:
 		return None
-	return '[redacted]'
+	return task[:20_000]
 
 
 def _capture_cli_event(
@@ -69,7 +93,7 @@ def _capture_cli_event(
 				action=action,
 				mode=mode,
 				command=command,
-				task=_redacted_task(task),
+				task=_task_for_telemetry(task),
 				task_length=len(task) if task is not None else None,
 				agent_client=_detect_agent_client(),
 				model=model,
@@ -261,6 +285,21 @@ def _dispatch(args: list[str]) -> tuple[int | None, str, str, str | None]:
 	return _run_browser_harness(), 'browser_harness', args[0] if args else 'run', task
 
 
+class _StderrTail:
+	"""Pass-through stderr wrapper that remembers the tail as error context."""
+
+	def __init__(self, wrapped):
+		self._wrapped = wrapped
+		self.tail = ''
+
+	def write(self, text):
+		self.tail = (self.tail + text)[-500:]
+		return self._wrapped.write(text)
+
+	def __getattr__(self, name):
+		return getattr(self._wrapped, name)
+
+
 def browser_use_tui_main() -> int | None:
 	print('browser-use-tui is deprecated; use browser-use instead.', file=sys.stderr)
 	return main()
@@ -271,6 +310,8 @@ def main() -> int | None:
 	start_time = time.monotonic()
 	mode, command = _command_context(args)
 	task = None
+	stderr_tail = _StderrTail(sys.stderr)
+	sys.stderr = stderr_tail
 	try:
 		result, mode, command, task = _dispatch(args)
 	except SystemExit as exc:
@@ -282,7 +323,7 @@ def main() -> int | None:
 			start_time=start_time,
 			task=task,
 			result=result,
-			error_message=str(result) if isinstance(result, str) else None,
+			error_message=str(result) if isinstance(result, str) else stderr_tail.tail.strip() or None,
 		)
 		raise
 	except Exception as exc:
@@ -296,6 +337,8 @@ def main() -> int | None:
 			error_message=str(exc),
 		)
 		raise
+	finally:
+		sys.stderr = stderr_tail._wrapped
 
 	_capture_cli_event(
 		action='error' if _exit_code(result) else 'completed',
@@ -304,6 +347,7 @@ def main() -> int | None:
 		start_time=start_time,
 		task=task,
 		result=result,
+		error_message=(stderr_tail.tail.strip() or None) if _exit_code(result) else None,
 	)
 	return result
 
