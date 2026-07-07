@@ -83,16 +83,11 @@ async def main():
     agent = Agent(
         task="Find the number of stars of the browser-use repo",
         llm=ChatBrowserUse(model='openai/gpt-5.5'),
-        # llm=ChatBrowserUse(model='bu-2-0'),  # Browser Use's own optimized model
+        # llm=ChatBrowserUse(model='bu-2-0'),  # Browser Use's optimized model
         # llm=ChatOpenAI(model='gpt-5.5'),
         # llm=ChatAnthropic(model='claude-opus-4-8'),  # Sonnet also works well.
-        browser_profile=BrowserProfile(
-            headless=False,
-            allowed_domains=["*.github.com"],
-        ),
     )
     history = await agent.run()
-    print(history.final_result())
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -150,8 +145,6 @@ https://github.com/user-attachments/assets/ac34f75c-057a-43ef-ad06-5b2c9d42bf06
 
 [Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/pcpartpicker.py)
 
-
-### 💡See [more examples here ↗](https://docs.browser-use.com/examples) and give us a star!
 
 <br/>
 
