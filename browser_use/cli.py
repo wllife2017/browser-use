@@ -228,6 +228,17 @@ def _legacy_command(args: list[str]) -> str | None:
 		return first
 	return None
 
+_CLI3_GUIDE = """Core helpers: new_tab(url), goto_url(url), page_info(), capture_screenshot(),
+  click_at_xy(x, y), type_text(text), fill_input(selector, text), press_key(key),
+  scroll(x, y), js(code), cdp(method, ...), wait_for_load(), wait_for_element(selector),
+  list_tabs(), switch_tab(target), close_tab(target)
+
+Read the full interface now:   browser-use skill show
+Install the CLI 3.0 skill (upgrades the CLI and replaces any pre-existing browser-use skill):
+                               browser-use skill install
+Then load the freshly installed browser-use skill, and follow it to use the latest CLI.
+Skill reference:               https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
+Health check:                  browser-use --doctor"""
 
 def _legacy_migration_message(command: str) -> str:
 	hint = _LEGACY_HINTS[command]
@@ -237,22 +248,45 @@ def _legacy_migration_message(command: str) -> str:
 		replacement = f"  browser-use <<'PY'\n  {hint}\n  PY"
 	return f"""The browser-use CLI changed in 3.0, and '{command}' was removed.
 
-The old preset subcommands are gone. To use the CLI, you write raw Python and 
+The old preset subcommands are gone. To use the CLI, you write raw Python and
 pipe it on stdin, and it runs in a persistent browser session. Browser management
 (daemon startup, Chrome/CDP attach, tabs, waiting) is handled for you.
 
 Replacement for '{command}':
 {replacement}
 
-Core helpers: new_tab(url), goto_url(url), page_info(), capture_screenshot(),
-  click_at_xy(x, y), js(code), cdp(method, ...), wait_for_load()
+{_CLI3_GUIDE}"""
 
-Read the full interface now:   browser-use skill show
-Install the CLI 3.0 skill (upgrades the CLI and replaces any pre-existing browser-use skill):
-                               browser-use skill install
-Then load the freshly installed browser-use skill, and follow it to use the latest CLI.
-Skill reference:               https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
-Health check:                  browser-use --doctor"""
+
+def _unknown_helper_message(name: str) -> str:
+	return f"""'{name}' is not defined in the browser-use CLI.
+
+Example:
+  browser-use <<'PY'
+  new_tab("https://example.com")
+  print(page_info())
+  PY
+
+{_CLI3_GUIDE}"""
+
+
+def _unknown_exec_name(exc: NameError) -> str | None:
+	import re
+
+	name = getattr(exc, 'name', None)
+	if name:
+		return name
+	m = re.search(r"'([A-Za-z_][A-Za-z0-9_]*)'", str(exc))
+	return m.group(1) if m else None
+
+
+def _raised_from_piped_code(exc: BaseException) -> bool:
+	tb = exc.__traceback__
+	while tb is not None:
+		if tb.tb_frame.f_code.co_filename == '<string>':
+			return True
+		tb = tb.tb_next
+	return False
 
 
 _QUICKSTART = """Welcome to the Browser Use CLI. Allow your coding agent to reliably control a web browser.
@@ -337,7 +371,17 @@ def _dispatch(args: list[str]) -> tuple[int | None, str]:
 			return 1, 'run'
 		sys.stdin = StringIO(code)
 
-	return _run_browser_harness(), args[0] if args else 'run'
+	try:
+		return _run_browser_harness(), args[0] if args else 'run'
+	except NameError as exc:
+		name = _unknown_exec_name(exc)
+		if name is None or not _raised_from_piped_code(exc):
+			raise
+		import traceback
+
+		traceback.print_exc()
+		print(_unknown_helper_message(name), file=sys.stderr)
+		return 2, args[0] if args else 'run'
 
 
 class _StderrTail:
