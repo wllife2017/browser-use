@@ -228,6 +228,7 @@ def _legacy_command(args: list[str]) -> str | None:
 		return first
 	return None
 
+
 _CLI3_GUIDE = """Core helpers: new_tab(url), goto_url(url), page_info(), capture_screenshot(),
   click_at_xy(x, y), type_text(text), fill_input(selector, text), press_key(key),
   scroll(x, y), js(code), cdp(method, ...), wait_for_load(), wait_for_element(selector),
@@ -239,6 +240,7 @@ Install the CLI 3.0 skill (upgrades the CLI and replaces any pre-existing browse
 Then load the freshly installed browser-use skill, and follow it to use the latest CLI.
 Skill reference:               https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
 Health check:                  browser-use --doctor"""
+
 
 def _legacy_migration_message(command: str) -> str:
 	hint = _LEGACY_HINTS[command]
@@ -282,11 +284,11 @@ def _unknown_exec_name(exc: NameError) -> str | None:
 
 def _raised_from_piped_code(exc: BaseException) -> bool:
 	tb = exc.__traceback__
+	last = None
 	while tb is not None:
-		if tb.tb_frame.f_code.co_filename == '<string>':
-			return True
+		last = tb
 		tb = tb.tb_next
-	return False
+	return last is not None and last.tb_frame.f_code.co_filename == '<string>'
 
 
 _QUICKSTART = """Welcome to the Browser Use CLI. Allow your coding agent to reliably control a web browser.
