@@ -19,7 +19,7 @@
 ---
 
 <div align="center">
-<a href="#demos"><img src="https://media.browser-use.tools/badges/demos" alt="Demos"></a>
+<a href="#what-can-browser-use-do"><img src="https://media.browser-use.tools/badges/demos" alt="Demos"></a>
 <img width="16" height="1" alt="">
 <a href="https://docs.browser-use.com"><img src="https://media.browser-use.tools/badges/docs" alt="Docs"></a>
 <img width="16" height="1" alt="">
@@ -38,24 +38,50 @@
 
 </br>
 
+# What can Browser Use do?
+
+Browser Use lets an AI agent use a web browser the same way you do — it opens pages, clicks buttons, types, and fills in forms. You describe the task, and it completes it. For example, you can have it:
+
+
+### 📋 Fill Forms
+#### Task: "Fill in this job application with my resume and information."
+![Job Application Demo](https://github.com/user-attachments/assets/57865ee6-6004-49d5-b2c2-6dff39ec2ba9)
+[Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/apply_to_job.py)
+
+
+### 🍎 Shop for Groceries
+#### Task: "Put this list of items into my instacart."
+
+https://github.com/user-attachments/assets/a6813fa7-4a7c-40a6-b4aa-382bf88b1850
+
+[Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/buy_groceries.py)
+
+
+### 💻 Be Your Personal Assistant
+#### Task: "Help me find parts for a custom PC."
+
+https://github.com/user-attachments/assets/ac34f75c-057a-43ef-ad06-5b2c9d42bf06
+
+[Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/pcpartpicker.py)
+
+
+<br/>
+
 # Quickstart
 
-There are two ways to use Browser Use:
-
-- **[CLI](#cli-let-your-coding-agent-use-the-web)**: let your coding agent (Claude Code, Codex, Cursor, etc.) do work for you on the web
-- **[Python library](#python-library-the-easiest-way-to-automate-the-web)**: automate the web from your own code, with any LLM
-
-## CLI: let your coding agent use the web
-
-**Browser Use CLI 3.0 is here.** Paste this prompt into your coding agent, and it sets everything up itself:
+If you want to use Browser Use in your agent (Claude Code, Codex, Cursor, Hermes, OpenClaw, etc.), paste this prompt, and it sets everything up itself:
 
 ```text
-Install or upgrade browser-use to the latest stable version with uv using Python 3.12, register the skill from `browser-use skill`, and connect it to my browser. Follow https://github.com/browser-use/browser-use if setup or connection fails.
+Install or upgrade browser-use to the latest stable version with uv using Python 3.12, run `browser-use skill install` to register the skill, and connect it to my browser. If setup or connection fails, follow https://github.com/browser-use/browser-harness/blob/main/install.md.
 ```
 
-The CLI allows your agent to control the browser by writing Python, and it manages the browser in the background.
+Then tell your agent what you want done.
 
-## Python library: the easiest way to automate the web
+<br/>
+
+# Python library: the easiest way to automate the web
+
+Want to automate the web at scale, from your own code, and with any LLM? Use the Python library:
 
 **1. Install Browser Use (Python >= 3.11):**
 
@@ -94,40 +120,13 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-**Don't want to write the code yourself?** Give your coding agent our docs ([llms-full.txt](https://docs.browser-use.com/llms-full.txt)) and a task, and it writes the script for you:
+**Don't want to write the code yourself?** Give your coding agent our docs ([llms-full.txt](https://docs.browser-use.com/llms-full.txt)), and it writes the script for you:
 
 ```text
 Use Browser Use to find the top Hacker News story. Follow https://docs.browser-use.com/llms-full.txt, use ChatBrowserUse(), and show me the final result.
 ```
 
 Check out the [library docs](https://docs.browser-use.com/open-source/introduction) and the [cloud docs](https://docs.cloud.browser-use.com?utm_source=github&utm_medium=readme-cloud-docs) for more!
-
-<br/>
-
-# Demos
-
-
-### 📋 Form-Filling
-#### Task = "Fill in this job application with my resume and information."
-![Job Application Demo](https://github.com/user-attachments/assets/57865ee6-6004-49d5-b2c2-6dff39ec2ba9)
-[Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/apply_to_job.py)
-
-
-### 🍎 Grocery-Shopping
-#### Task = "Put this list of items into my instacart."
-
-https://github.com/user-attachments/assets/a6813fa7-4a7c-40a6-b4aa-382bf88b1850
-
-[Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/buy_groceries.py)
-
-
-### 💻 Personal-Assistant.
-#### Task = "Help me find parts for a custom PC."
-
-https://github.com/user-attachments/assets/ac34f75c-057a-43ef-ad06-5b2c9d42bf06
-
-[Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/pcpartpicker.py)
-
 
 <br/>
 
@@ -160,6 +159,22 @@ We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is 
 <br/>
 
 # FAQ
+
+<details>
+<summary><b>Should I use the CLI vs. the Python library?</b></summary>
+
+**Use the CLI** if you already have an agent (Claude Code, Codex, Cursor, Hermes, OpenClaw, etc.) that you want to complete browser tasks for you. The agent installs the skill once (see [Quickstart](#quickstart)) and can then control the browser. Examples:
+- "Upload this video to YouTube"
+- "Compare these three laptops and give me a table with prices"
+- "Fill in this job application with my resume"
+
+**Use the Python library** when you are building software that automates the web. Examples:
+- Run many tasks on a schedule or in parallel (scraping, monitoring, QA)
+- Embed a browser agent into your own product
+- Custom tools, custom system prompts, structured output, fine-grained browser control
+
+Rule of thumb: one-off tasks through an agent → CLI. Repeatable automation in code → Python library.
+</details>
 
 <details>
 <summary><b>What's the best model to use?</b></summary>
