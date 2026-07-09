@@ -120,12 +120,6 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-**Don't want to write the code yourself?** Give your coding agent our docs ([llms-full.txt](https://docs.browser-use.com/llms-full.txt)), and it writes the script for you:
-
-```text
-Use Browser Use to find the top Hacker News story. Follow https://docs.browser-use.com/llms-full.txt, use ChatBrowserUse(), and show me the final result.
-```
-
 Check out the [library docs](https://docs.browser-use.com/open-source/introduction) and the [cloud docs](https://docs.cloud.browser-use.com?utm_source=github&utm_medium=readme-cloud-docs) for more!
 
 <br/>
@@ -140,10 +134,12 @@ Check out the [library docs](https://docs.browser-use.com/open-source/introducti
 
 We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
 
+Browser Use is also **#1 on the [Odysseys leaderboard](https://odysseysbench.com/leaderboard)** with an 87.4% average, ahead of computer-use agents from OpenAI, Anthropic, Google, and Microsoft. Odysseys measures the agent's performance on 200 long-horizon web tasks.
+
 **Use the Open-Source Agent**
-- You need [custom tools](https://docs.browser-use.com/customize/tools/basics) or deep code-level integration
-- We recommend pairing with our [cloud browsers](https://docs.browser-use.com/open-source/customize/browser/remote) for leading stealth, proxy rotation, and scaling
-- Or self-host the open-source agent fully on your own machines
+- Free, and runs on your own machine
+- Deep code-level integration and control: pick your LLM, customize the agent's behavior
+- We recommend pairing it with our [cloud browsers](https://docs.browser-use.com/open-source/customize/browser/remote) for leading stealth, proxy rotation, and scaling
 
 **Use the [Fully-Hosted Cloud Agent](https://cloud.browser-use.com?utm_source=github&utm_medium=readme-hosted-agent) (recommended)**
 - Much more powerful agent for complex tasks (see plot above)
