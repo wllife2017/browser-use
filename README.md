@@ -42,10 +42,10 @@
 
 There are two ways to use Browser Use:
 
-- **[CLI](#cli-give-your-coding-agent-a-browser)**: give your coding agent (Claude Code, Codex, Cursor, etc.) a browser it can use
-- **[Python library](#python-library-build-your-own-browser-agents)**: build browser agents in your own code and with any LLM
+- **[CLI](#cli-let-your-coding-agent-use-the-web)**: let your coding agent (Claude Code, Codex, Cursor, etc.) do work for you on the web
+- **[Python library](#python-library-the-easiest-way-to-automate-the-web)**: automate the web from your own code, with any LLM
 
-## CLI: give your coding agent a browser
+## CLI: let your coding agent use the web
 
 **Browser Use CLI 3.0 is here.** Paste this prompt into your coding agent, and it sets everything up itself:
 
@@ -55,16 +55,7 @@ Install or upgrade browser-use to the latest stable version with uv using Python
 
 The CLI allows your agent to control the browser by writing Python, and it manages the browser in the background.
 
-```bash
-browser-use <<'PY'
-new_tab("https://example.com")
-print(page_info())
-PY
-```
-
-The CLI is powered by [Browser Harness](https://github.com/browser-use/browser-harness), and it applies what we learned about [agent harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses): the latest models do best when you give them freedom, rather than abstracting away complexity. We provide your agents with a direct, dependable surface for acting in the browser.
-
-## Python library: build your own browser agents
+## Python library: the easiest way to automate the web
 
 **1. Install Browser Use (Python >= 3.11):**
 
@@ -113,30 +104,6 @@ Check out the [library docs](https://docs.browser-use.com/open-source/introducti
 
 <br/>
 
-# Open Source vs Cloud
-
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="static/accuracy_by_model_light.png">
-  <source media="(prefers-color-scheme: dark)" srcset="static/accuracy_by_model_dark.png">
-  <img alt="BU Bench V1 - LLM Success Rates" src="static/accuracy_by_model_light.png" width="100%">
-</picture>
-
-We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
-
-**Use the Open-Source Agent**
-- You need [custom tools](https://docs.browser-use.com/customize/tools/basics) or deep code-level integration
-- We recommend pairing with our [cloud browsers](https://docs.browser-use.com/open-source/customize/browser/remote) for leading stealth, proxy rotation, and scaling
-- Or self-host the open-source agent fully on your own machines
-
-**Use the [Fully-Hosted Cloud Agent](https://cloud.browser-use.com?utm_source=github&utm_medium=readme-hosted-agent) (recommended)**
-- Much more powerful agent for complex tasks (see plot above)
-- Easiest way to start and scale
-- Best stealth with proxy rotation and captcha solving
-- 1000+ integrations (Gmail, Slack, Notion, and more)
-- Persistent filesystem and memory
-
-<br/>
-
 # Demos
 
 
@@ -161,6 +128,30 @@ https://github.com/user-attachments/assets/ac34f75c-057a-43ef-ad06-5b2c9d42bf06
 
 [Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/pcpartpicker.py)
 
+
+<br/>
+
+# Open Source vs Cloud
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="static/accuracy_by_model_light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="static/accuracy_by_model_dark.png">
+  <img alt="BU Bench V1 - LLM Success Rates" src="static/accuracy_by_model_light.png" width="100%">
+</picture>
+
+We benchmark Browser Use across 100 real-world browser tasks. Full benchmark is open source: **[browser-use/benchmark](https://github.com/browser-use/benchmark)**.
+
+**Use the Open-Source Agent**
+- You need [custom tools](https://docs.browser-use.com/customize/tools/basics) or deep code-level integration
+- We recommend pairing with our [cloud browsers](https://docs.browser-use.com/open-source/customize/browser/remote) for leading stealth, proxy rotation, and scaling
+- Or self-host the open-source agent fully on your own machines
+
+**Use the [Fully-Hosted Cloud Agent](https://cloud.browser-use.com?utm_source=github&utm_medium=readme-hosted-agent) (recommended)**
+- Much more powerful agent for complex tasks (see plot above)
+- Easiest way to start and scale
+- Best stealth with proxy rotation and captcha solving
+- 1000+ integrations (Gmail, Slack, Notion, and more)
+- Persistent filesystem and memory
 
 <br/>
 
