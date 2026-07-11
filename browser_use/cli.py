@@ -57,8 +57,10 @@ def _capture_via_harness(
 		pass
 
 
-def _run_mcp_server() -> None:
+def _run_mcp_stdio_server(module_name: str) -> None:
+	"""Silence all logging"""
 	import asyncio
+	import importlib
 	import logging
 	import os
 
@@ -66,23 +68,16 @@ def _run_mcp_server() -> None:
 	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
 	logging.disable(logging.CRITICAL)
 
-	from browser_use.mcp.server import main as mcp_main
+	main = importlib.import_module(module_name).main
+	asyncio.run(main())
 
-	asyncio.run(mcp_main())
+
+def _run_mcp_server() -> None:
+	_run_mcp_stdio_server('browser_use.mcp.server')
 
 
 def _run_cli_mcp_server() -> None:
-	import asyncio
-	import logging
-	import os
-
-	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'critical'
-	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
-	logging.disable(logging.CRITICAL)
-
-	from browser_use.mcp.cli_mcp import main as cli_mcp_main
-
-	asyncio.run(cli_mcp_main())
+	_run_mcp_stdio_server('browser_use.mcp.cli_mcp')
 
 
 def _run_install_command(argv: list[str]) -> int:

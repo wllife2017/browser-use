@@ -67,6 +67,7 @@ class CLIMCPServer:
 						'full': {'type': 'boolean', 'description': 'Capture beyond the viewport (full page)', 'default': False},
 						'max_dim': {
 							'type': 'integer',
+							'minimum': 1,
 							'description': 'Downscale so no side exceeds this many pixels (e.g. 1800 for 2x displays)',
 						},
 					},
@@ -90,8 +91,11 @@ class CLIMCPServer:
 					output = await asyncio.to_thread(self._execute, code)
 				return [types.TextContent(type='text', text=output or '(no output)')]
 			if name == 'browser_screenshot':
+				max_dim = arguments.get('max_dim')
+				if max_dim is not None and (isinstance(max_dim, bool) or not isinstance(max_dim, int) or max_dim < 1):
+					return [types.TextContent(type='text', text="Error: 'max_dim' must be a positive integer")]
 				async with self._exec_lock:
-					png = await asyncio.to_thread(self._screenshot, bool(arguments.get('full', False)), arguments.get('max_dim'))
+					png = await asyncio.to_thread(self._screenshot, bool(arguments.get('full', False)), max_dim)
 				return [types.ImageContent(type='image', data=png, mimeType='image/png')]
 			return [types.TextContent(type='text', text=f'Unknown tool: {name}')]
 
