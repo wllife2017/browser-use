@@ -71,6 +71,20 @@ def _run_mcp_server() -> None:
 	asyncio.run(mcp_main())
 
 
+def _run_cli_mcp_server() -> None:
+	import asyncio
+	import logging
+	import os
+
+	os.environ['BROWSER_USE_LOGGING_LEVEL'] = 'critical'
+	os.environ['BROWSER_USE_SETUP_LOGGING'] = 'false'
+	logging.disable(logging.CRITICAL)
+
+	from browser_use.mcp.cli_mcp import main as cli_mcp_main
+
+	asyncio.run(cli_mcp_main())
+
+
 def _run_install_command(argv: list[str]) -> int:
 	if any(arg in {'-h', '--help'} for arg in argv):
 		print('usage: browser-use install')
@@ -327,6 +341,8 @@ _EMPTY_STDIN_MESSAGE = """browser-use received empty stdin. This CLI executes Py
 
 
 def _command_name(args: list[str]) -> str:
+	if '--cli-mcp' in args:
+		return 'cli-mcp'
 	if '--mcp' in args:
 		return 'mcp'
 	if args and args[0] == 'install':
@@ -344,6 +360,9 @@ def _command_name(args: list[str]) -> str:
 
 
 def _dispatch(args: list[str]) -> tuple[int | None, str]:
+	if '--cli-mcp' in args:
+		_run_cli_mcp_server()
+		return 0, 'cli-mcp'
 	if '--mcp' in args:
 		_run_mcp_server()
 		return 0, 'mcp'
