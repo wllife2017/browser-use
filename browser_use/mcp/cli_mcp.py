@@ -23,6 +23,7 @@ _NAMESPACE_IMPORTS = (
 	'from browser_harness.helpers import *\n'
 )
 
+
 def _harness_skill_text() -> str:
 	from browser_use.skills.browser_use import skill_text
 
