@@ -229,8 +229,13 @@ class AgentMessagePrompt:
 		stats_text = '<page_stats>'
 		if page_stats['total_elements'] < 10:
 			stats_text += 'Page appears empty (SPA not loaded?) - '
-		# Skeleton screen: many elements but almost no text = loading placeholders
-		elif page_stats['total_elements'] > 20 and page_stats['text_chars'] < page_stats['total_elements'] * 5:
+		# Skeleton screen: low text density only means "loading" while requests are actually in flight;
+		# without that gate the hint fires on most fully-rendered element-heavy pages (measured 76% of prompts)
+		elif (
+			self.browser_state.pending_network_requests
+			and page_stats['total_elements'] > 20
+			and page_stats['text_chars'] < page_stats['total_elements'] * 5
+		):
 			stats_text += 'Page appears to show skeleton/placeholder content (still loading?) - '
 		stats_text += f'{page_stats["links"]} links, {page_stats["interactive_elements"]} interactive, '
 		stats_text += f'{page_stats["iframes"]} iframes'

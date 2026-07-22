@@ -135,6 +135,12 @@ class TestSkeletonScreenDetection:
 		await _navigate(tools, browser_session, f'{base_url}/skeleton')
 
 		state = await browser_session.get_browser_state_summary(include_screenshot=False)
+		# The hint is gated on in-flight requests; the static fixture has none, so simulate one
+		from browser_use.browser.views import NetworkRequest
+
+		state.pending_network_requests = [
+			NetworkRequest(url=f'{base_url}/api/data', method='GET', loading_duration_ms=120.0, resource_type='fetch')
+		]
 		prompt = _make_prompt(state)
 		description = prompt._get_browser_state_description()
 
