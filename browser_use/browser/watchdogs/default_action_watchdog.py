@@ -1841,6 +1841,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if clear:
 				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
 				if not cleared_successfully:
+					if not text:
+						# Pure clear: surface the failure instead of letting the action report success
+						raise BrowserError('Failed to clear text field: field still contains previous text')
 					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')
 
 			# Step 4: Type the text character by character using proper human-like key events
