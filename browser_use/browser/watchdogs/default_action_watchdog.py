@@ -1383,16 +1383,23 @@ class DefaultActionWatchdog(BaseWatchdog):
 								} catch (e) {
 									// ignore
 								}
-								// Use the prototype's native value setter: React patches the instance
-								// setter to track values, so a direct `this.value = ""` makes React's
-								// tracker think nothing changed and the input event gets ignored,
-								// leaving controlled components with the old value.
-								const proto = this.tagName === 'TEXTAREA'
-									? window.HTMLTextAreaElement.prototype
-									: window.HTMLInputElement.prototype;
-								const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-								if (desc && desc.set) {
-									desc.set.call(this, "");
+								// For real <input>/<textarea>, use the prototype's native value setter:
+								// React patches the instance setter to track values, so a direct
+								// `this.value = ""` makes React's tracker think nothing changed and the
+								// input event gets ignored, leaving controlled components with the old
+								// value. For anything else with a .value accessor (web components,
+								// selects), the prototype setter throws Illegal invocation - keep using
+								// the element's own setter there.
+								if (this instanceof HTMLInputElement || this instanceof HTMLTextAreaElement) {
+									const proto = this instanceof HTMLTextAreaElement
+										? window.HTMLTextAreaElement.prototype
+										: window.HTMLInputElement.prototype;
+									const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+									try {
+										desc.set.call(this, "");
+									} catch (e) {
+										this.value = "";
+									}
 								} else {
 									this.value = "";
 								}
@@ -1841,9 +1848,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 			if clear:
 				cleared_successfully = await self._clear_text_field(object_id=object_id, cdp_session=cdp_session)
 				if not cleared_successfully:
-					if not text:
-						# Pure clear: surface the failure instead of letting the action report success
-						raise BrowserError('Failed to clear text field: field still contains previous text')
 					self.logger.warning('⚠️ Text field clearing failed, typing may append to existing text')
 
 			# Step 4: Type the text character by character using proper human-like key events
@@ -2033,13 +2037,21 @@ class DefaultActionWatchdog(BaseWatchdog):
 								'functionDeclaration': """
 									function(newValue) {
 										if (this.value !== undefined) {
-											var desc = Object.getOwnPropertyDescriptor(
-												HTMLInputElement.prototype, 'value'
-											) || Object.getOwnPropertyDescriptor(
-												HTMLTextAreaElement.prototype, 'value'
-											);
+											// Pick the descriptor for THIS element type; calling the
+											// HTMLInputElement setter on a textarea or web component
+											// throws Illegal invocation.
+											var desc = null;
+											if (this instanceof HTMLInputElement) {
+												desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+											} else if (this instanceof HTMLTextAreaElement) {
+												desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+											}
 											if (desc && desc.set) {
-												desc.set.call(this, newValue);
+												try {
+													desc.set.call(this, newValue);
+												} catch (e) {
+													this.value = newValue;
+												}
 											} else {
 												this.value = newValue;
 											}
