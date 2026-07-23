@@ -144,7 +144,7 @@ class TestSkeletonScreenDetection:
 		prompt = _make_prompt(state)
 		description = prompt._get_browser_state_description()
 
-		assert 'skeleton' in description.lower() or 'placeholder' in description.lower(), (
+		assert 'still be loading' in description.lower(), (
 			f'Expected skeleton/placeholder warning in description, got:\n{description[:500]}'
 		)
 
@@ -163,7 +163,7 @@ class TestSkeletonScreenDetection:
 			f'({page_stats["total_elements"] * 5})'
 		)
 		# No skeleton warning in description
-		assert 'skeleton' not in description.lower() and 'placeholder' not in description.lower(), (
+		assert 'still be loading' not in description.lower(), (
 			'Rich page should NOT produce a skeleton warning'
 		)
 
