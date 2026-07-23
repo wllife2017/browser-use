@@ -2380,7 +2380,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				url = match.group(0)
 				original_position = match.start()  # Store original position before URL modification
 
-				# Skip fragments of URLs already matched by earlier pattern				if any(match.start() < end and match.end() > start for start, end in matched_spans):
+				# Skip fragments of URLs already matched by earlier pattern
+				if any(match.start() < end and match.end() > start for start, end in matched_spans):
 					continue
 				matched_spans.append((match.start(), match.end()))
 
