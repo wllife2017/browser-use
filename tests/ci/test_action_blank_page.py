@@ -163,9 +163,7 @@ class TestSkeletonScreenDetection:
 			f'({page_stats["total_elements"] * 5})'
 		)
 		# No skeleton warning in description
-		assert 'still be loading' not in description.lower(), (
-			'Rich page should NOT produce a skeleton warning'
-		)
+		assert 'still be loading' not in description.lower(), 'Rich page should NOT produce a skeleton warning'
 
 
 # ---------------------------------------------------------------------------
