@@ -72,7 +72,7 @@ class DOMTreeSerializer:
 		# Add timing tracking
 		self.timing_info: dict[str, float] = {}
 		# Cache for clickable element detection to avoid redundant calls
-		self._clickable_cache: dict[int, bool] = {}
+		self._clickable_cache: dict[tuple[str | None, int], bool] = {}
 		# Bounding box filtering configuration
 		self.enable_bbox_filtering = enable_bbox_filtering
 		self.containment_threshold = containment_threshold or self.DEFAULT_CONTAINMENT_THRESHOLD
@@ -417,7 +417,10 @@ class DOMTreeSerializer:
 	def _is_interactive_cached(self, node: EnhancedDOMTreeNode) -> bool:
 		"""Cached version of clickable element detection to avoid redundant calls."""
 
-		if node.node_id not in self._clickable_cache:
+		# CDP node IDs are scoped to a session and can be reused by unrelated
+		# elements in cross-origin iframe targets.
+		cache_key = (str(node.session_id) if node.session_id is not None else None, node.node_id)
+		if cache_key not in self._clickable_cache:
 			import time
 
 			start_time = time.time()
@@ -428,9 +431,9 @@ class DOMTreeSerializer:
 				self.timing_info['clickable_detection_time'] = 0
 			self.timing_info['clickable_detection_time'] += end_time - start_time
 
-			self._clickable_cache[node.node_id] = result
+			self._clickable_cache[cache_key] = result
 
-		return self._clickable_cache[node.node_id]
+		return self._clickable_cache[cache_key]
 
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode, depth: int = 0) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
