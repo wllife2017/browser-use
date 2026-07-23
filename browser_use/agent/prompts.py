@@ -228,7 +228,7 @@ class AgentMessagePrompt:
 		# Format statistics
 		stats_text = '<page_stats>'
 		if page_stats['total_elements'] < 10:
-			stats_text += 'Page appears empty - consider to wait - '
+			stats_text += 'Page appears empty - consider waiting - '
 		# Skeleton screen: low text density only means "loading" while requests are actually in flight
 		elif (
 			self.browser_state.pending_network_requests
@@ -238,7 +238,7 @@ class AgentMessagePrompt:
 			pending_count = len(self.browser_state.pending_network_requests)
 			stats_text += (
 				f'{pending_count} network request(s) in flight and little text rendered - '
-				f'page may still be loading, consider to wait - '
+				f'page may still be loading, consider waiting - '
 			)
 		stats_text += f'{page_stats["links"]} links, {page_stats["interactive_elements"]} interactive, '
 		stats_text += f'{page_stats["iframes"]} iframes'
