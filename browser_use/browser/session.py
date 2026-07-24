@@ -54,7 +54,7 @@ from browser_use.browser.events import (
 )
 from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
-from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, TargetInfo
+from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, SerializedDOMState, TargetInfo
 from browser_use.observability import observe_debug
 from browser_use.utils import _log_pretty_url, create_task_with_error_handling, is_new_tab_page
 
@@ -1617,8 +1617,58 @@ class BrowserSession(BaseModel):
 			),
 		)
 
-		# The handler returns the BrowserStateSummary directly
-		result = await event.event_result(raise_if_none=True, raise_if_any=True)
+		# The handler returns the BrowserStateSummary directly. If the complete state
+		# request times out, return a non-actionable state so the model can recover
+		# without exposing selectors from an earlier page.
+		try:
+			result = await event.event_result(raise_if_none=True, raise_if_any=True)
+		except TimeoutError:
+			state_error = (
+				'Browser state capture timed out. The current DOM and screenshot are unavailable, '
+				'so no element indices are safe to use. Recover with navigation, waiting, or another non-indexed action.'
+			)
+			empty_dom_state = SerializedDOMState(_root=None, selector_map={})
+
+			# Clear every action lookup path before calling the model.
+			self.update_cached_selector_map({})
+			if self._dom_watchdog is not None:
+				self._dom_watchdog.selector_map = {}
+				self._dom_watchdog.current_dom_state = empty_dom_state
+				self._dom_watchdog.enhanced_dom_tree = None
+
+			cached_state = self._cached_browser_state_summary
+			current_target = (
+				self.session_manager.get_target(self.agent_focus_target_id)
+				if self.session_manager is not None and self.agent_focus_target_id is not None
+				else None
+			)
+			url = (
+				current_target.url
+				if current_target and current_target.url
+				else cached_state.url
+				if cached_state
+				else 'about:blank'
+			)
+			title = (
+				current_target.title
+				if current_target and current_target.title
+				else cached_state.title
+				if cached_state
+				else 'Browser state unavailable'
+			)
+			tabs = [TabInfo(url=url, title=title, target_id=current_target.target_id)] if current_target else []
+
+			result = BrowserStateSummary(
+				dom_state=empty_dom_state,
+				url=url,
+				title=title,
+				tabs=tabs,
+				screenshot=None,
+				browser_errors=[state_error],
+				state_error=state_error,
+			)
+			self._cached_browser_state_summary = result
+
 		assert result is not None and result.dom_state is not None
 		return result
 
