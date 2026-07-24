@@ -1632,9 +1632,7 @@ class BrowserSession(BaseModel):
 			# Clear every action lookup path before calling the model.
 			self.update_cached_selector_map({})
 			if self._dom_watchdog is not None:
-				self._dom_watchdog.selector_map = {}
-				self._dom_watchdog.current_dom_state = empty_dom_state
-				self._dom_watchdog.enhanced_dom_tree = None
+				self._dom_watchdog.clear_cache()
 
 			cached_state = self._cached_browser_state_summary
 			current_target = (

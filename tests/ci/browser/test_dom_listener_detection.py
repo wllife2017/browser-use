@@ -148,6 +148,35 @@ async def test_whole_state_timeout_returns_model_visible_non_actionable_state(
 	assert browser_session._cached_browser_state_summary is state
 
 
+async def test_fresh_state_after_timeout_repopulates_selector_map(httpserver, browser_session: BrowserSession, monkeypatch):
+	"""A timeout must not prevent the next successful state capture from rebuilding selectors."""
+	httpserver.expect_request('/recover-state').respond_with_data(
+		'<html><body><button id="continue">Continue</button></body></html>',
+		content_type='text/html',
+	)
+	await browser_session.navigate_to(httpserver.url_for('/recover-state'))
+	initial_state = await browser_session.get_browser_state_summary(include_screenshot=False)
+	assert initial_state.dom_state.selector_map
+
+	async def hang_dom_build(_watchdog: DOMWatchdog, _previous_state=None):
+		await asyncio.Future()
+
+	with monkeypatch.context() as timeout_patch:
+		timeout_patch.setenv('TIMEOUT_BrowserStateRequestEvent', '0.1')
+		timeout_patch.setattr(DOMWatchdog, '_build_dom_tree_without_highlights', hang_dom_build)
+		timed_out_state = await browser_session.get_browser_state_summary(include_screenshot=False)
+
+	assert timed_out_state.dom_state.selector_map == {}
+	assert await browser_session.get_selector_map() == {}
+
+	recovered_state = await browser_session.get_browser_state_summary(include_screenshot=False)
+	recovered_nodes = recovered_state.dom_state.selector_map
+	continue_index = next(index for index, node in recovered_nodes.items() if node.attributes.get('id') == 'continue')
+
+	assert recovered_state.state_error is None
+	assert await browser_session.get_element_by_index(continue_index) is recovered_nodes[continue_index]
+
+
 async def test_initial_state_timeout_still_returns_model_visible_state(browser_session: BrowserSession, monkeypatch):
 	"""The first state timeout must not require an earlier cached state."""
 
