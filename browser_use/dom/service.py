@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from cdp_use.cdp.accessibility.commands import GetFullAXTreeReturns
@@ -35,42 +34,12 @@ if TYPE_CHECKING:
 _MAX_JS_CLICK_LISTENER_ELEMENTS = 100
 _DESCRIBE_NODE_BATCH_SIZE = 20
 _JS_CLICK_LISTENER_OVERFLOW = '__browser_use_too_many_click_listeners__'
-_PREVIOUS_MIN_CROSS_ORIGIN_IFRAME_AREA = 50 * 50
-_MIN_CROSS_ORIGIN_IFRAME_AREA = 10 * 10
 _MIN_CROSS_ORIGIN_IFRAME_EDGE = 10
-_MAX_COMPACT_CROSS_ORIGIN_IFRAMES = 10
 
 
 def _is_cross_origin_iframe_size_eligible(width: float, height: float) -> bool:
-	"""Keep pixel-sized beacons out while allowing compact embedded controls."""
-	return (
-		width >= _MIN_CROSS_ORIGIN_IFRAME_EDGE
-		and height >= _MIN_CROSS_ORIGIN_IFRAME_EDGE
-		and width * height >= _MIN_CROSS_ORIGIN_IFRAME_AREA
-	)
-
-
-@dataclass
-class _CrossOriginIframeTraversalContext:
-	"""Bound recursive OOPIF traversal across the complete stitched DOM capture."""
-
-	max_targets: int
-	max_compact_targets: int
-	visited_target_ids: set[TargetID] = field(default_factory=set)
-	traversed_target_count: int = 0
-	traversed_compact_target_count: int = 0
-
-	def try_visit(self, target_id: TargetID, *, is_compact: bool) -> bool:
-		"""Reserve one unique child target without exceeding the configured budget."""
-		if target_id in self.visited_target_ids or self.traversed_target_count >= self.max_targets:
-			return False
-		if is_compact and self.traversed_compact_target_count >= self.max_compact_targets:
-			return False
-		self.visited_target_ids.add(target_id)
-		self.traversed_target_count += 1
-		if is_compact:
-			self.traversed_compact_target_count += 1
-		return True
+	"""Include cross-origin frames that are at least 10px in each dimension."""
+	return width >= _MIN_CROSS_ORIGIN_IFRAME_EDGE and height >= _MIN_CROSS_ORIGIN_IFRAME_EDGE
 
 
 class DomService:
@@ -738,7 +707,7 @@ class DomService:
 		initial_html_frames: list[EnhancedDOMTreeNode] | None = None,
 		initial_total_frame_offset: DOMRect | None = None,
 		iframe_depth: int = 0,
-		cross_origin_traversal: _CrossOriginIframeTraversalContext | None = None,
+		visited_cross_origin_targets: set[TargetID] | None = None,
 	) -> tuple[EnhancedDOMTreeNode, dict[str, float]]:
 		"""Get the DOM tree for a specific target.
 
@@ -748,17 +717,13 @@ class DomService:
 			initial_html_frames: List of HTML frame nodes encountered so far
 			initial_total_frame_offset: Accumulated coordinate offset
 			iframe_depth: Current depth of iframe nesting to prevent infinite recursion
-			cross_origin_traversal: Shared recursive OOPIF target budget and cycle guard
+			visited_cross_origin_targets: Target IDs already included in this DOM capture
 
 		Returns:
 			Tuple of (enhanced_dom_tree_node, timing_info)
 		"""
-		if cross_origin_traversal is None:
-			cross_origin_traversal = _CrossOriginIframeTraversalContext(
-				max_targets=self.max_iframes,
-				max_compact_targets=min(self.max_iframes, _MAX_COMPACT_CROSS_ORIGIN_IFRAMES),
-				visited_target_ids={target_id},
-			)
+		if visited_cross_origin_targets is None:
+			visited_cross_origin_targets = {target_id}
 
 		timing_info: dict[str, float] = {}
 		timing_start_total = time.time()
@@ -1004,11 +969,8 @@ class DomService:
 						f'Skipping iframe at depth {iframe_depth} to prevent infinite recursion (max depth: {self.max_iframe_depth})'
 					)
 				else:
-					# Check if the iframe is visible and large enough to contain an interactive control.
-					# Use area rather than requiring both edges to be >= 50px: hosted payment fields
-					# are commonly wide but only ~40px tall.
+					# Ignore only frames smaller than 10px in either dimension.
 					should_process_iframe = False
-					is_compact_cross_origin_iframe = False
 
 					# First check if the iframe element itself is visible
 					if dom_tree_node.is_visible:
@@ -1020,13 +982,11 @@ class DomService:
 
 							if _is_cross_origin_iframe_size_eligible(width, height):
 								should_process_iframe = True
-								is_compact_cross_origin_iframe = width * height < _PREVIOUS_MIN_CROSS_ORIGIN_IFRAME_AREA
 								self.logger.debug(f'Processing cross-origin iframe: visible=True, width={width}, height={height}')
 							else:
 								self.logger.debug(
 									f'Skipping small cross-origin iframe: width={width}, height={height} '
-									f'(needs >= {_MIN_CROSS_ORIGIN_IFRAME_AREA}px² area and '
-									f'>= {_MIN_CROSS_ORIGIN_IFRAME_EDGE}px per edge)'
+									f'(needs >= {_MIN_CROSS_ORIGIN_IFRAME_EDGE}px per edge)'
 								)
 						else:
 							self.logger.debug('Skipping cross-origin iframe: no bounds available')
@@ -1076,33 +1036,31 @@ class DomService:
 
 						# if target actually exists in one of the frames, just recursively build the dom tree for it
 						if iframe_document_target:
-							if not cross_origin_traversal.try_visit(
-								iframe_document_target['targetId'],
-								is_compact=is_compact_cross_origin_iframe,
-							):
+							child_target_id = iframe_document_target['targetId']
+							traversed_child_count = len(visited_cross_origin_targets) - 1
+							if child_target_id in visited_cross_origin_targets or traversed_child_count >= self.max_iframes:
 								self.logger.debug(
-									f'Skipping already visited or over-budget cross-origin iframe target '
-									f'{iframe_document_target["targetId"]} '
-									f'(max targets: {cross_origin_traversal.max_targets}, '
-									f'max compact targets: {cross_origin_traversal.max_compact_targets})'
+									f'Skipping duplicate or over-limit cross-origin iframe target {child_target_id}'
 								)
-							else:
-								self.logger.debug(
-									f'Getting content document for iframe {node.get("frameId", None)} at depth {iframe_depth + 1}'
+								return dom_tree_node
+
+							visited_cross_origin_targets.add(child_target_id)
+							self.logger.debug(
+								f'Getting content document for iframe {node.get("frameId", None)} at depth {iframe_depth + 1}'
+							)
+							try:
+								content_document, _ = await self.get_dom_tree(
+									target_id=child_target_id,
+									all_frames=all_frames,
+									# Current config: if the cross origin iframe is AT ALL visible, include everything inside it
+									initial_total_frame_offset=total_frame_offset,
+									iframe_depth=iframe_depth + 1,
+									visited_cross_origin_targets=visited_cross_origin_targets,
 								)
-								try:
-									content_document, _ = await self.get_dom_tree(
-										target_id=iframe_document_target['targetId'],
-										all_frames=all_frames,
-										# Current config: if the cross origin iframe is AT ALL visible, include everything inside it
-										initial_total_frame_offset=total_frame_offset,
-										iframe_depth=iframe_depth + 1,
-										cross_origin_traversal=cross_origin_traversal,
-									)
-									dom_tree_node.content_document = content_document
-									dom_tree_node.content_document.parent_node = dom_tree_node
-								except Exception as e:
-									self.logger.debug(f'Failed to get DOM tree for cross-origin iframe {frame_id}: {e}')
+								dom_tree_node.content_document = content_document
+								dom_tree_node.content_document.parent_node = dom_tree_node
+							except Exception as e:
+								self.logger.debug(f'Failed to get DOM tree for cross-origin iframe {frame_id}: {e}')
 
 			return dom_tree_node
 

@@ -6,11 +6,7 @@ node must not be transformed by its own bounds when it appears in its own
 frame chain (as built by _construct_enhanced_node).
 """
 
-from browser_use.dom.service import (
-	DomService,
-	_CrossOriginIframeTraversalContext,
-	_is_cross_origin_iframe_size_eligible,
-)
+from browser_use.dom.service import DomService, _is_cross_origin_iframe_size_eligible
 from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType
 
 
@@ -121,6 +117,9 @@ class TestCrossOriginIframeSizeEligibility:
 		assert _is_cross_origin_iframe_size_eligible(width=1, height=1) is False
 		assert _is_cross_origin_iframe_size_eligible(width=1, height=2500) is False
 
+	def test_accepts_exact_minimum_size(self):
+		assert _is_cross_origin_iframe_size_eligible(width=10, height=10) is True
+
 	def test_accepts_native_checkbox_sized_frame(self):
 		"""Chromium renders an unstyled native checkbox at roughly 13x13 CSS pixels."""
 		assert _is_cross_origin_iframe_size_eligible(width=13, height=13) is True
@@ -128,30 +127,3 @@ class TestCrossOriginIframeSizeEligibility:
 	def test_rejects_frames_below_the_minimum_edge(self):
 		assert _is_cross_origin_iframe_size_eligible(width=9, height=100) is False
 		assert _is_cross_origin_iframe_size_eligible(width=100, height=9) is False
-
-
-class TestCrossOriginIframeTraversalContext:
-	def test_caps_unique_recursive_targets_globally(self):
-		context = _CrossOriginIframeTraversalContext(max_targets=2, max_compact_targets=2, visited_target_ids={'root'})
-
-		assert context.try_visit('child-1', is_compact=False) is True
-		assert context.try_visit('child-2', is_compact=False) is True
-		assert context.try_visit('child-3', is_compact=False) is False
-		assert context.traversed_target_count == 2
-
-	def test_rejects_duplicate_targets_without_spending_budget(self):
-		context = _CrossOriginIframeTraversalContext(max_targets=2, max_compact_targets=2, visited_target_ids={'root'})
-
-		assert context.try_visit('child-1', is_compact=False) is True
-		assert context.try_visit('child-1', is_compact=False) is False
-		assert context.try_visit('child-2', is_compact=False) is True
-		assert context.traversed_target_count == 2
-
-	def test_compact_target_budget_does_not_block_larger_frames(self):
-		context = _CrossOriginIframeTraversalContext(max_targets=4, max_compact_targets=1, visited_target_ids={'root'})
-
-		assert context.try_visit('compact-1', is_compact=True) is True
-		assert context.try_visit('compact-2', is_compact=True) is False
-		assert context.try_visit('large-1', is_compact=False) is True
-		assert context.traversed_compact_target_count == 1
-		assert context.traversed_target_count == 2
