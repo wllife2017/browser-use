@@ -115,7 +115,7 @@ class TestBaseFile:
 			file_path = tmp_path / 'test.md'
 			assert file_path.exists()
 			assert file_path.read_text(encoding='utf-8') == '# Test Content\nJosé'
-			assert file_path.read_bytes().endswith('José'.encode('utf-8'))
+			assert file_path.read_bytes().endswith('José'.encode())
 
 			# Test write operation
 			await file_obj.write('# New Content', tmp_path)
