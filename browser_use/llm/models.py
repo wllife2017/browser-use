@@ -79,6 +79,8 @@ anthropic_claude_3_5_haiku_latest: 'BaseChatModel'
 cerebras_llama3_1_8b: 'BaseChatModel'
 cerebras_llama3_3_70b: 'BaseChatModel'
 cerebras_gpt_oss_120b: 'BaseChatModel'
+cerebras_zai_glm_4_7: 'BaseChatModel'
+cerebras_gemma_4_31b: 'BaseChatModel'
 cerebras_llama_4_scout_17b_16e_instruct: 'BaseChatModel'
 cerebras_llama_4_maverick_17b_128e_instruct: 'BaseChatModel'
 cerebras_qwen_3_32b: 'BaseChatModel'
@@ -319,6 +321,8 @@ __all__ += [
 	'cerebras_llama3_1_8b',
 	'cerebras_llama3_3_70b',
 	'cerebras_gpt_oss_120b',
+	'cerebras_zai_glm_4_7',
+	'cerebras_gemma_4_31b',
 	'cerebras_llama_4_scout_17b_16e_instruct',
 	'cerebras_llama_4_maverick_17b_128e_instruct',
 	'cerebras_qwen_3_32b',
