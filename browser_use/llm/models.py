@@ -143,6 +143,8 @@ def get_llm_by_name(model_name: str):
 		model = model_part.replace('llama_4_maverick', 'llama-4-maverick').replace('_', '-')
 	elif 'gpt_oss_120b' in model_part:
 		model = model_part.replace('gpt_oss_120b', 'gpt-oss-120b')
+	elif 'zai_glm_4_7' in model_part:
+		model = model_part.replace('zai_glm_4_7', 'zai-glm-4.7')
 	elif 'qwen_3_32b' in model_part:
 		model = model_part.replace('qwen_3_32b', 'qwen-3-32b')
 	elif 'qwen_3_235b_a22b_instruct' in model_part:
