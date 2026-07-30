@@ -326,7 +326,10 @@ class ChatAnthropic(BaseChatModel):
 				candidates.append(tool_call)
 			for text_candidate in self._json_candidates_from_text(value):
 				try:
-					candidates.append(json.loads(text_candidate))
+					candidate = json.loads(text_candidate)
+					if isinstance(candidate, dict):
+						candidate = self._repair_serialized_fields(candidate)
+					candidates.append(candidate)
 				except (json.JSONDecodeError, TypeError):
 					continue
 
