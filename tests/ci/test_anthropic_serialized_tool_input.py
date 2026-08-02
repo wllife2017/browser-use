@@ -86,6 +86,34 @@ async def test_valid_tool_input_is_untouched(httpserver):
 	assert result.completion.action == actions
 
 
+async def test_valid_tool_input_wins_over_conflicting_serialized_thinking(httpserver):
+	"""A valid real action must take priority over a serialized action in thinking."""
+	real_actions = [{'click_element_by_index': {'index': 5}}]
+	serialized_actions = [{'click_element_by_index': {'index': 99}}]
+	serialized = json.dumps({'thinking': 'Conflicting fallback.', 'action': serialized_actions})
+	httpserver.expect_request('/v1/messages', method='POST').respond_with_json(
+		_tool_use_response({'thinking': serialized, 'action': real_actions})
+	)
+
+	result = await _chat(httpserver).ainvoke([UserMessage(content='next step')], output_format=StepOutput)
+
+	assert result.completion.action == real_actions
+	assert result.completion.thinking == serialized
+
+
+async def test_serialized_tool_call_outside_thinking_is_not_recovered(httpserver):
+	"""Only the known malformed `thinking` path may be promoted to structured output."""
+	payload = {'thinking': 'Clicking submit.', 'action': [{'click_element_by_index': {'index': 5}}]}
+	httpserver.expect_request('/v1/messages', method='POST').respond_with_json(
+		_tool_use_response({'thinking': 'No structured action was produced.', 'other': json.dumps(payload)})
+	)
+
+	with pytest.raises(ModelProviderError) as exc_info:
+		await _chat(httpserver).ainvoke([UserMessage(content='next step')], output_format=StepOutput)
+
+	assert 'action' in str(exc_info.value)
+
+
 async def test_unrecoverable_tool_input_still_raises(httpserver):
 	"""Recovery must not mask genuinely malformed output."""
 	httpserver.expect_request('/v1/messages', method='POST').respond_with_json(

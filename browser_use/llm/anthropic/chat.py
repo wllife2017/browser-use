@@ -316,34 +316,36 @@ class ChatAnthropic(BaseChatModel):
 		if not isinstance(tool_input, dict):
 			return None
 
-		for value in tool_input.values():
-			if not isinstance(value, str):
+		# The malformed Anthropic response puts the complete call in the schema's
+		# `thinking` argument. Do not promote serialized data from arbitrary fields.
+		thinking = tool_input.get('thinking')
+		if not isinstance(thinking, str):
+			return None
+
+		candidates: list[Any] = []
+		tool_call = self._tool_call_from_text(thinking)
+		if tool_call is not None:
+			candidates.append(tool_call)
+		for text_candidate in self._json_candidates_from_text(thinking):
+			try:
+				candidate = json.loads(text_candidate)
+				if isinstance(candidate, dict):
+					candidate = self._repair_serialized_fields(candidate)
+				candidates.append(candidate)
+			except (json.JSONDecodeError, TypeError):
 				continue
 
-			candidates: list[Any] = []
-			tool_call = self._tool_call_from_text(value)
-			if tool_call is not None:
-				candidates.append(tool_call)
-			for text_candidate in self._json_candidates_from_text(value):
-				try:
-					candidate = json.loads(text_candidate)
-					if isinstance(candidate, dict):
-						candidate = self._repair_serialized_fields(candidate)
-					candidates.append(candidate)
-				except (json.JSONDecodeError, TypeError):
-					continue
-
-			for candidate in candidates:
-				try:
-					completion = output_format.model_validate(candidate)
-				except Exception:
-					continue
-				return ChatInvokeCompletion(
-					completion=completion,
-					usage=usage,
-					stop_reason=response.stop_reason,
-					stop_details=self._get_stop_details(response),
-				)
+		for candidate in candidates:
+			try:
+				completion = output_format.model_validate(candidate)
+			except Exception:
+				continue
+			return ChatInvokeCompletion(
+				completion=completion,
+				usage=usage,
+				stop_reason=response.stop_reason,
+				stop_details=self._get_stop_details(response),
+			)
 
 		return None
 
