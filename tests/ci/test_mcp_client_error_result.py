@@ -46,6 +46,37 @@ async def test_mcp_tool_isError_true_is_surfaced_as_action_result_error():
 
 
 @pytest.mark.asyncio
+async def test_parameterized_mcp_tool_isError_true_is_surfaced_as_action_result_error():
+	"""The parameter-model wrapper must surface application-level MCP errors too."""
+	client = _make_connected_client()
+	client.session.call_tool = AsyncMock(  # type: ignore[union-attr]
+		return_value=types.CallToolResult(
+			content=[types.TextContent(type='text', text='File not found: /tmp/does-not-exist.txt')],
+			isError=True,
+		)
+	)
+
+	tools = Tools()
+	tool = types.Tool(
+		name='read_file',
+		description='Read a file',
+		inputSchema={
+			'type': 'object',
+			'properties': {'path': {'type': 'string'}},
+			'required': ['path'],
+		},
+	)
+	client._register_tool_as_action(tools.registry, 'read_file', tool)
+
+	result = await tools.registry.execute_action('read_file', {'path': '/tmp/does-not-exist.txt'})
+
+	assert result.success is False, f'expected success=False for a failed MCP tool call, got {result!r}'
+	assert result.error, f'expected result.error to be set for a failed MCP tool call, got {result!r}'
+	assert 'File not found' in result.error
+	client.session.call_tool.assert_awaited_once_with('read_file', {'path': '/tmp/does-not-exist.txt'})  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
 async def test_mcp_tool_isError_false_still_succeeds():
 	"""Sanity check: a normal successful MCP tool call is unaffected by the fix."""
 	client = _make_connected_client()
