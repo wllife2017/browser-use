@@ -27,6 +27,16 @@ CUSTOM_MODEL_PRICING: dict[str, dict[str, Any]] = {
 		'max_input_tokens': None,  # Not specified
 		'max_output_tokens': None,  # Not specified
 	},
+	'bu-2-0-mini-preview': {
+		'input_cost_per_token': 0.15 / 1_000_000,  # $0.15 per 1M tokens
+		'output_cost_per_token': 1.50 / 1_000_000,  # $1.50 per 1M tokens
+		# No cache discount on this model: cached reads bill at the input rate.
+		'cache_read_input_token_cost': 0.15 / 1_000_000,  # $0.15 per 1M tokens
+		'cache_creation_input_token_cost': None,  # Not specified
+		'max_tokens': None,  # Not specified
+		'max_input_tokens': None,  # Not specified
+		'max_output_tokens': None,  # Not specified
+	},
 	'claude-sonnet-4-6': {
 		'input_cost_per_token': 3.00 / 1_000_000,
 		'output_cost_per_token': 15.00 / 1_000_000,
