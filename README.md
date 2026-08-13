@@ -105,7 +105,7 @@ async def main():
     agent = Agent(
         task="Find the number of stars of the browser-use repo",
         llm=ChatBrowserUse(model='openai/gpt-5.5'),
-        # llm=ChatBrowserUse(model='bu-2-0'),  # Browser Use's optimized model
+        # llm=ChatBrowserUse(model='bu-2-0-mini-preview'),  # Browser Use's optimized model
         # llm=ChatOpenAI(model='gpt-5.5'),
         # llm=ChatAnthropic(model='claude-opus-4-8'),  # Sonnet also works well
     )
