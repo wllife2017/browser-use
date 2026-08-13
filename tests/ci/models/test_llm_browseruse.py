@@ -56,6 +56,9 @@ def test_bu_2_0_mini_preview_is_priced():
 	assert pricing['output_cost_per_token'] > 0
 	# bu-latest resolves to bu-2-0, not to the preview, so it keeps the premium pricing.
 	assert CUSTOM_MODEL_PRICING['bu-latest'] == CUSTOM_MODEL_PRICING['bu-2-0']
+	# bu-1-0 is redirected to bu-2-0 at the gateway, so it must be billed at bu-2-0 rates
+	# rather than the retired bu-1-0 rates.
+	assert CUSTOM_MODEL_PRICING['bu-1-0'] == CUSTOM_MODEL_PRICING['bu-2-0']
 
 
 def test_llm_models_shortcut_resolves_mini_preview(monkeypatch):

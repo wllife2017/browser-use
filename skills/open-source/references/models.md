@@ -70,8 +70,8 @@ llm = ChatBrowserUse(model='bu-2-0')                # Premium model ('bu-latest'
 | Model | Input | Cached | Output |
 |-------|-------|--------|--------|
 | bu-2-0-mini-preview (default) | $0.15 | $0.15 | $1.50 |
-| bu-1-0 | $0.20 | $0.02 | $2.00 |
 | bu-2-0 (premium) | $0.60 | $0.06 | $3.50 |
+| bu-1-0 (redirects to bu-2-0) | $0.60 | $0.06 | $3.50 |
 | browser-use/bu-30b-a3b-preview (OSS) | — | — | — |
 
 ## OpenAI

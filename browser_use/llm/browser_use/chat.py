@@ -60,7 +60,7 @@ class ChatBrowserUse(BaseChatModel):
 			model: Model name to use. Options:
 				- 'bu-2-0-mini-preview': Default model (fast + cheap, preview)
 				- 'bu-2-0' or 'bu-latest': Premium model
-				- 'bu-1-0': Previous generation model
+				- 'bu-1-0': Previous generation model, redirected to bu-2-0 at the gateway
 				- 'bu-qa-1': Website QA model (tests a site and scores functionality/aesthetics)
 				- 'browser-use/bu-30b-a3b-preview': Browser Use Open Source Model
 				- Provider-prefixed ids resolved by the gateway, e.g. 'anthropic/claude-sonnet-4-6',
