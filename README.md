@@ -47,7 +47,7 @@ Browser Use lets an AI agent use a web browser the same way humans do — it ope
 ### 📋 Fill Forms
 #### Task: "Fill in this job application with my resume and information."
 
-![Job Application Demo](https://github.com/user-attachments/assets/57865ee6-6004-49d5-b2c2-6dff39ec2ba9)
+![Job Application Demo](https://github.com/user-attachments/assets/57611d8e-0474-4de6-84b7-37a0c0cd27e7)
 
 [Example code ↗](https://github.com/browser-use/browser-use/blob/main/examples/use-cases/apply_to_job.py)
 
@@ -55,7 +55,7 @@ Browser Use lets an AI agent use a web browser the same way humans do — it ope
 ### 🍎 Extract data
 #### Task: "Extract structured data about my followers and export it as a CSV."
 
-![Social Data Extraction Demo](https://github.com/user-attachments/assets/93714c75-98f4-4cfc-add1-69c38b5138b5)
+![Social Data Extraction Demo](https://github.com/user-attachments/assets/485fd3ec-61b9-4afc-9e86-ee9b85acb592)
 
 [Browser Use Cloud Docs ↗](https://docs.browser-use.com/cloud/quickstart)
 
