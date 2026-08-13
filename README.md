@@ -60,14 +60,6 @@ Browser Use lets an AI agent use a web browser the same way humans do — it ope
 [Browser Use Cloud Docs ↗](https://docs.browser-use.com/cloud/quickstart)
 
 
-### 💻 QA Automation
-#### Task: "QA test my local website and report any bugs, usability issues, and visual inconsistencies."
-
-<img width="1920" height="1080" alt="qa-demo-small" src="https://github.com/user-attachments/assets/bf590697-df9c-4e79-b646-d6f52bfea976" />
-
-[Browser Use CLI ↗](https://docs.browser-use.com/open-source/browser-use-cli)
-
-
 <br/>
 
 # Quickstart
