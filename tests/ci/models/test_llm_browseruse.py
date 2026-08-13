@@ -64,9 +64,14 @@ def test_bu_2_0_mini_preview_is_priced():
 def test_llm_models_shortcut_resolves_mini_preview(monkeypatch):
 	"""`llm.bu_2_0_mini_preview` must map the underscored name back to the dashed model id."""
 	monkeypatch.setenv('BROWSER_USE_API_KEY', TEST_API_KEY)
-	from browser_use.llm.models import get_llm_by_name
+	from browser_use import llm
+	from browser_use.llm import models
 
-	assert get_llm_by_name('bu_2_0_mini_preview').name == 'bu-2-0-mini-preview'
+	# Go through the advertised attribute rather than the factory beneath it, so dropping the
+	# name from __all__ or breaking module __getattr__ fails here instead of passing silently.
+	assert llm.bu_2_0_mini_preview.name == 'bu-2-0-mini-preview'
+	assert models.bu_2_0_mini_preview.name == 'bu-2-0-mini-preview'
+	assert 'bu_2_0_mini_preview' in models.__all__
 
 
 @pytest.mark.parametrize(
