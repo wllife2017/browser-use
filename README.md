@@ -55,7 +55,7 @@ Browser Use lets an AI agent use a web browser the same way you do — it opens 
 ### 🍎 Extract data
 #### Task: "Extract structured data about my followers and export it as a CSV."
 
-https://github.com/user-attachments/assets/93714c75-98f4-4cfc-add1-69c38b5138b5
+![Social Data Extraction Demo](https://github.com/user-attachments/assets/93714c75-98f4-4cfc-add1-69c38b5138b5)
 
 [Browser Use Cloud Docs ↗](https://docs.browser-use.com/cloud/quickstart)
 
