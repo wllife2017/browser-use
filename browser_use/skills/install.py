@@ -148,6 +148,18 @@ def _validate_output_paths(output_paths: list[Path]) -> None:
 			raise RuntimeError(f'{ancestor} is not a directory.')
 
 
+def _print_skill_text(text: str) -> None:
+	# Windows consoles commonly default to cp1252, which cannot encode the emoji
+	# in OpenClaw skill metadata. Prefer UTF-8 when stdout supports reconfiguration.
+	reconfigure = getattr(sys.stdout, 'reconfigure', None)
+	if callable(reconfigure):
+		try:
+			reconfigure(encoding='utf-8')
+		except OSError:
+			pass
+	print(text, end='')
+
+
 def handle(argv: list[str]) -> int:
 	parser = _build_parser()
 	args = parser.parse_args(argv)
@@ -160,7 +172,7 @@ def handle(argv: list[str]) -> int:
 		except RuntimeError as exc:
 			print(f'Error: {exc}', file=sys.stderr)
 			return 1
-		print(text, end='')
+		_print_skill_text(text)
 		return 0
 
 	if command == 'install':

@@ -13,7 +13,7 @@ metadata:
             {
               "id": "uv",
               "kind": "uv",
-              "package": "browser-use==0.13.7",
+              "package": "browser-use",
               "bins": ["browser-use"],
               "label": "Install Browser Use CLI (uv)",
             },

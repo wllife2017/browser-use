@@ -6,6 +6,27 @@ import re
 from importlib import resources
 from pathlib import Path
 
+OPENCLAW_METADATA = (
+	'metadata:\n'
+	'  {\n'
+	'    "openclaw":\n'
+	'      {\n'
+	'        "emoji": "🌐",\n'
+	'        "requires": { "bins": ["browser-use"] },\n'
+	'        "install":\n'
+	'          [\n'
+	'            {\n'
+	'              "id": "uv",\n'
+	'              "kind": "uv",\n'
+	'              "package": "browser-use",\n'
+	'              "bins": ["browser-use"],\n'
+	'              "label": "Install Browser Use CLI (uv)",\n'
+	'            },\n'
+	'          ],\n'
+	'      },\n'
+	'  }'
+)
+
 
 def as_browser_use_skill(text: str) -> str:
 	"""Expose the Browser Harness skill under the Browser Use skill identity."""
@@ -39,6 +60,10 @@ def as_browser_use_skill(text: str) -> str:
 			1,
 			'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."',
 		)
+	if not any(line.startswith('homepage:') for line in lines):
+		lines.append('homepage: https://browser-use.com')
+	if not any(line.startswith('metadata:') for line in lines):
+		lines.extend(OPENCLAW_METADATA.splitlines())
 
 	body = body.replace('# browser-harness', '# Browser Use', 1).replace('# Browser Harness', '# Browser Use', 1)
 	# Rebrand every mention except repo URLs (github.com/browser-use/browser-harness/...)

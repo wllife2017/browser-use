@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from io import BytesIO, TextIOWrapper
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -87,6 +88,25 @@ def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 		'---\n'
 		'name: browser-use\n'
 		'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."\n'
+		'homepage: https://browser-use.com\n'
+		'metadata:\n'
+		'  {\n'
+		'    "openclaw":\n'
+		'      {\n'
+		'        "emoji": "🌐",\n'
+		'        "requires": { "bins": ["browser-use"] },\n'
+		'        "install":\n'
+		'          [\n'
+		'            {\n'
+		'              "id": "uv",\n'
+		'              "kind": "uv",\n'
+		'              "package": "browser-use",\n'
+		'              "bins": ["browser-use"],\n'
+		'              "label": "Install Browser Use CLI (uv)",\n'
+		'            },\n'
+		'          ],\n'
+		'      },\n'
+		'  }\n'
 		'---\n\n'
 		'# Browser Use\n'
 	)
@@ -118,3 +138,15 @@ def test_browser_use_cli_validates_destination_before_installing_harness(tmp_pat
 	assert result.returncode == 1
 	assert 'is not a directory' in result.stderr
 	assert not uv_args.exists()
+
+
+def test_skill_show_reconfigures_windows_stdout_to_utf8(monkeypatch):
+	from browser_use.skills import install
+
+	buffer = BytesIO()
+	windows_stdout = TextIOWrapper(buffer, encoding='cp1252')
+	monkeypatch.setattr(sys, 'stdout', windows_stdout)
+	install._print_skill_text('Browser Use 🌐\n')
+	windows_stdout.flush()
+
+	assert buffer.getvalue().decode('utf-8') == 'Browser Use 🌐\n'
