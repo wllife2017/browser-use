@@ -12,6 +12,7 @@ EXPECTED_SKILL_INSTALL_PATHS = (
 	Path('.copilot') / 'skills' / 'browser-use' / 'SKILL.md',
 	Path('.cursor') / 'skills' / 'browser-use' / 'SKILL.md',
 	Path('.gemini') / 'skills' / 'browser-use' / 'SKILL.md',
+	Path('.openclaw') / 'skills' / 'browser-use' / 'SKILL.md',
 	Path('.config') / 'opencode' / 'skills' / 'browser-use' / 'SKILL.md',
 )
 
