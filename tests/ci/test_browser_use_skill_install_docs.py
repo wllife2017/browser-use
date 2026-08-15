@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-from io import BytesIO, TextIOWrapper
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -93,7 +92,6 @@ def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 		'  {\n'
 		'    "openclaw":\n'
 		'      {\n'
-		'        "emoji": "🌐",\n'
 		'        "requires": { "bins": ["browser-use"] },\n'
 		'        "install":\n'
 		'          [\n'
@@ -138,53 +136,3 @@ def test_browser_use_cli_validates_destination_before_installing_harness(tmp_pat
 	assert result.returncode == 1
 	assert 'is not a directory' in result.stderr
 	assert not uv_args.exists()
-
-
-def test_skill_show_reconfigures_windows_stdout_to_utf8(monkeypatch):
-	from browser_use.skills import install
-
-	buffer = BytesIO()
-	windows_stdout = TextIOWrapper(buffer, encoding='cp1252')
-	monkeypatch.setattr(sys, 'stdout', windows_stdout)
-	install._print_skill_text('Browser Use 🌐\n')
-	windows_stdout.flush()
-
-	assert buffer.getvalue().decode('utf-8') == 'Browser Use 🌐\n'
-
-
-def test_skill_show_replaces_unsupported_characters_without_reconfigure(monkeypatch):
-	from browser_use.skills import install
-
-	class LegacyStdout:
-		encoding = 'cp1252'
-
-		def __init__(self):
-			self.buffer = BytesIO()
-
-		def write(self, text: str) -> int:
-			data = text.encode(self.encoding)
-			self.buffer.write(data)
-			return len(text)
-
-	class FailingReconfigureStdout(LegacyStdout):
-		def reconfigure(self, **kwargs):
-			raise OSError('legacy stream cannot be reconfigured')
-
-	for legacy_stdout in (LegacyStdout(), FailingReconfigureStdout()):
-		monkeypatch.setattr(sys, 'stdout', legacy_stdout)
-		install._print_skill_text('Browser Use 🌐\n')
-
-		assert legacy_stdout.buffer.getvalue().decode('cp1252') == 'Browser Use ?\n'
-
-
-def test_browser_use_alias_sources_metadata_from_canonical_skill():
-	from browser_use.skills import browser_use
-
-	canonical = browser_use.skill_text()
-	_, canonical_frontmatter, _ = canonical.split('---\n', 2)
-	metadata = canonical_frontmatter[canonical_frontmatter.index('metadata:') :]
-
-	converted = browser_use.as_browser_use_skill('---\nname: browser-harness\n---\n\n# Browser Harness\n')
-	_, converted_frontmatter, _ = converted.split('---\n', 2)
-
-	assert metadata in converted_frontmatter

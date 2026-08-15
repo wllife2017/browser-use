@@ -6,7 +6,6 @@ metadata:
   {
     "openclaw":
       {
-        "emoji": "🌐",
         "requires": { "bins": ["browser-use"] },
         "install":
           [
