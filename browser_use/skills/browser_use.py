@@ -6,26 +6,34 @@ import re
 from importlib import resources
 from pathlib import Path
 
-OPENCLAW_METADATA = (
-	'metadata:\n'
-	'  {\n'
-	'    "openclaw":\n'
-	'      {\n'
-	'        "emoji": "🌐",\n'
-	'        "requires": { "bins": ["browser-use"] },\n'
-	'        "install":\n'
-	'          [\n'
-	'            {\n'
-	'              "id": "uv",\n'
-	'              "kind": "uv",\n'
-	'              "package": "browser-use",\n'
-	'              "bins": ["browser-use"],\n'
-	'              "label": "Install Browser Use CLI (uv)",\n'
-	'            },\n'
-	'          ],\n'
-	'      },\n'
-	'  }'
-)
+
+def _canonical_skill_path() -> Path:
+	return Path(__file__).resolve().parent / 'browser-use' / 'SKILL.md'
+
+
+def _canonical_metadata_lines() -> list[str]:
+	"""Read the metadata block from the canonical Browser Use skill."""
+	skill_path = _canonical_skill_path()
+	if not skill_path.exists():
+		return []
+
+	try:
+		_, frontmatter, _ = skill_path.read_text(encoding='utf-8').split('---\n', 2)
+	except ValueError:
+		return []
+
+	lines = frontmatter.splitlines()
+	try:
+		start = lines.index('metadata:')
+	except ValueError:
+		return []
+
+	end = len(lines)
+	for index in range(start + 1, len(lines)):
+		if lines[index] and not lines[index][0].isspace():
+			end = index
+			break
+	return lines[start:end]
 
 
 def as_browser_use_skill(text: str) -> str:
@@ -63,7 +71,7 @@ def as_browser_use_skill(text: str) -> str:
 	if not any(line.startswith('homepage:') for line in lines):
 		lines.append('homepage: https://browser-use.com')
 	if not any(line.startswith('metadata:') for line in lines):
-		lines.extend(OPENCLAW_METADATA.splitlines())
+		lines.extend(_canonical_metadata_lines())
 
 	body = body.replace('# browser-harness', '# Browser Use', 1).replace('# Browser Harness', '# Browser Use', 1)
 	# Rebrand every mention except repo URLs (github.com/browser-use/browser-harness/...)
@@ -75,7 +83,7 @@ def as_browser_use_skill(text: str) -> str:
 
 def skill_text() -> str:
 	"""Return the canonical Browser Use skill."""
-	skill_path = Path(__file__).resolve().parent / 'browser-use' / 'SKILL.md'
+	skill_path = _canonical_skill_path()
 	if skill_path.exists():
 		return skill_path.read_text(encoding='utf-8')
 

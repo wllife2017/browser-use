@@ -152,11 +152,16 @@ def _print_skill_text(text: str) -> None:
 	# Windows consoles commonly default to cp1252, which cannot encode the emoji
 	# in OpenClaw skill metadata. Prefer UTF-8 when stdout supports reconfiguration.
 	reconfigure = getattr(sys.stdout, 'reconfigure', None)
+	reconfigured = False
 	if callable(reconfigure):
 		try:
-			reconfigure(encoding='utf-8')
-		except OSError:
+			reconfigure(encoding='utf-8', errors='replace')
+			reconfigured = True
+		except (OSError, TypeError, ValueError):
 			pass
+	if not reconfigured:
+		encoding = getattr(sys.stdout, 'encoding', None) or 'utf-8'
+		text = text.encode(encoding, errors='replace').decode(encoding)
 	print(text, end='')
 
 
