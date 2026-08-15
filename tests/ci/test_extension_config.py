@@ -25,10 +25,10 @@ class TestConfigEnvVars:
 		assert _get_headless_default() is None
 
 	@pytest.mark.parametrize(
-		'env_var,getter,truthy_expected,falsy_expected',
+		'env_var,getter,expected',
 		[
-			('BROWSER_USE_DISABLE_EXTENSIONS', _get_enable_default_extensions_default, False, True),
-			('BROWSER_USE_HEADLESS', _get_headless_default, True, False),
+			('BROWSER_USE_DISABLE_EXTENSIONS', _get_enable_default_extensions_default, False),
+			('BROWSER_USE_HEADLESS', _get_headless_default, True),
 		],
 	)
 	def test_env_var_truthy_values(
@@ -36,19 +36,18 @@ class TestConfigEnvVars:
 		monkeypatch: pytest.MonkeyPatch,
 		env_var: str,
 		getter,
-		truthy_expected: bool,
-		falsy_expected: bool,
+		expected: bool,
 	):
 		"""Test truthy env var values are parsed correctly."""
 		for val in TRUTHY_STRINGS:
 			monkeypatch.setenv(env_var, val)
-			assert getter() is truthy_expected, f'Failed for {env_var}={val}'
+			assert getter() is expected, f'Failed for {env_var}={val}'
 
 	@pytest.mark.parametrize(
-		'env_var,getter,truthy_expected,falsy_expected',
+		'env_var,getter,expected',
 		[
-			('BROWSER_USE_DISABLE_EXTENSIONS', _get_enable_default_extensions_default, False, True),
-			('BROWSER_USE_HEADLESS', _get_headless_default, True, False),
+			('BROWSER_USE_DISABLE_EXTENSIONS', _get_enable_default_extensions_default, True),
+			('BROWSER_USE_HEADLESS', _get_headless_default, False),
 		],
 	)
 	def test_env_var_falsy_values(
@@ -56,13 +55,12 @@ class TestConfigEnvVars:
 		monkeypatch: pytest.MonkeyPatch,
 		env_var: str,
 		getter,
-		truthy_expected: bool,
-		falsy_expected: bool,
+		expected: bool,
 	):
 		"""Test falsy env var values are parsed correctly."""
 		for val in FALSY_STRINGS:
 			monkeypatch.setenv(env_var, val)
-			assert getter() is falsy_expected, f'Failed for {env_var}={val}'
+			assert getter() is expected, f'Failed for {env_var}={val}'
 
 	@pytest.mark.parametrize(
 		'env_var,attr_name,truthy_val,falsy_val',
