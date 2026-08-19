@@ -26,6 +26,7 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.service import Agent
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
+from browser_use.tools.service import Tools
 from tests.ci.conftest import create_mock_llm
 
 
@@ -669,3 +670,50 @@ class TestMultiTabOperations:
 			assert 'Successfully' in final_result, 'Agent should report success'
 		except TimeoutError:
 			pytest.fail('Test timed out after 2 minutes - agent hung during multiple tab operations')
+
+
+class TestSwitchTabFailureReporting:
+	"""A failed `switch` must surface as ActionResult.error rather than a fake success.
+
+	Previously both failure paths (a stale/unknown tab_id, and a missing SwitchTabEvent
+	result) returned a non-error ActionResult claiming the switch succeeded. The false
+	claim was written into long_term_memory, so subsequent steps reasoned from a tab the
+	agent never actually reached.
+	"""
+
+	async def test_switch_to_nonexistent_tab_reports_error(self, browser_session):
+		tools = Tools()
+		ActionModel = tools.registry.create_action_model()
+
+		tabs_before = await browser_session.get_tabs()
+		live_ids = {tab.target_id[-4:] for tab in tabs_before}
+		bogus_tab_id = 'zzzz'
+		assert bogus_tab_id not in live_ids
+
+		result = await tools.act(ActionModel(switch={'tab_id': bogus_tab_id}), browser_session=browser_session)
+
+		assert result.error is not None, 'a failed tab switch must set ActionResult.error'
+		assert bogus_tab_id in result.error
+		assert 'Switched to tab' not in (result.extracted_content or '')
+		assert 'Switched to tab' not in (result.long_term_memory or '')
+
+		tabs_after = await browser_session.get_tabs()
+		assert {tab.target_id[-4:] for tab in tabs_after} == live_ids, 'no tab switch should have happened'
+
+	async def test_switch_to_open_tab_still_succeeds(self, browser_session, base_url):
+		tools = Tools()
+		ActionModel = tools.registry.create_action_model()
+
+		original_tab_id = (await browser_session.get_tabs())[0].target_id[-4:]
+
+		open_result = await tools.act(
+			ActionModel(navigate={'url': f'{base_url}/page1', 'new_tab': True}),
+			browser_session=browser_session,
+		)
+		assert open_result.error is None, f'opening a new tab should not error: {open_result.error}'
+
+		result = await tools.act(ActionModel(switch={'tab_id': original_tab_id}), browser_session=browser_session)
+
+		assert result.error is None, f'switching to a live tab must not error: {result.error}'
+		assert result.long_term_memory is not None
+		assert 'Switched to tab' in result.long_term_memory
