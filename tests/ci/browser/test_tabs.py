@@ -19,11 +19,13 @@ Usage:
 
 import asyncio
 import time
+from typing import Any
 
 import pytest
 from pytest_httpserver import HTTPServer
 
 from browser_use.agent.service import Agent
+from browser_use.agent.views import ActionModel
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.tools.service import Tools
@@ -672,6 +674,18 @@ class TestMultiTabOperations:
 			pytest.fail('Test timed out after 2 minutes - agent hung during multiple tab operations')
 
 
+class _TabActionModel(ActionModel):
+	"""ActionModel with explicit slots for the tab actions driven directly via tools.act().
+
+	registry.create_action_model() builds its fields at runtime, so a statically declared
+	subclass is what keeps pyright able to check these call sites. act() dispatches on the
+	key returned by model_dump(exclude_unset=True), so the real registered actions still run.
+	"""
+
+	switch: dict[str, Any] | None = None
+	navigate: dict[str, Any] | None = None
+
+
 class TestSwitchTabFailureReporting:
 	"""A failed `switch` must surface as ActionResult.error rather than a fake success.
 
@@ -683,14 +697,13 @@ class TestSwitchTabFailureReporting:
 
 	async def test_switch_to_nonexistent_tab_reports_error(self, browser_session):
 		tools = Tools()
-		ActionModel = tools.registry.create_action_model()
 
 		tabs_before = await browser_session.get_tabs()
 		live_ids = {tab.target_id[-4:] for tab in tabs_before}
 		bogus_tab_id = 'zzzz'
 		assert bogus_tab_id not in live_ids
 
-		result = await tools.act(ActionModel(switch={'tab_id': bogus_tab_id}), browser_session=browser_session)
+		result = await tools.act(_TabActionModel(switch={'tab_id': bogus_tab_id}), browser_session=browser_session)
 
 		assert result.error is not None, 'a failed tab switch must set ActionResult.error'
 		assert bogus_tab_id in result.error
@@ -702,17 +715,16 @@ class TestSwitchTabFailureReporting:
 
 	async def test_switch_to_open_tab_still_succeeds(self, browser_session, base_url):
 		tools = Tools()
-		ActionModel = tools.registry.create_action_model()
 
 		original_tab_id = (await browser_session.get_tabs())[0].target_id[-4:]
 
 		open_result = await tools.act(
-			ActionModel(navigate={'url': f'{base_url}/page1', 'new_tab': True}),
+			_TabActionModel(navigate={'url': f'{base_url}/page1', 'new_tab': True}),
 			browser_session=browser_session,
 		)
 		assert open_result.error is None, f'opening a new tab should not error: {open_result.error}'
 
-		result = await tools.act(ActionModel(switch={'tab_id': original_tab_id}), browser_session=browser_session)
+		result = await tools.act(_TabActionModel(switch={'tab_id': original_tab_id}), browser_session=browser_session)
 
 		assert result.error is None, f'switching to a live tab must not error: {result.error}'
 		assert result.long_term_memory is not None

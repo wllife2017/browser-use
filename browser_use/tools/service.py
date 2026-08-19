@@ -1013,7 +1013,9 @@ class Tools(Generic[Context]):
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
-				new_target_id = await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
+				# raise_if_any=True so a handler failure surfaces its real cause here instead
+				# of silently becoming a "produced no result" below.
+				new_target_id = await event.event_result(raise_if_any=True, raise_if_none=False)
 			except Exception as e:
 				logger.warning(f'Tab switch failed: {e}')
 				# Preserve the concrete cause (e.g. a stale tab_id) instead of a generic
@@ -1022,8 +1024,8 @@ class Tools(Generic[Context]):
 				raise BrowserError(memory, short_term_memory=memory, long_term_memory=memory)
 
 			# on_SwitchTabEvent returns the newly focused TargetID on every success path, so a
-			# missing result means the handler failed rather than having quietly succeeded
-			# (raise_if_any=False above only suppresses the exception, it doesn't mean success).
+			# missing result (with no exception raised) means the handler still failed rather
+			# than having quietly succeeded.
 			if not new_target_id:
 				memory = f'Failed to switch to tab #{params.tab_id}: tab switch produced no result'
 				logger.warning(memory)
