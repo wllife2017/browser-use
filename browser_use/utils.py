@@ -20,7 +20,7 @@ load_dotenv()
 
 # Pre-compiled regex for URL detection - used in URL shortening
 URL_PATTERN = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE)
-URL_NEGATION_PATTERN = re.compile(r"\b(?:never|not|don'?t)\b", re.IGNORECASE)
+URL_NEGATION_PATTERN = re.compile(r"\b(?:never|not|don['\u2019]?t)\b", re.IGNORECASE)
 
 
 logger = logging.getLogger(__name__)
