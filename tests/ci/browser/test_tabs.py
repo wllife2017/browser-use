@@ -27,6 +27,7 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.service import Agent
 from browser_use.agent.views import ActionModel
 from browser_use.browser import BrowserSession
+from browser_use.browser.events import SwitchTabEvent
 from browser_use.browser.profile import BrowserProfile
 from browser_use.tools.service import Tools
 from tests.ci.conftest import create_mock_llm
@@ -729,3 +730,36 @@ class TestSwitchTabFailureReporting:
 		assert result.error is None, f'switching to a live tab must not error: {result.error}'
 		assert result.long_term_memory is not None
 		assert 'Switched to tab' in result.long_term_memory
+
+	async def test_switch_reports_error_when_event_yields_no_result(self, browser_session, monkeypatch):
+		"""A handler that completes without raising but yields no TargetID is still a failure.
+
+		on_SwitchTabEvent returns a TargetID on every success path, so a missing result is
+		never a quiet success - this must be reported as an error even though nothing raised.
+		"""
+		tools = Tools()
+		tab_id = (await browser_session.get_tabs())[0].target_id[-4:]
+
+		class NoResultEvent:
+			async def _wait(self):
+				return self
+
+			def __await__(self):
+				return self._wait().__await__()
+
+			async def event_result(self, **_kwargs):
+				return None
+
+		original_dispatch = browser_session.event_bus.dispatch
+		monkeypatch.setattr(
+			browser_session.event_bus,
+			'dispatch',
+			lambda event: NoResultEvent() if isinstance(event, SwitchTabEvent) else original_dispatch(event),
+		)
+
+		result = await tools.act(_TabActionModel(switch={'tab_id': tab_id}), browser_session=browser_session)
+
+		assert result.error is not None, 'a switch that yields no result must set ActionResult.error'
+		assert 'produced no result' in result.error
+		assert 'Switched to tab' not in (result.extracted_content or '')
+		assert 'Switched to tab' not in (result.long_term_memory or '')
