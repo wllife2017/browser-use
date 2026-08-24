@@ -225,14 +225,19 @@ class TestFileSystem:
 
 	async def test_write_pdf_preserves_plain_text_angle_brackets(self, empty_filesystem):
 		"""PDF content should be rendered as plain text, not ReportLab markup."""
-		content = 'Comparison: 2 <b y & 5 > 4'
+		lines = ['# Q&A: <b y vs 5', '## Section 2 & 3', '### Notes <i>', 'Comparison: 2 <b y & 5 > 4']
 
-		result = await empty_filesystem.write_file('comparison.pdf', content)
+		result = await empty_filesystem.write_file('comparison.pdf', '\n\n'.join(lines))
 
 		assert result == 'Data written to file comparison.pdf successfully.'
 		pdf_path = empty_filesystem.data_dir / 'comparison.pdf'
 		extracted_text = '\n'.join(page.extract_text() or '' for page in PdfReader(pdf_path).pages)
-		assert content in extracted_text
+		# Header markers are stripped, everything else survives verbatim
+		assert 'Q&A: <b y vs 5' in extracted_text
+		assert 'Section 2 & 3' in extracted_text
+		assert 'Notes <i>' in extracted_text
+		assert 'Comparison: 2 <b y & 5 > 4' in extracted_text
+		assert '#' not in extracted_text
 
 	def test_filesystem_initialization(self, temp_filesystem):
 		"""Test FileSystem initialization with default files."""

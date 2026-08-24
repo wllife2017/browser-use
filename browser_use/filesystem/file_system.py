@@ -265,17 +265,17 @@ class PdfFile(BaseFile):
 
 			for line in content_lines:
 				if line.strip():
-					escaped_line = html.escape(line)
 					# Handle basic markdown headers
 					if line.startswith('# '):
-						para = Paragraph(escaped_line[2:], styles['Title'])
+						text, style = line[2:], styles['Title']
 					elif line.startswith('## '):
-						para = Paragraph(escaped_line[3:], styles['Heading1'])
+						text, style = line[3:], styles['Heading1']
 					elif line.startswith('### '):
-						para = Paragraph(escaped_line[4:], styles['Heading2'])
+						text, style = line[4:], styles['Heading2']
 					else:
-						para = Paragraph(escaped_line, styles['Normal'])
-					story.append(para)
+						text, style = line, styles['Normal']
+					# Paragraph parses its input as ReportLab markup, but our content is plain text
+					story.append(Paragraph(html.escape(text), style))
 				else:
 					story.append(Spacer(1, 6))
 
