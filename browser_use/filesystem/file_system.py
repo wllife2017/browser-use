@@ -258,9 +258,7 @@ class PdfFile(BaseFile):
 			styles = getSampleStyleSheet()
 			story = []
 
-			# Convert markdown content to simple text and add to PDF
-			# For basic implementation, we'll treat content as plain text
-			# This avoids the AGPL license issue while maintaining functionality
+			# Plain text plus markdown headers only, to avoid an AGPL markdown-to-PDF dependency
 			content_lines = self.content.split('\n')
 
 			for line in content_lines:

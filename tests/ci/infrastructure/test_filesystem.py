@@ -20,6 +20,15 @@ from browser_use.filesystem.file_system import (
 )
 
 
+def _extract_pdf_text(path: Path) -> tuple[str, list[str]]:
+	"""Extract a PDF as (whitespace-collapsed blob, non-empty stripped lines).
+
+	The blob tolerates line wrapping; the lines are what header markers would survive on.
+	"""
+	text = '\n'.join(page.extract_text() or '' for page in PdfReader(path).pages)
+	return ' '.join(text.split()), [line.strip() for line in text.splitlines() if line.strip()]
+
+
 class TestBaseFile:
 	"""Test the BaseFile abstract base class and its implementations."""
 
@@ -236,14 +245,25 @@ class TestFileSystem:
 		result = await empty_filesystem.write_file('comparison.pdf', '\n\n'.join([source for source, _ in headers] + body))
 
 		assert result == 'Data written to file comparison.pdf successfully.'
-		pdf_path = empty_filesystem.data_dir / 'comparison.pdf'
-		extracted_text = '\n'.join(page.extract_text() or '' for page in PdfReader(pdf_path).pages)
-		# Match whole lines: a substring check still passes with a leftover '# ' marker
-		extracted_lines = [line.strip() for line in extracted_text.splitlines()]
+		blob, lines = _extract_pdf_text(empty_filesystem.data_dir / 'comparison.pdf')
 		for _, rendered in headers:
-			assert rendered in extracted_lines
+			assert rendered in blob
 		for line in body:
-			assert line in extracted_lines
+			assert line in blob
+		# Content checks alone pass with a leftover marker, e.g. '# Notes <i> #1' contains 'Notes <i> #1'
+		assert [line for line in lines if line.startswith(('# ', '## ', '### '))] == []
+
+	async def test_append_pdf_escapes_both_halves(self, empty_filesystem):
+		"""Appending re-renders the whole PDF, so old and new content must both stay plain text."""
+		# The markup that breaks ReportLab goes in the appended half, so this fails on the append path alone
+		await empty_filesystem.write_file('report.pdf', 'First & half')
+
+		result = await empty_filesystem.append_file('report.pdf', '\nSecond <b half > 2')
+
+		assert result == 'Data appended to file report.pdf successfully.'
+		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'report.pdf')
+		assert 'First & half' in blob
+		assert 'Second <b half > 2' in blob
 
 	def test_filesystem_initialization(self, temp_filesystem):
 		"""Test FileSystem initialization with default files."""
