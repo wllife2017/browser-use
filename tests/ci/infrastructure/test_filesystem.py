@@ -223,7 +223,7 @@ class TestFileSystem:
 			except Exception:
 				pass
 
-	async def test_write_pdf_preserves_plain_text_angle_brackets(self, empty_filesystem):
+	async def test_write_pdf_renders_content_as_plain_text(self, empty_filesystem):
 		"""PDF content should be rendered as plain text, not ReportLab markup."""
 		# (markdown source, text expected in the PDF)
 		headers = [
@@ -231,18 +231,19 @@ class TestFileSystem:
 			('## Section 2 & 3', 'Section 2 & 3'),
 			('### Notes <i> #1', 'Notes <i> #1'),
 		]
-		body = 'Comparison: 2 <b y & 5 > 4'
+		body = ['Comparison: 2 <b y & 5 > 4', '#hashtag is not a header', 'O\'Brien said "hi" & left']
 
-		result = await empty_filesystem.write_file('comparison.pdf', '\n\n'.join([source for source, _ in headers] + [body]))
+		result = await empty_filesystem.write_file('comparison.pdf', '\n\n'.join([source for source, _ in headers] + body))
 
 		assert result == 'Data written to file comparison.pdf successfully.'
 		pdf_path = empty_filesystem.data_dir / 'comparison.pdf'
 		extracted_text = '\n'.join(page.extract_text() or '' for page in PdfReader(pdf_path).pages)
-		assert body in extracted_text
-		for source, rendered in headers:
-			# Only the leading header marker is stripped, everything else survives verbatim
-			assert rendered in extracted_text
-			assert source not in extracted_text
+		# Match whole lines: a substring check still passes with a leftover '# ' marker
+		extracted_lines = [line.strip() for line in extracted_text.splitlines()]
+		for _, rendered in headers:
+			assert rendered in extracted_lines
+		for line in body:
+			assert line in extracted_lines
 
 	def test_filesystem_initialization(self, temp_filesystem):
 		"""Test FileSystem initialization with default files."""
