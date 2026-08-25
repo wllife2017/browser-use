@@ -933,14 +933,18 @@ class DOMTreeSerializer:
 			path_without_query = clean_src.split('?', 1)[0].split('#', 1)[0].rstrip('/')
 			return path_without_query.rsplit('/', 1)[-1]
 
-		pending = list(reversed(node.children))
+		child_iterators = [iter(node.children)]
 		visited_descendants = 0
 		while (
-			pending
+			child_iterators
 			and visited_descendants < DOMTreeSerializer.MAX_CHILD_IMAGE_DESCENDANTS
 			and len(image_context) < DOMTreeSerializer.MAX_CHILD_IMAGE_CONTEXTS
 		):
-			current = pending.pop()
+			try:
+				current = next(child_iterators[-1])
+			except StopIteration:
+				child_iterators.pop()
+				continue
 			visited_descendants += 1
 			original_node = current.original_node
 			if original_node.node_type == NodeType.ELEMENT_NODE and original_node.tag_name == 'img':
@@ -963,7 +967,8 @@ class DOMTreeSerializer:
 				if parts:
 					image_context.append(' '.join(parts))
 
-			pending.extend(reversed(current.children))
+			if current.children:
+				child_iterators.append(iter(current.children))
 
 		return ' '.join(image_context)
 

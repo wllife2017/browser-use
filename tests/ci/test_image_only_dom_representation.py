@@ -86,6 +86,29 @@ def _simplified_image(backend_node_id: int, attributes: dict[str, str]) -> Simpl
 	return SimplifiedNode(original_node=image, children=[])
 
 
+class _NoEagerReverseList(list[SimplifiedNode]):
+	def __reversed__(self):
+		raise AssertionError('child lists must be traversed lazily')
+
+
+def test_child_image_context_finds_images_below_non_interactive_wrappers():
+	parent = _make_element_node(251, 'a', {'href': '/cards'}, x=10, y=10)
+	wrapper = _make_element_node(252, 'div', {}, x=12, y=12)
+	node = SimplifiedNode(
+		original_node=parent,
+		children=[
+			SimplifiedNode(
+				original_node=wrapper,
+				children=[_simplified_image(253, {'src': '/nested-card.png'})],
+			),
+		],
+	)
+
+	context = DOMTreeSerializer._get_child_image_context(node)
+
+	assert context == 'image_src=nested-card.png'
+
+
 def test_child_image_context_strips_query_and_fragment_without_leaking_query_only_sources():
 	parent = _make_element_node(301, 'a', {'href': '/cards'}, x=10, y=10)
 	node = SimplifiedNode(
@@ -151,6 +174,18 @@ def test_child_image_context_caps_traversal_even_when_images_have_no_context():
 	node = SimplifiedNode(
 		original_node=parent,
 		children=[*ignored_images, _simplified_image(999, {'src': '/too-deep.png'})],
+	)
+
+	context = DOMTreeSerializer._get_child_image_context(node)
+
+	assert context == ''
+
+
+def test_child_image_context_does_not_copy_wide_child_lists_before_traversal():
+	parent = _make_element_node(701, 'a', {'href': '/gallery'}, x=10, y=10)
+	node = SimplifiedNode(original_node=parent, children=[])
+	node.children = _NoEagerReverseList(
+		_simplified_image(702 + index, {'src': 'data:image/png;base64,ignored'}) for index in range(200)
 	)
 
 	context = DOMTreeSerializer._get_child_image_context(node)
