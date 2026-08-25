@@ -79,3 +79,80 @@ def test_image_only_interactive_parent_includes_child_image_context_in_llm_dom()
 
 	assert '[201]<a' in llm_dom
 	assert 'acme-bank-primary-card.png' in llm_dom
+
+
+def _simplified_image(backend_node_id: int, attributes: dict[str, str]) -> SimplifiedNode:
+	image = _make_element_node(backend_node_id, 'img', attributes, x=18, y=18)
+	return SimplifiedNode(original_node=image, children=[])
+
+
+def test_child_image_context_strips_query_and_fragment_without_leaking_query_only_sources():
+	parent = _make_element_node(301, 'a', {'href': '/cards'}, x=10, y=10)
+	node = SimplifiedNode(
+		original_node=parent,
+		children=[
+			_simplified_image(302, {'src': 'https://cdn.test/card.png?token=secret#preview'}),
+			_simplified_image(303, {'src': '?token=must-not-leak'}),
+		],
+	)
+
+	context = DOMTreeSerializer._get_child_image_context(node)
+
+	assert context == 'image_src=card.png'
+	assert 'secret' not in context
+	assert 'must-not-leak' not in context
+
+
+def test_child_image_context_ignores_data_src_but_keeps_accessible_attributes():
+	parent = _make_element_node(401, 'button', {}, x=10, y=10)
+	node = SimplifiedNode(
+		original_node=parent,
+		children=[
+			_simplified_image(
+				402,
+				{
+					'src': 'data:image/png;base64,private-payload',
+					'alt': 'Payment card',
+					'title': 'Choose card',
+					'aria-label': 'Primary payment method',
+				},
+			),
+		],
+	)
+
+	context = DOMTreeSerializer._get_child_image_context(node)
+
+	assert context == 'image_alt=Payment card image_title=Choose card image_label=Primary payment method'
+	assert 'data:' not in context
+	assert 'private-payload' not in context
+
+
+def test_child_image_context_limits_returned_images():
+	parent = _make_element_node(501, 'a', {'href': '/gallery'}, x=10, y=10)
+	node = SimplifiedNode(
+		original_node=parent,
+		children=[_simplified_image(502 + index, {'src': f'/image-{index}.png'}) for index in range(4)],
+	)
+
+	context = DOMTreeSerializer._get_child_image_context(node)
+
+	assert 'image-0.png' in context
+	assert 'image-1.png' in context
+	assert 'image-2.png' in context
+	assert 'image-3.png' not in context
+
+
+def test_child_image_context_caps_traversal_even_when_images_have_no_context():
+	parent = _make_element_node(601, 'a', {'href': '/gallery'}, x=10, y=10)
+	ignored_images = [
+		_simplified_image(602 + index, {'src': 'data:image/png;base64,ignored'})
+		for index in range(DOMTreeSerializer.MAX_CHILD_IMAGE_DESCENDANTS)
+	]
+	node = SimplifiedNode(
+		original_node=parent,
+		children=[*ignored_images, _simplified_image(999, {'src': '/too-deep.png'})],
+	)
+
+	context = DOMTreeSerializer._get_child_image_context(node)
+
+	assert context == ''

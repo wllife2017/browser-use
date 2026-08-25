@@ -55,6 +55,8 @@ class DOMTreeSerializer:
 		# {'tag': 'span', 'role': 'link'},    # <span role="link">
 	]
 	DEFAULT_CONTAINMENT_THRESHOLD = 0.99  # 99% containment by default
+	MAX_CHILD_IMAGE_CONTEXTS = 3
+	MAX_CHILD_IMAGE_DESCENDANTS = 100
 
 	def __init__(
 		self,
@@ -929,12 +931,17 @@ class DOMTreeSerializer:
 			if clean_src.lower().startswith('data:'):
 				return ''
 			path_without_query = clean_src.split('?', 1)[0].split('#', 1)[0].rstrip('/')
-			return path_without_query.rsplit('/', 1)[-1] or clean_src
+			return path_without_query.rsplit('/', 1)[-1]
 
-		def collect(current: SimplifiedNode) -> None:
-			if len(image_context) >= 3:
-				return
-
+		pending = list(reversed(node.children))
+		visited_descendants = 0
+		while (
+			pending
+			and visited_descendants < DOMTreeSerializer.MAX_CHILD_IMAGE_DESCENDANTS
+			and len(image_context) < DOMTreeSerializer.MAX_CHILD_IMAGE_CONTEXTS
+		):
+			current = pending.pop()
+			visited_descendants += 1
 			original_node = current.original_node
 			if original_node.node_type == NodeType.ELEMENT_NODE and original_node.tag_name == 'img':
 				attributes = original_node.attributes or {}
@@ -945,22 +952,18 @@ class DOMTreeSerializer:
 					('title', 'image_title'),
 					('aria-label', 'image_label'),
 				):
-					attr_value = attributes.get(attr_name, '').strip()
+					attr_value = str(attributes.get(attr_name) or '').strip()
 					if attr_value:
 						parts.append(f'{output_name}={cap_text_length(attr_value, 100)}')
 
-				src = normalize_src(attributes.get('src', ''))
+				src = normalize_src(str(attributes.get('src') or ''))
 				if src:
 					parts.append(f'image_src={cap_text_length(src, 100)}')
 
 				if parts:
 					image_context.append(' '.join(parts))
 
-			for child in current.children:
-				collect(child)
-
-		for child in node.children:
-			collect(child)
+			pending.extend(reversed(current.children))
 
 		return ' '.join(image_context)
 
