@@ -17,6 +17,7 @@ from browser_use.filesystem.file_system import (
 	JsonlFile,
 	MarkdownFile,
 	TxtFile,
+	_markdown_inline_to_rml,
 	_split_heading,
 )
 
@@ -52,6 +53,16 @@ class TestBaseFile:
 		assert _split_heading('#hashtag is not a header') == ('#hashtag is not a header', None)
 		assert _split_heading('plain') == ('plain', None)
 		assert _split_heading('#### too deep') == ('#### too deep', None)
+
+	def test_markdown_inline_glob_is_not_bold(self):
+		"""Recursive globs must not be treated as bold delimiters."""
+		assert _markdown_inline_to_rml('**/foo/**') == '**/foo/**'
+		assert _markdown_inline_to_rml('**bold** and **/foo/**') == '<b>bold</b> and **/foo/**'
+
+	def test_markdown_inline_code_protects_emphasis(self):
+		"""Emphasis markers inside backticks stay Courier, not italic/bold."""
+		assert _markdown_inline_to_rml('`*literal*`') == '<font face="Courier">*literal*</font>'
+		assert _markdown_inline_to_rml('`**bold**`') == '<font face="Courier">**bold**</font>'
 
 	def test_txt_file_creation(self):
 		"""Test TxtFile creation and basic properties."""
@@ -308,6 +319,7 @@ class TestFileSystem:
 			[
 				'Arithmetic 2 * 3 * 4 stays literal',
 				'Glob pattern *.txt and **/*.py stay literal',
+				'Recursive glob **/foo/** stays literal',
 			]
 		)
 		result = await empty_filesystem.write_file('stars.pdf', source)
@@ -316,6 +328,7 @@ class TestFileSystem:
 		assert '2 * 3 * 4' in blob
 		assert '*.txt' in blob
 		assert '**/*.py' in blob
+		assert '**/foo/**' in blob
 
 	async def test_write_pdf_underscore_is_not_italic(self, empty_filesystem):
 		"""Underscores are identifiers, not emphasis."""
@@ -341,6 +354,17 @@ class TestFileSystem:
 		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'backticks.pdf')
 		assert 'Run $(cmd) inline.' in blob
 		assert 'echo `$(cmd)`' in blob
+
+	async def test_write_pdf_inline_code_protects_emphasis_markers(self, empty_filesystem):
+		"""Stars inside inline code stay literal instead of becoming italic/bold."""
+		source = 'Keep `*literal*` and `**bold**` as code.'
+		result = await empty_filesystem.write_file('code_stars.pdf', source)
+		assert result == 'Data written to file code_stars.pdf successfully.'
+		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'code_stars.pdf')
+		assert '*literal*' in blob
+		assert '**bold**' in blob
+		assert '`*literal*`' not in blob
+		assert '`**bold**`' not in blob
 
 	def test_filesystem_initialization(self, temp_filesystem):
 		"""Test FileSystem initialization with default files."""
