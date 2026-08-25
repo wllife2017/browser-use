@@ -17,6 +17,7 @@ from browser_use.filesystem.file_system import (
 	JsonlFile,
 	MarkdownFile,
 	TxtFile,
+	_split_heading,
 )
 
 
@@ -42,6 +43,15 @@ class TestBaseFile:
 		assert md_file.full_name == 'test.md'
 		assert md_file.get_size == 13
 		assert md_file.get_line_count == 1
+
+	def test_split_heading_levels(self):
+		"""PdfFile and DocxFile share one heading parser."""
+		assert _split_heading('# Title') == ('Title', 1)
+		assert _split_heading('## Section') == ('Section', 2)
+		assert _split_heading('### Notes') == ('Notes', 3)
+		assert _split_heading('#hashtag is not a header') == ('#hashtag is not a header', None)
+		assert _split_heading('plain') == ('plain', None)
+		assert _split_heading('#### too deep') == ('#### too deep', None)
 
 	def test_txt_file_creation(self):
 		"""Test TxtFile creation and basic properties."""
@@ -264,6 +274,73 @@ class TestFileSystem:
 		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'report.pdf')
 		assert 'First & half' in blob
 		assert 'Second <b half > 2' in blob
+
+	async def test_write_pdf_renders_markdown_formatting(self, empty_filesystem):
+		"""PDF export honors bold, italic, inline code, and bullets."""
+		source = '\n'.join(
+			[
+				'This is **bold text** in a sentence.',
+				'This is *italic text* in a sentence.',
+				'Use `inline_code` here.',
+				'- first bullet item',
+				'- second bullet item',
+				'* star bullet item',
+			]
+		)
+		result = await empty_filesystem.write_file('formatted.pdf', source)
+		assert result == 'Data written to file formatted.pdf successfully.'
+		blob, lines = _extract_pdf_text(empty_filesystem.data_dir / 'formatted.pdf')
+
+		assert 'bold text' in blob
+		assert '**bold text**' not in blob
+		assert 'italic text' in blob
+		assert '*italic text*' not in blob
+		assert 'inline_code' in blob
+		assert '`inline_code`' not in blob
+		assert 'first bullet item' in blob
+		assert 'second bullet item' in blob
+		assert 'star bullet item' in blob
+		assert not any(line.startswith(('- ', '* ')) for line in lines)
+
+	async def test_write_pdf_star_overload_is_not_emphasis(self, empty_filesystem):
+		"""Arithmetic and glob stars must not be treated as italic or bullets."""
+		source = '\n'.join(
+			[
+				'Arithmetic 2 * 3 * 4 stays literal',
+				'Glob pattern *.txt and **/*.py stay literal',
+			]
+		)
+		result = await empty_filesystem.write_file('stars.pdf', source)
+		assert result == 'Data written to file stars.pdf successfully.'
+		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'stars.pdf')
+		assert '2 * 3 * 4' in blob
+		assert '*.txt' in blob
+		assert '**/*.py' in blob
+
+	async def test_write_pdf_underscore_is_not_italic(self, empty_filesystem):
+		"""Underscores are identifiers, not emphasis."""
+		source = 'Keep snake_case_names and file_name_here unchanged.'
+		result = await empty_filesystem.write_file('names.pdf', source)
+		assert result == 'Data written to file names.pdf successfully.'
+		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'names.pdf')
+		assert 'snake_case_names' in blob
+		assert 'file_name_here' in blob
+
+	async def test_write_pdf_fenced_backticks_stay_literal(self, empty_filesystem):
+		"""Inline code strips backticks; fenced shell snippets keep them."""
+		source = '\n'.join(
+			[
+				'Run `$(cmd)` inline.',
+				'```',
+				'echo `$(cmd)`',
+				'```',
+			]
+		)
+		result = await empty_filesystem.write_file('backticks.pdf', source)
+		assert result == 'Data written to file backticks.pdf successfully.'
+		blob, _ = _extract_pdf_text(empty_filesystem.data_dir / 'backticks.pdf')
+		assert 'Run $(cmd) inline.' in blob
+		assert 'echo `$(cmd)`' in blob
 
 	def test_filesystem_initialization(self, temp_filesystem):
 		"""Test FileSystem initialization with default files."""
