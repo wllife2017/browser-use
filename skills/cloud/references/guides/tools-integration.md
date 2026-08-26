@@ -63,7 +63,7 @@ Use the same `BU_NAME` for every later call so the agent stays on that cloud bro
 ```bash
 # 1. Navigate and observe
 BU_NAME=agent-1 browser-use <<'PY'
-new_tab("https://example.com")
+new_tab("https://html.duckduckgo.com/html/")
 wait_for_load()
 print(page_info())
 PY
