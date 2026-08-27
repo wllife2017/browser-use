@@ -36,13 +36,14 @@ class ChatDeepSeek(BaseChatModel):
 	temperature: float | None = None
 	top_p: float | None = None
 	seed: int | None = None
-	thinking: bool = False
 
 	# Connection parameters
 	api_key: str | None = None
 	base_url: str | httpx.URL | None = 'https://api.deepseek.com/v1'
 	timeout: float | httpx.Timeout | None = None
 	client_params: dict[str, Any] | None = None
+	
+	thinking: bool = False
 
 	@property
 	def provider(self) -> str:
@@ -60,6 +61,10 @@ class ChatDeepSeek(BaseChatModel):
 	def name(self) -> str:
 		return self.model
 
+	def _supports_thinking(self) -> bool:
+
+		return 'deepseek-v4' in self.model.lower()
+
 	def _request_kwargs(self) -> dict[str, Any]:
 		common: dict[str, Any] = {}
 
@@ -72,9 +77,10 @@ class ChatDeepSeek(BaseChatModel):
 		if self.seed is not None:
 			common['seed'] = self.seed
 
-		common['extra_body'] = {
-			'thinking': {'type': 'enabled' if self.thinking else 'disabled'},
-		}
+		if self._supports_thinking():
+			common['extra_body'] = {
+				'thinking': {'type': 'enabled' if self.thinking else 'disabled'},
+			}
 		return common
 
 	@overload
