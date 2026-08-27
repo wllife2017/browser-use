@@ -104,23 +104,19 @@ def _markdown_inline_to_rml(text: str) -> str:
 	like ``**/foo/**`` stay literal.
 	"""
 	text = html.escape(text)
-	# Stash code spans first — Markdown renders their contents literally.
-	code_spans: list[str] = []
-
-	def _stash_code(match: re.Match[str]) -> str:
-		code_spans.append(match.group(1))
-		return f'\x00C{len(code_spans) - 1}\x00'
-
-	text = re.sub(r'`([^`]+)`', _stash_code, text)
-	# Bold before italic so ``**`` is not treated as two italic markers.
-	# Content cannot contain ``*`` — otherwise globs like ``*.txt and **/*.py`` pair across tokens.
-	# Content cannot start with ``/`` — otherwise ``**/foo/**`` is treated as bold.
-	text = re.sub(r'\*\*([^\s*/](?:[^*]*[^\s*])?)\*\*', r'<b>\1</b>', text)
-	# Non-space boundaries keep ``2 * 3 * 4`` literal; leading ``* `` is a bullet, not italic
-	text = re.sub(r'(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)', r'<i>\1</i>', text)
-	for i, span in enumerate(code_spans):
-		text = text.replace(f'\x00C{i}\x00', f'<font face="Courier">{span}</font>')
-	return text
+	rendered: list[str] = []
+	for part in re.split(r'(`[^`]+`)', text):
+		if part.startswith('`') and part.endswith('`'):
+			rendered.append(f'<font face="Courier">{part[1:-1]}</font>')
+			continue
+		# Bold before italic so ``**`` is not treated as two italic markers.
+		# Content cannot contain ``*`` — otherwise globs like ``*.txt and **/*.py`` pair across tokens.
+		# Content cannot start with ``/`` — otherwise ``**/foo/**`` is treated as bold.
+		part = re.sub(r'\*\*([^\s*/](?:[^*]*[^\s*])?)\*\*', r'<b>\1</b>', part)
+		# Non-space boundaries keep ``2 * 3 * 4`` literal; leading ``* `` is a bullet, not italic
+		part = re.sub(r'(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)', r'<i>\1</i>', part)
+		rendered.append(part)
+	return ''.join(rendered)
 
 
 DEFAULT_FILE_SYSTEM_PATH = 'browseruse_agent_data'

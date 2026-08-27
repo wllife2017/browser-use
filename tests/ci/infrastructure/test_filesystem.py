@@ -31,6 +31,21 @@ def _extract_pdf_text(path: Path) -> tuple[str, list[str]]:
 	return ' '.join(text.split()), [line.strip() for line in text.splitlines() if line.strip()]
 
 
+def _extract_pdf_fonts(path: Path) -> set[str]:
+	"""Return the PDF base fonts used to render non-empty text."""
+	fonts: set[str] = set()
+
+	def _record_font(text: str, _cm, _tm, font_dictionary, _font_size) -> None:
+		if text.strip() and font_dictionary is not None:
+			base_font = font_dictionary.get('/BaseFont')
+			if base_font is not None:
+				fonts.add(str(base_font))
+
+	for page in PdfReader(path).pages:
+		page.extract_text(visitor_text=_record_font)
+	return fonts
+
+
 class TestBaseFile:
 	"""Test the BaseFile abstract base class and its implementations."""
 
@@ -63,6 +78,15 @@ class TestBaseFile:
 		"""Emphasis markers inside backticks stay Courier, not italic/bold."""
 		assert _markdown_inline_to_rml('`*literal*`') == '<font face="Courier">*literal*</font>'
 		assert _markdown_inline_to_rml('`**bold**`') == '<font face="Courier">**bold**</font>'
+
+	def test_markdown_inline_code_token_cannot_replace_user_text(self):
+		"""A user-provided placeholder-like sequence must survive code-span restoration."""
+		literal = '\x00C0\x00'
+		assert _markdown_inline_to_rml(f'Keep {literal} and `code`.') == (f'Keep {literal} and <font face="Courier">code</font>.')
+		prefix_literal = '\x00BROWSER_USE_INLINE_CODE_0\x00'
+		assert _markdown_inline_to_rml(f'Keep {prefix_literal} and `code`.') == (
+			f'Keep {prefix_literal} and <font face="Courier">code</font>.'
+		)
 
 	def test_txt_file_creation(self):
 		"""Test TxtFile creation and basic properties."""
@@ -300,7 +324,9 @@ class TestFileSystem:
 		)
 		result = await empty_filesystem.write_file('formatted.pdf', source)
 		assert result == 'Data written to file formatted.pdf successfully.'
-		blob, lines = _extract_pdf_text(empty_filesystem.data_dir / 'formatted.pdf')
+		pdf_path = empty_filesystem.data_dir / 'formatted.pdf'
+		blob, lines = _extract_pdf_text(pdf_path)
+		fonts = _extract_pdf_fonts(pdf_path)
 
 		assert 'bold text' in blob
 		assert '**bold text**' not in blob
@@ -312,6 +338,7 @@ class TestFileSystem:
 		assert 'second bullet item' in blob
 		assert 'star bullet item' in blob
 		assert not any(line.startswith(('- ', '* ')) for line in lines)
+		assert {'/Helvetica-Bold', '/Helvetica-Oblique', '/Courier'} <= fonts
 
 	async def test_write_pdf_star_overload_is_not_emphasis(self, empty_filesystem):
 		"""Arithmetic and glob stars must not be treated as italic or bullets."""
