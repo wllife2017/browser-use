@@ -20,12 +20,20 @@ def _client_returning(content: str) -> MagicMock:
 	return client
 
 
-async def test_drops_format_and_stream_from_ollama_options():
-	"""format/stream belong on chat(), not inside options (#5017)."""
+async def test_splits_top_level_chat_parameters_from_ollama_options():
+	"""Top-level chat parameters must not be sent inside model options (#5017)."""
 	client = _client_returning('{"answer": "ok"}')
 	llm = ChatOllama(
 		model='test-model',
-		ollama_options={'think': False, 'format': 'json', 'stream': False, 'num_ctx': 2048},
+		ollama_options={
+			'think': False,
+			'logprobs': True,
+			'top_logprobs': 3,
+			'keep_alive': '10m',
+			'format': 'json',
+			'stream': False,
+			'num_ctx': 2048,
+		},
 	)
 
 	with patch.object(ChatOllama, 'get_client', return_value=client):
@@ -33,12 +41,18 @@ async def test_drops_format_and_stream_from_ollama_options():
 
 	assert result.completion.answer == 'ok'
 	kwargs = client.chat.await_args.kwargs
-	assert kwargs['options'] == {'think': False, 'num_ctx': 2048}
+	assert kwargs['options'] == {'num_ctx': 2048}
+	assert kwargs['think'] is False
+	assert kwargs['logprobs'] is True
+	assert kwargs['top_logprobs'] == 3
+	assert kwargs['keep_alive'] == '10m'
 	assert kwargs['format'] == Answer.model_json_schema()
+	assert kwargs.get('stream') is None
 
 
-async def test_parses_json_wrapped_in_markdown_fences():
-	client = _client_returning('```json\n{"answer": "ok"}\n```')
+@pytest.mark.parametrize('fence', ['```json', '```JSON', '``` json', '```'])
+async def test_parses_json_wrapped_in_markdown_fences(fence: str):
+	client = _client_returning(f'{fence}\n{{"answer": "ok"}}\n```')
 	llm = ChatOllama(model='test-model')
 
 	with patch.object(ChatOllama, 'get_client', return_value=client):

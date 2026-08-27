@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar, overload
@@ -18,16 +19,17 @@ T = TypeVar('T', bound=BaseModel)
 logger = logging.getLogger(__name__)
 
 # These belong on AsyncClient.chat(), not in the model `options` dict.
-_TOP_LEVEL_CHAT_KEYS = frozenset({'format', 'stream'})
+_PASSTHROUGH_CHAT_KEYS = frozenset({'think', 'logprobs', 'top_logprobs', 'keep_alive'})
+_IGNORED_CHAT_KEYS = frozenset({'format', 'stream'})
+_JSON_FENCE_RE = re.compile(r'\A```[ \t]*(?:json)?[ \t]*\r?\n(?P<body>.*?)\r?\n?```[ \t]*\Z', re.IGNORECASE | re.DOTALL)
 
 
 def _unwrap_json_content(content: str) -> str:
 	"""Strip markdown code fences that Ollama vision models often wrap around JSON."""
 	text = content.strip()
-	if text.startswith('```json') and text.endswith('```'):
-		return text[7:-3].strip()
-	if text.startswith('```') and text.endswith('```'):
-		return text[3:-3].strip()
+	match = _JSON_FENCE_RE.fullmatch(text)
+	if match:
+		return match.group('body').strip()
 	return text
 
 
@@ -72,26 +74,28 @@ class ChatOllama(BaseChatModel):
 	def name(self) -> str:
 		return self.model
 
-	def _chat_options(self) -> Mapping[str, Any] | Options | None:
-		"""Return ollama_options with top-level chat keys removed.
+	def _split_chat_options(self) -> tuple[Mapping[str, Any] | Options | None, dict[str, Any]]:
+		"""Split model options from supported top-level ``chat()`` parameters.
 
-		`format` and `stream` are parameters of `AsyncClient.chat()`, not model
-		runtime options. Putting them in `ollama_options` is ignored or fights
-		the structured-output schema we already pass as `format=`.
+		``format`` and ``stream`` cannot be honored here because this wrapper owns
+		the structured-output schema and requires a non-streaming response.
 		"""
 		options = self.ollama_options
 		if not options or not isinstance(options, Mapping):
-			return options
+			return options, {}
 
-		dropped = sorted(key for key in options if key in _TOP_LEVEL_CHAT_KEYS)
-		if not dropped:
-			return options
+		top_level = {key: options[key] for key in _PASSTHROUGH_CHAT_KEYS if key in options}
+		ignored = sorted(key for key in options if key in _IGNORED_CHAT_KEYS)
 
-		logger.warning(
-			'Ignoring %s in ollama_options; those are top-level chat() parameters, not model options',
-			', '.join(dropped),
-		)
-		return {key: value for key, value in options.items() if key not in _TOP_LEVEL_CHAT_KEYS}
+		if ignored:
+			logger.warning(
+				'Ignoring %s in ollama_options; ChatOllama controls structured output and streaming',
+				', '.join(ignored),
+			)
+
+		extracted = _PASSTHROUGH_CHAT_KEYS | _IGNORED_CHAT_KEYS
+		model_options = {key: value for key, value in options.items() if key not in extracted}
+		return model_options, top_level
 
 	@overload
 	async def ainvoke(
@@ -107,12 +111,13 @@ class ChatOllama(BaseChatModel):
 		ollama_messages = OllamaMessageSerializer.serialize_messages(messages)
 
 		try:
-			options = self._chat_options()
+			options, top_level = self._split_chat_options()
 			if output_format is None:
 				response = await self.get_client().chat(
 					model=self.model,
 					messages=ollama_messages,
 					options=options,
+					**top_level,
 				)
 
 				return ChatInvokeCompletion(completion=response.message.content or '', usage=None)
@@ -123,6 +128,7 @@ class ChatOllama(BaseChatModel):
 				messages=ollama_messages,
 				format=schema,
 				options=options,
+				**top_level,
 			)
 
 			completion = _unwrap_json_content(response.message.content or '')
