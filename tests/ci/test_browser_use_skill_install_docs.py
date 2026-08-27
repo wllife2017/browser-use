@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -55,6 +56,16 @@ def test_docs_install_browser_use_skill_from_package_alias():
 	assert 'from browser_use.skills import browser_use_skill_text' not in readme
 	assert BROWSER_USE_REPO_SKILL_URL not in readme
 	assert 'raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md' not in readme
+
+
+def test_cloud_v4_reference_scopes_workspace_file_listing():
+	api_v4 = (ROOT / 'skills' / 'cloud' / 'references' / 'api-v4.md').read_text(encoding='utf-8')
+
+	assert 'client.workspaces.files(workspace.id)' in api_v4
+	assert 'client.workspaces.files()' not in api_v4
+	python_examples = re.findall(r'```python\n(.*?)```', api_v4, flags=re.DOTALL)
+	assert python_examples
+	assert all('BrowserUse' in example for example in python_examples if 'client.' in example)
 
 
 def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
