@@ -39,6 +39,10 @@ def is_placeholder_url(url: str) -> bool:
 	return len(labels) >= 2 and all(re.fullmatch(r'x+', label) for label in labels)
 
 
+_TRAILING_PROSE_PUNCTUATION = frozenset('.,;:!?([')
+_CLOSING_TO_OPENING_BRACKET = {')': '(', ']': '['}
+
+
 def sanitize_url_candidate(url: str) -> str:
 	"""Normalize a URL candidate captured from prose before auto-navigation."""
 	candidate = url.strip()
@@ -46,7 +50,22 @@ def sanitize_url_candidate(url: str) -> str:
 	# "https://example.com/search.\\n2. Next step". Those are task text,
 	# not part of the URL.
 	candidate = re.split(r'\\[nrt]', candidate, maxsplit=1)[0]
-	return re.sub(r'[.,;:!?()\[\]]+$', '', candidate)
+
+	# Strip trailing prose punctuation, but keep a closing bracket the URL opened
+	# itself, e.g. /wiki/Python_(programming_language). A closing bracket is only
+	# prose when it has no opener inside the candidate, as in "(see https://x.com/a)".
+	while candidate:
+		last_char = candidate[-1]
+		if last_char in _TRAILING_PROSE_PUNCTUATION:
+			candidate = candidate[:-1]
+			continue
+		opening_bracket = _CLOSING_TO_OPENING_BRACKET.get(last_char)
+		if opening_bracket is not None and candidate.count(last_char) > candidate.count(opening_bracket):
+			candidate = candidate[:-1]
+			continue
+		break
+
+	return candidate
 
 
 # Lazy import for error types
