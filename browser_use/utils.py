@@ -54,18 +54,25 @@ def sanitize_url_candidate(url: str) -> str:
 	# Strip trailing prose punctuation, but keep a closing bracket the URL opened
 	# itself, e.g. /wiki/Python_(programming_language). A closing bracket is only
 	# prose when it has no opener inside the candidate, as in "(see https://x.com/a)".
-	while candidate:
-		last_char = candidate[-1]
+	# Bracket totals are counted once and decremented as characters are trimmed, so
+	# a candidate ending in many brackets stays linear.
+	bracket_counts = {bracket: candidate.count(bracket) for bracket in '()[]'}
+	end = len(candidate)
+	while end:
+		last_char = candidate[end - 1]
 		if last_char in _TRAILING_PROSE_PUNCTUATION:
-			candidate = candidate[:-1]
+			if last_char in bracket_counts:
+				bracket_counts[last_char] -= 1
+			end -= 1
 			continue
 		opening_bracket = _CLOSING_TO_OPENING_BRACKET.get(last_char)
-		if opening_bracket is not None and candidate.count(last_char) > candidate.count(opening_bracket):
-			candidate = candidate[:-1]
+		if opening_bracket is not None and bracket_counts[last_char] > bracket_counts[opening_bracket]:
+			bracket_counts[last_char] -= 1
+			end -= 1
 			continue
 		break
 
-	return candidate
+	return candidate[:end]
 
 
 # Lazy import for error types
