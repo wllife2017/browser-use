@@ -2530,7 +2530,6 @@ class DefaultActionWatchdog(BaseWatchdog):
 							main_key = key_aliases.get(suffix.strip().lower(), suffix)
 
 			if is_combination and main_key is not None:
-
 				# Calculate modifier bitmask
 				modifier_value = 0
 				for mod in modifiers:
