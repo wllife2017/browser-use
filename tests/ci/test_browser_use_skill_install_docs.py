@@ -57,6 +57,32 @@ def test_docs_install_browser_use_skill_from_package_alias():
 	assert 'raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md' not in readme
 
 
+def test_remote_browser_skill_uses_current_cli():
+	remote_skill = (ROOT / 'skills' / 'remote-browser' / 'SKILL.md').read_text(encoding='utf-8')
+
+	for removed_command in (
+		'browser-use open',
+		'browser-use state',
+		'browser-use click',
+		'browser-use input',
+		'browser-use tab',
+		'browser-use cloud connect',
+		'browser-use --connect',
+		'browser_use/skill_cli/README.md',
+	):
+		assert removed_command not in remote_skill
+
+	for current_command in (
+		"browser-use <<'PY'",
+		'start_remote_daemon("r7k2")',
+		'BU_NAME=r7k2 browser-use',
+		'new_tab("https://example.com")',
+		'print(page_info())',
+		'stop_remote_daemon("r7k2")',
+	):
+		assert current_command in remote_skill
+
+
 def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
 
