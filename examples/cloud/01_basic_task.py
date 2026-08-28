@@ -14,6 +14,7 @@ API_KEY = os.getenv('BROWSER_USE_API_KEY')
 if not API_KEY:
 	raise RuntimeError('Set BROWSER_USE_API_KEY or add it to .env')
 
+RUN_TIMEOUT_SECONDS = float(os.getenv('BROWSER_USE_RUN_TIMEOUT', '900'))
 HEADERS = {'X-Browser-Use-API-Key': API_KEY}
 TERMINAL_STATUSES = {'completed', 'failed', 'cancelled'}
 
@@ -24,7 +25,9 @@ def create_run(task: str) -> str:
 	return response.json()['id']
 
 
-def wait_for_run(run_id: str, poll_seconds: float = 2) -> dict[str, Any]:
+def wait_for_run(run_id: str, poll_seconds: float = 2, timeout_seconds: float = RUN_TIMEOUT_SECONDS) -> dict[str, Any]:
+	deadline = time.monotonic() + timeout_seconds
+
 	while True:
 		response = requests.get(f'{API_URL}/runs/{run_id}/status', headers=HEADERS, timeout=30)
 		response.raise_for_status()
@@ -33,6 +36,11 @@ def wait_for_run(run_id: str, poll_seconds: float = 2) -> dict[str, Any]:
 
 		if status in TERMINAL_STATUSES:
 			break
+
+		if time.monotonic() >= deadline:
+			response = requests.post(f'{API_URL}/runs/{run_id}/cancel', headers=HEADERS, timeout=30)
+			response.raise_for_status()
+			raise TimeoutError(f'Cancelled run {run_id} after {timeout_seconds:g} seconds')
 
 		time.sleep(poll_seconds)
 
