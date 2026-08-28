@@ -2,6 +2,7 @@
 
 import os
 import time
+from math import isfinite
 from typing import Any
 
 import requests
@@ -14,7 +15,12 @@ API_KEY = os.getenv('BROWSER_USE_API_KEY')
 if not API_KEY:
 	raise RuntimeError('Set BROWSER_USE_API_KEY or add it to .env')
 
-RUN_TIMEOUT_SECONDS = float(os.getenv('BROWSER_USE_RUN_TIMEOUT', '900'))
+try:
+	RUN_TIMEOUT_SECONDS = float(os.getenv('BROWSER_USE_RUN_TIMEOUT', '900'))
+except ValueError as error:
+	raise RuntimeError('BROWSER_USE_RUN_TIMEOUT must be a positive number of seconds') from error
+if not isfinite(RUN_TIMEOUT_SECONDS) or RUN_TIMEOUT_SECONDS <= 0:
+	raise RuntimeError('BROWSER_USE_RUN_TIMEOUT must be a positive number of seconds')
 HEADERS = {'X-Browser-Use-API-Key': API_KEY}
 TERMINAL_STATUSES = {'completed', 'failed', 'cancelled'}
 
