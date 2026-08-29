@@ -28,7 +28,7 @@ def _completion(*, content: str | None = 'ok', choices: bool = True) -> ChatComp
 	)
 
 
-def test_request_params_are_not_client_params():
+async def test_request_params_reach_completion_not_client():
 	llm = ChatOpenRouter(model='openai/gpt-4o', api_key='test-key', top_p=0.9, seed=42)
 
 	client = llm.get_client()
@@ -36,6 +36,13 @@ def test_request_params_are_not_client_params():
 	assert client.api_key == 'test-key'
 	assert 'top_p' not in llm._get_client_params()
 	assert 'seed' not in llm._get_client_params()
+
+	create = AsyncMock(return_value=_completion())
+	with patch.object(type(client.chat.completions), 'create', create):
+		await llm.ainvoke([UserMessage(content='question')])
+	request_kwargs = create.await_args_list[0].kwargs
+	assert request_kwargs['top_p'] == 0.9
+	assert request_kwargs['seed'] == 42
 
 
 def test_provider_key_does_not_fall_back_to_openai_key(monkeypatch: pytest.MonkeyPatch):
