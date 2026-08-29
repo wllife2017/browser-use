@@ -1,5 +1,6 @@
 import pytest
 
+from browser_use.llm.exceptions import ModelProviderError
 from browser_use.llm.messages import ContentPartTextParam, SystemMessage, UserMessage
 from browser_use.llm.orcarouter.chat import ChatOrcaRouter
 from browser_use.llm.orcarouter.serializer import OrcaRouterMessageSerializer
@@ -62,3 +63,25 @@ async def test_registered_orcarouter_llm_never_matches_upstream_pricing(
 
 	assert seen_model_names == ['orcarouter/openai/gpt-4o-mini']
 	assert cost is None
+
+
+def test_orcarouter_reads_api_key_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+	"""ORCAROUTER_API_KEY is the documented env var, so it must actually be read."""
+	monkeypatch.setenv('ORCAROUTER_API_KEY', 'orca-key')
+	monkeypatch.setenv('OPENAI_API_KEY', 'sk-unrelated-openai-key')
+
+	client = ChatOrcaRouter(model='orcarouter/auto').get_client()
+
+	assert client.api_key == 'orca-key'
+
+
+def test_orcarouter_never_falls_back_to_the_openai_key(monkeypatch: pytest.MonkeyPatch) -> None:
+	"""An unset OrcaRouter key must fail loudly, not ship OPENAI_API_KEY to the gateway."""
+	monkeypatch.delenv('ORCAROUTER_API_KEY', raising=False)
+	monkeypatch.setenv('OPENAI_API_KEY', 'sk-unrelated-openai-key')
+
+	with pytest.raises(ModelProviderError) as exc_info:
+		ChatOrcaRouter(model='orcarouter/auto').get_client()
+
+	assert exc_info.value.status_code == 401
+	assert 'sk-unrelated-openai-key' not in str(exc_info.value)

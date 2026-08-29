@@ -1,3 +1,4 @@
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, TypeVar, overload
@@ -54,11 +55,19 @@ class ChatOrcaRouter(BaseChatModel):
 	def provider(self) -> str:
 		return 'orcarouter'
 
+	def _get_api_key(self) -> str:
+		# AsyncOpenAI falls back to OPENAI_API_KEY when api_key is unset, which would send an
+		# unrelated provider's key to the OrcaRouter endpoint.
+		key = self.api_key or os.getenv('ORCAROUTER_API_KEY')
+		if not key:
+			raise ModelProviderError('Missing OrcaRouter API key', status_code=401, model=self.name)
+		return key
+
 	def _get_client_params(self) -> dict[str, Any]:
 		"""Prepare client parameters dictionary."""
 		# Define base client params
 		base_params = {
-			'api_key': self.api_key,
+			'api_key': self._get_api_key(),
 			'base_url': self.base_url,
 			'timeout': self.timeout,
 			'max_retries': self.max_retries,
