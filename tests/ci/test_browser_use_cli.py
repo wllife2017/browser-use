@@ -28,11 +28,12 @@ def test_browser_use_doctor_help_prints_browser_use_usage():
 
 
 def test_browser_use_module_entrypoint_matches_cli_entrypoint():
-	result = _run_browser_use_cli('doctor', '--help', module='browser_use')
+	cli_result = _run_browser_use_cli('doctor', '--help')
+	module_result = _run_browser_use_cli('doctor', '--help', module='browser_use')
 
-	assert result.returncode == 0
-	assert result.stdout == 'usage: browser-use doctor [--fix-snap]\n'
-	assert result.stderr == ''
+	assert module_result.returncode == cli_result.returncode == 0
+	assert module_result.stdout == cli_result.stdout
+	assert module_result.stderr == cli_result.stderr == ''
 
 
 def test_normalize_captured_cli_output_handles_string_system_exit(capsys):
