@@ -3,7 +3,7 @@ Tests for the SchemaOptimizer to ensure it correctly processes and
 optimizes the schemas for agent actions without losing information.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from browser_use.agent.views import AgentOutput
 from browser_use.llm.schema import SchemaOptimizer
@@ -85,11 +85,13 @@ def test_optimizer_treats_property_names_as_data_not_schema_keywords():
 	class Article(BaseModel):
 		description: Details
 		properties: Details
+		additional_properties: Details = Field(alias='additionalProperties')
+		defs: Details = Field(alias='$defs')
 
 	schema = SchemaOptimizer.create_optimized_json_schema(Article)
 
 	assert '$defs' not in schema
-	for field_name in ('description', 'properties'):
+	for field_name in ('description', 'properties', 'additionalProperties', '$defs'):
 		field_schema = schema['properties'][field_name]
 		assert '$ref' not in field_schema
 		assert field_schema['properties']['summary']['type'] == 'string'
