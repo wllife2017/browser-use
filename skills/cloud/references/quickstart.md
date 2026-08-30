@@ -126,8 +126,7 @@ Typical task: 10 steps = ~$0.03 (with Browser Use LLM)
 | BU Max (Claude Sonnet 4.6) | ~$3.60 | ~$18.00 |
 
 ### Browser Sessions
-- PAYG: $0.06/hour
-- Business: $0.03/hour
+- All plans: $0.02/hour
 - Billed upfront, proportional refund on stop. Min 1 minute.
 
 ### Skills
@@ -138,7 +137,7 @@ Typical task: 10 steps = ~$0.03 (with Browser Use LLM)
 - PAYG: $10/GB, Business: $5/GB, Scaleup: $4/GB
 
 ### Tiers
-- **Business**: 25% off per-step, 50% off sessions/skills/proxy
+- **Business**: 25% off per-step, 50% off skills/proxy
 - **Scaleup**: 50% off per-step, 60% off proxy
 - **Enterprise**: Contact for ZDR, compliance, on-prem
 
