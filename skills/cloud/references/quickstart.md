@@ -1,5 +1,9 @@
 # Cloud Quickstart, Pricing & FAQ
 
+> This page keeps the v2 quickstart for existing integrations. For a new
+> hosted-agent integration, use [API v4](api-v4.md). V4 is the current API and
+> SDK path.
+
 ## Table of Contents
 - [Overview](#overview)
 - [Setup](#setup)
