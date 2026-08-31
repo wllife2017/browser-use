@@ -667,6 +667,9 @@ class ChatVercel(BaseChatModel):
 						stop_reason=response.choices[0].finish_reason if response.choices else None,
 					)
 
+		except ModelProviderError:
+			raise
+
 		except RateLimitError as e:
 			raise ModelRateLimitError(message=e.message, model=self.name) from e
 
