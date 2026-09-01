@@ -1,4 +1,5 @@
 import pytest
+from anthropic.types import ImageBlockParam
 
 from browser_use.llm.anthropic.serializer import AnthropicMessageSerializer
 from browser_use.llm.messages import ContentPartImageParam, ImageURL, UserMessage
@@ -10,11 +11,16 @@ WEBP_DATA = 'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA'
 HTTPS_URL = 'https://example.com/cat.png'
 
 
-def serialize_image(url: str):
+def serialize_image(url: str) -> ImageBlockParam:
 	message = UserMessage(content=[ContentPartImageParam(image_url=ImageURL(url=url))])
 	serialized = AnthropicMessageSerializer.serialize(message)
-	assert isinstance(serialized['content'], list)
-	return serialized['content'][0]
+	content = serialized['content']
+	assert isinstance(content, list)
+	block = content[0]
+	# Narrow the ContentBlockParam union down to an image block before indexing into it.
+	assert isinstance(block, dict)
+	assert block['type'] == 'image'
+	return block
 
 
 @pytest.mark.parametrize(
