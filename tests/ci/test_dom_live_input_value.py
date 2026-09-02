@@ -18,10 +18,18 @@ PAGE = """<!DOCTYPE html>
 	<label for="notes">Notes</label>
 	<textarea id="notes"></textarea>
 	<input id="secret" type="password">
+	<input id="otp" type="text" autocomplete="one-time-code">
+	<input id="card" type="text" autocomplete="cc-number">
+	<input id="agree" type="checkbox" checked>
+	<input id="news" type="checkbox">
 	<script>
 		document.getElementById('name').value = 'Ada Lovelace';
 		document.getElementById('notes').value = 'call back tuesday';
 		document.getElementById('secret').value = 'hunter2';
+		document.getElementById('otp').value = '493021';
+		document.getElementById('card').value = '4242424242424242';
+		document.getElementById('agree').checked = false;
+		document.getElementById('news').checked = true;
 	</script>
 </body></html>"""
 
@@ -46,8 +54,15 @@ async def test_live_input_values_reach_the_agent(browser_session, http_server):
 	assert by_id['name'].attributes.get('value') == 'Ada Lovelace'
 	assert by_id['notes'].attributes.get('value') == 'call back tuesday'
 	assert by_id['secret'].attributes.get('value') is None, 'password values must not be exposed'
+	assert by_id['otp'].attributes.get('value') is None, 'one-time codes must not be exposed'
+	assert by_id['card'].attributes.get('value') is None, 'card numbers must not be exposed'
+	assert by_id['secret'].snapshot_node is not None and by_id['secret'].snapshot_node.input_value is None
+	assert by_id['agree'].attributes.get('checked') is None, 'live unchecked state wins over the checked attribute'
+	assert by_id['news'].attributes.get('checked') == 'true'
 
 	llm_view = state.dom_state.llm_representation()
 	assert 'Ada Lovelace' in llm_view
 	assert 'call back tuesday' in llm_view
 	assert 'hunter2' not in llm_view
+	assert '493021' not in llm_view
+	assert '4242424242424242' not in llm_view
