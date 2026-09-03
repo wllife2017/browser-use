@@ -38,6 +38,7 @@ class GoogleMessageSerializer:
 
 		formatted_messages: ContentListUnion = []
 		system_parts: list[str] = []
+		first_user_message_serialized = False
 
 		for i, message in enumerate(messages):
 			role = message.role if hasattr(message, 'role') else None
@@ -70,8 +71,10 @@ class GoogleMessageSerializer:
 
 			# If this is the first user message and we have system parts, prepend them
 			system_text = None
-			# An earlier assistant turn must not disqualify the first user message
-			if include_system_in_user and system_parts and role == 'user':
+			# Merge into the *first* user message. An earlier assistant turn must not disqualify it,
+			# but a user message that has already been serialized must: the merge target is gone, so
+			# the text falls through to the separate system instruction instead.
+			if include_system_in_user and system_parts and role == 'user' and not first_user_message_serialized:
 				system_text = '\n\n'.join(system_parts)
 				system_parts = []  # Clear after using
 
@@ -113,10 +116,13 @@ class GoogleMessageSerializer:
 				final_message = Content(role=role, parts=message_parts)
 				# for some reason, the type checker is not able to infer the type of formatted_messages
 				formatted_messages.append(final_message)  # type: ignore
+				if role == 'user':
+					first_user_message_serialized = True
 
 		# Whatever is left was never merged into a user message, so it becomes the separate system
-		# instruction. With include_system_in_user=False that is every system message; with it set,
-		# this only happens when there is no user message to prepend to.
+		# instruction. With include_system_in_user=False that is every system message. With it set,
+		# it is the messages that had no first user message to merge into, either because the
+		# conversation contains none or because one was already serialized before they arrived.
 		system_message = '\n\n'.join(system_parts) if system_parts else None
 
 		return formatted_messages, system_message

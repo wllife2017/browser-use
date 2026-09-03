@@ -71,3 +71,18 @@ def test_system_text_falls_back_to_the_instruction_when_there_is_no_user_message
 	)
 
 	assert system_instruction == 'Follow the system rule.'
+
+
+def test_system_message_after_the_first_user_turn_is_not_merged_into_a_later_one():
+	"""The merge target is the *first* user message; once it is gone, fall back to the instruction."""
+	contents, system_instruction = GoogleMessageSerializer.serialize_messages(
+		[
+			UserMessage(content='First user turn.'),
+			SystemMessage(content='Follow the system rule.'),
+			UserMessage(content='Second user turn.'),
+		],
+		include_system_in_user=True,
+	)
+
+	assert system_instruction == 'Follow the system rule.'
+	assert _role_and_text(contents) == [('user', 'First user turn.'), ('user', 'Second user turn.')]
