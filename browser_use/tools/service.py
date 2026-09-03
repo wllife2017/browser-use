@@ -668,7 +668,11 @@ class Tools(Generic[Context]):
 				tabs_before = {t.target_id for t in await browser_session.get_tabs()}
 
 				# Highlight the coordinate being clicked (truly non-blocking)
-				asyncio.create_task(browser_session.highlight_coordinate_click(actual_x, actual_y))
+				create_task_with_error_handling(
+					browser_session.highlight_coordinate_click(actual_x, actual_y),
+					name='highlight_coordinate_click',
+					suppress_exceptions=True,
+				)
 
 				# Dispatch ClickCoordinateEvent - handler will check for safety and click
 				event = browser_session.event_bus.dispatch(
@@ -694,7 +698,7 @@ class Tools(Generic[Context]):
 			except BrowserError as e:
 				return handle_browser_error(e)
 			except Exception as e:
-				error_msg = f'Failed to click at coordinates ({params.coordinate_x}, {params.coordinate_y}).'
+				error_msg = f'Failed to click at coordinates ({params.coordinate_x}, {params.coordinate_y}): {e}'
 				return ActionResult(error=error_msg)
 
 		async def _click_by_index(
@@ -1009,19 +1013,27 @@ class Tools(Generic[Context]):
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
-				new_target_id = await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
-
-				if new_target_id:
-					memory = f'Switched to tab #{new_target_id[-4:]}'
-				else:
-					memory = f'Switched to tab #{params.tab_id}'
-
-				logger.info(f'🔄  {memory}')
-				return ActionResult(extracted_content=memory, long_term_memory=memory)
+				# raise_if_any=True so a handler failure surfaces its real cause here instead
+				# of silently becoming a "produced no result" below.
+				new_target_id = await event.event_result(raise_if_any=True, raise_if_none=False)
 			except Exception as e:
-				logger.warning(f'Tab switch may have failed: {e}')
-				memory = f'Attempted to switch to tab #{params.tab_id}'
-				return ActionResult(extracted_content=memory, long_term_memory=memory)
+				logger.warning(f'Tab switch failed: {e}')
+				# Preserve the concrete cause (e.g. a stale tab_id) instead of a generic
+				# message, so the agent gets actionable failure info in both memories.
+				memory = f'Failed to switch to tab #{params.tab_id}: {e}'
+				raise BrowserError(memory, short_term_memory=memory, long_term_memory=memory)
+
+			# on_SwitchTabEvent returns the newly focused TargetID on every success path, so a
+			# missing result (with no exception raised) means the handler still failed rather
+			# than having quietly succeeded.
+			if not new_target_id:
+				memory = f'Failed to switch to tab #{params.tab_id}: tab switch produced no result'
+				logger.warning(memory)
+				raise BrowserError(memory, short_term_memory=memory, long_term_memory=memory)
+
+			memory = f'Switched to tab #{new_target_id[-4:]}'
+			logger.info(f'🔄  {memory}')
+			return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		@self.registry.action(
 			'Close a tab by tab_id. Tab IDs are shown in browser state tabs list (last 4 chars of target_id). Use to clean up tabs you no longer need.',
