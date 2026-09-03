@@ -20,15 +20,105 @@ load_dotenv()
 
 # Pre-compiled regex for URL detection - used in URL shortening
 URL_PATTERN = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE)
+URL_NEGATION_PATTERN = re.compile(r"\b(?:never|not|don['\u2019]?t)\b", re.IGNORECASE)
 
 
 logger = logging.getLogger(__name__)
+
+
+def is_placeholder_url(url: str) -> bool:
+	"""Return True for mock placeholder hostnames like https://XXX.XX."""
+	parsed_url = urlparse(url if '://' in url else f'https://{url}')
+	hostname = (parsed_url.hostname or '').strip('.').lower()
+	if not hostname:
+		return False
+
+	labels = [label for label in hostname.split('.') if label]
+	if labels and labels[0] == 'www':
+		labels = labels[1:]
+
+	return len(labels) >= 2 and all(re.fullmatch(r'x+', label) for label in labels)
+
+
+_TRAILING_PROSE_PUNCTUATION = frozenset('.,;:!?([')
+_CLOSING_TO_OPENING_BRACKET = {')': '(', ']': '['}
+
+
+def sanitize_url_candidate(url: str) -> str:
+	"""Normalize a URL candidate captured from prose before auto-navigation."""
+	candidate = url.strip()
+	# Some benchmark tasks arrive with escaped newlines in prose, e.g.
+	# "https://example.com/search.\\n2. Next step". Those are task text,
+	# not part of the URL.
+	candidate = re.split(r'\\[nrt]', candidate, maxsplit=1)[0]
+
+	# Strip trailing prose punctuation, but keep a closing bracket the URL opened
+	# itself, e.g. /wiki/Python_(programming_language). A closing bracket is only
+	# prose when it has no opener inside the candidate, as in "(see https://x.com/a)".
+	# Bracket totals are counted once and decremented as characters are trimmed, so
+	# a candidate ending in many brackets stays linear.
+	bracket_counts = {bracket: candidate.count(bracket) for bracket in '()[]'}
+	end = len(candidate)
+	while end:
+		last_char = candidate[end - 1]
+		if last_char in _TRAILING_PROSE_PUNCTUATION:
+			if last_char in bracket_counts:
+				bracket_counts[last_char] -= 1
+			end -= 1
+			continue
+		opening_bracket = _CLOSING_TO_OPENING_BRACKET.get(last_char)
+		if opening_bracket is not None and bracket_counts[last_char] > bracket_counts[opening_bracket]:
+			bracket_counts[last_char] -= 1
+			end -= 1
+			continue
+		break
+
+	return candidate[:end]
+
+
+def has_url_negation(context: str) -> bool:
+	"""Return whether nearby prose explicitly negates navigation to a URL."""
+	return URL_NEGATION_PATTERN.search(context) is not None
+
 
 # Lazy import for error types
 # Use sentinel to avoid retrying import when package is not installed
 _IMPORT_NOT_FOUND: type = type('_ImportNotFound', (), {})
 _openai_bad_request_error: type | None = None
 _groq_bad_request_error: type | None = None
+
+
+def collect_sensitive_data_values(sensitive_data: dict[str, str | dict[str, str]] | None) -> dict[str, str]:
+	"""Flatten legacy and domain-scoped sensitive data into placeholder -> value mappings."""
+	if not sensitive_data:
+		return {}
+
+	sensitive_values: dict[str, str] = {}
+	for key_or_domain, content in sensitive_data.items():
+		if isinstance(content, dict):
+			for key, val in content.items():
+				if val:
+					sensitive_values[key] = val
+		elif content:
+			sensitive_values[key_or_domain] = content
+
+	return sensitive_values
+
+
+def redact_sensitive_string(value: str, sensitive_values: dict[str, str]) -> str:
+	"""Replace sensitive values with placeholders, longest matches first to avoid partial leaks."""
+	if not sensitive_values:
+		return value
+
+	# Build a lookup from secret text → key name, longest secrets first so
+	# the regex alternation prefers the longest match.
+	sorted_items = sorted(sensitive_values.items(), key=lambda item: len(item[1]), reverse=True)
+	secret_to_key = {secret: key for key, secret in sorted_items}
+
+	# Single-pass replacement: each position in the string is consumed at
+	# most once, so earlier replacements cannot be corrupted by later ones.
+	pattern = re.compile('|'.join(re.escape(secret) for secret in secret_to_key))
+	return pattern.sub(lambda m: f'<secret>{secret_to_key[m.group(0)]}</secret>', value)
 
 
 def _get_openai_bad_request_error() -> type | None:
@@ -77,6 +167,7 @@ class SignalHandler:
 	- Management of event loop state across signals
 	- Standardized handling of first and second Ctrl+C presses
 	- Cross-platform compatibility (with simplified behavior on Windows)
+	- Option to disable signal handling for embedding in applications that manage their own signals
 	"""
 
 	def __init__(
@@ -87,6 +178,7 @@ class SignalHandler:
 		custom_exit_callback: Callable[[], None] | None = None,
 		exit_on_second_int: bool = True,
 		interruptible_task_patterns: list[str] | None = None,
+		disabled: bool = False,
 	):
 		"""
 		Initialize the signal handler.
@@ -99,6 +191,8 @@ class SignalHandler:
 			exit_on_second_int: Whether to exit on second SIGINT (Ctrl+C)
 			interruptible_task_patterns: List of patterns to match task names that should be
 										 canceled on first Ctrl+C (default: ['step', 'multi_act', 'get_next_action'])
+			disabled: If True, signal handling is disabled and register() is a no-op.
+					Useful when embedding browser-use in applications that manage their own signals.
 		"""
 		self.loop = loop or asyncio.get_event_loop()
 		self.pause_callback = pause_callback
@@ -107,6 +201,7 @@ class SignalHandler:
 		self.exit_on_second_int = exit_on_second_int
 		self.interruptible_task_patterns = interruptible_task_patterns or ['step', 'multi_act', 'get_next_action']
 		self.is_windows = platform.system() == 'Windows'
+		self.disabled = disabled
 
 		# Initialize loop state attributes
 		self._initialize_loop_state()
@@ -121,7 +216,13 @@ class SignalHandler:
 		setattr(self.loop, 'waiting_for_input', False)
 
 	def register(self) -> None:
-		"""Register signal handlers for SIGINT and SIGTERM."""
+		"""Register signal handlers for SIGINT and SIGTERM.
+
+		If disabled=True was passed to __init__, this method does nothing.
+		"""
+		if self.disabled:
+			return
+
 		try:
 			if self.is_windows:
 				# On Windows, use simple signal handling with immediate exit on Ctrl+C
@@ -146,7 +247,13 @@ class SignalHandler:
 			pass
 
 	def unregister(self) -> None:
-		"""Unregister signal handlers and restore original handlers if possible."""
+		"""Unregister signal handlers and restore original handlers if possible.
+
+		If disabled=True was passed to __init__, this method does nothing.
+		"""
+		if self.disabled:
+			return
+
 		try:
 			if self.is_windows:
 				# On Windows, just restore the original SIGINT handler
@@ -604,18 +711,49 @@ async def check_latest_browser_use_version() -> str | None:
 	"""Check the latest version of browser-use from PyPI asynchronously.
 
 	Returns:
-		The latest version string if successful, None if failed
+		The latest version string if PyPI has a newer version, None otherwise.
 	"""
 	try:
 		async with httpx.AsyncClient(timeout=3.0) as client:
 			response = await client.get('https://pypi.org/pypi/browser-use/json')
 			if response.status_code == 200:
 				data = response.json()
-				return data['info']['version']
+				latest_version = data['info']['version']
+				if _is_newer_browser_use_version(latest_version, get_browser_use_version()):
+					return latest_version
 	except Exception:
 		# Silently fail - we don't want to break agent startup due to network issues
 		pass
 	return None
+
+
+def _is_newer_browser_use_version(latest_version: str, current_version: str) -> bool:
+	"""Return True when latest_version should be considered an upgrade for current_version."""
+	try:
+		from packaging.version import Version
+
+		return Version(latest_version) > Version(current_version)
+	except Exception:
+		latest_key = _browser_use_version_key(latest_version)
+		current_key = _browser_use_version_key(current_version)
+		if latest_key is None or current_key is None:
+			return latest_version != current_version
+		return latest_key > current_key
+
+
+def _browser_use_version_key(version: str) -> tuple[tuple[int, ...], int, int, int] | None:
+	"""Small PEP 440-ish fallback for browser-use versions when packaging is unavailable."""
+	match = re.match(r'^v?(\d+(?:\.\d+)*)(?:(a|b|rc)(\d+))?(?:\.post(\d+))?', version.strip().lower())
+	if not match:
+		return None
+
+	release = tuple(int(part) for part in match.group(1).split('.'))
+	phase = match.group(2)
+	phase_number = int(match.group(3) or 0)
+	post_number = int(match.group(4) or 0)
+	phase_rank = {'a': 0, 'b': 1, 'rc': 2}.get(phase, 3)
+
+	return release, phase_rank, phase_number, post_number
 
 
 @cache
@@ -705,9 +843,8 @@ def create_task_with_error_handling(
 		coro: The coroutine to wrap in a task
 		name: Optional name for the task (useful for debugging)
 		logger_instance: Optional logger instance to use. If None, uses module logger.
-		suppress_exceptions: If True, logs exceptions at ERROR level. If False, logs at WARNING level
-			and exceptions remain retrievable via task.exception() if the caller awaits the task.
-			Default False.
+		suppress_exceptions: If True, logs exceptions at ERROR level. If False, logs at WARNING level.
+			Awaiting the task raises the original exception in both modes. Default False.
 
 	Returns:
 		asyncio.Task: The created task with exception handling callback
@@ -725,21 +862,19 @@ def create_task_with_error_handling(
 
 	def _handle_task_exception(t: asyncio.Task[T]) -> None:
 		"""Callback to handle task exceptions"""
-		exc_to_raise = None
 		try:
-			# This will raise if the task had an exception
+			# Retrieve the exception so fire-and-forget tasks do not emit
+			# "Task exception was never retrieved" warnings.
 			exc = t.exception()
 			if exc is not None:
 				task_name = t.get_name() if hasattr(t, 'get_name') else 'unnamed'
 				if suppress_exceptions:
 					log.error(f'Exception in background task [{task_name}]: {type(exc).__name__}: {exc}', exc_info=exc)
 				else:
-					# Log at warning level then mark for re-raising
 					log.warning(
 						f'Exception in background task [{task_name}]: {type(exc).__name__}: {exc}',
 						exc_info=exc,
 					)
-					exc_to_raise = exc
 		except asyncio.CancelledError:
 			# Task was cancelled, this is normal behavior
 			pass
@@ -747,10 +882,6 @@ def create_task_with_error_handling(
 			# Catch any other exception during exception handling (e.g., t.exception() itself failing)
 			task_name = t.get_name() if hasattr(t, 'get_name') else 'unnamed'
 			log.error(f'Error handling exception in task [{task_name}]: {type(e).__name__}: {e}')
-
-		# Re-raise outside the try-except block so it propagates to the event loop
-		if exc_to_raise is not None:
-			raise exc_to_raise
 
 	task.add_done_callback(_handle_task_exception)
 	return task

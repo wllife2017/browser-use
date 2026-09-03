@@ -238,15 +238,15 @@ class BrowserUseServer:
 						'properties': {
 							'index': {
 								'type': 'integer',
-								'description': 'The index of the element to click (from browser_get_state). Use this OR coordinates.',
+								'description': 'The index of the element to click (from browser_get_state). Provide this OR coordinate_x+coordinate_y.',
 							},
 							'coordinate_x': {
 								'type': 'integer',
-								'description': 'X coordinate (pixels from left edge of viewport). Use with coordinate_y.',
+								'description': 'X coordinate in pixels from the left edge of the viewport. Must be used together with coordinate_y. Provide this OR index.',
 							},
 							'coordinate_y': {
 								'type': 'integer',
-								'description': 'Y coordinate (pixels from top edge of viewport). Use with coordinate_x.',
+								'description': 'Y coordinate in pixels from the top edge of the viewport. Must be used together with coordinate_x. Provide this OR index.',
 							},
 							'new_tab': {
 								'type': 'boolean',
@@ -254,15 +254,11 @@ class BrowserUseServer:
 								'default': False,
 							},
 						},
-						'oneOf': [
-							{'required': ['index']},
-							{'required': ['coordinate_x', 'coordinate_y']},
-						],
 					},
 				),
 				types.Tool(
 					name='browser_type',
-					description='Type text into an input field',
+					description='Type text into an input field. Clears existing text by default; pass text="" to clear only.',
 					inputSchema={
 						'type': 'object',
 						'properties': {
@@ -270,7 +266,10 @@ class BrowserUseServer:
 								'type': 'integer',
 								'description': 'The index of the input element (from browser_get_state)',
 							},
-							'text': {'type': 'string', 'description': 'The text to type'},
+							'text': {
+								'type': 'string',
+								'description': 'The text to type. Pass an empty string ("") to clear the field without typing.',
+							},
 						},
 						'required': ['index', 'text'],
 					},
@@ -288,6 +287,7 @@ class BrowserUseServer:
 							}
 						},
 					},
+					annotations=types.ToolAnnotations(readOnlyHint=True),
 				),
 				types.Tool(
 					name='browser_extract_content',
@@ -317,6 +317,7 @@ class BrowserUseServer:
 							},
 						},
 					},
+					annotations=types.ToolAnnotations(readOnlyHint=True),
 				),
 				types.Tool(
 					name='browser_screenshot',
@@ -331,6 +332,7 @@ class BrowserUseServer:
 							},
 						},
 					},
+					annotations=types.ToolAnnotations(readOnlyHint=True),
 				),
 				types.Tool(
 					name='browser_scroll',
@@ -354,7 +356,10 @@ class BrowserUseServer:
 				),
 				# Tab management
 				types.Tool(
-					name='browser_list_tabs', description='List all open tabs', inputSchema={'type': 'object', 'properties': {}}
+					name='browser_list_tabs',
+					description='List all open tabs',
+					inputSchema={'type': 'object', 'properties': {}},
+					annotations=types.ToolAnnotations(readOnlyHint=True),
 				),
 				types.Tool(
 					name='browser_switch_tab',
@@ -404,8 +409,12 @@ class BrowserUseServer:
 							'allowed_domains': {
 								'type': 'array',
 								'items': {'type': 'string'},
-								'description': 'List of domains the agent is allowed to visit (security feature)',
-								'default': [],
+								'description': (
+									'List of domains the agent is allowed to visit (security feature). '
+									'Omit to use the server-configured profile defaults. '
+									'An empty list is treated the same as omitting the argument and '
+									'will NOT disable server-configured restrictions.'
+								),
 							},
 							'use_vision': {
 								'type': 'boolean',
@@ -421,6 +430,7 @@ class BrowserUseServer:
 					name='browser_list_sessions',
 					description='List all active browser sessions with their details and last activity time',
 					inputSchema={'type': 'object', 'properties': {}},
+					annotations=types.ToolAnnotations(readOnlyHint=True),
 				),
 				types.Tool(
 					name='browser_close_session',
@@ -491,7 +501,7 @@ class BrowserUseServer:
 				task=arguments['task'],
 				max_steps=arguments.get('max_steps', 100),
 				model=arguments.get('model'),
-				allowed_domains=arguments.get('allowed_domains', []),
+				allowed_domains=arguments.get('allowed_domains'),
 				use_vision=arguments.get('use_vision', True),
 			)
 
@@ -650,7 +660,7 @@ class BrowserUseServer:
 
 		# Get Bedrock-specific config
 		if model_provider and model_provider.lower() == 'bedrock':
-			llm_model = llm_config.get('model') or os.getenv('MODEL') or 'us.anthropic.claude-sonnet-4-20250514-v1:0'
+			llm_model = llm_config.get('model') or os.getenv('MODEL') or 'us.anthropic.claude-sonnet-4-6'
 			aws_region = llm_config.get('region') or os.getenv('REGION')
 			if not aws_region:
 				aws_region = 'us-east-1'
@@ -682,8 +692,11 @@ class BrowserUseServer:
 		# Get profile config and merge with tool parameters
 		profile_config = get_default_profile(self.config)
 
-		# Override allowed_domains if provided in tool call
-		if allowed_domains is not None:
+		# Override allowed_domains only when the client supplied a non-empty list.
+		# Treating an empty list as an override would silently disable any
+		# admin-configured allowlist on the default profile, since
+		# SecurityWatchdog interprets allowed_domains=[] as "no restrictions".
+		if allowed_domains:
 			profile_config['allowed_domains'] = allowed_domains
 
 		# Create browser profile using config
@@ -1227,19 +1240,25 @@ class BrowserUseServer:
 		# Start the cleanup task
 		await self._start_cleanup_task()
 
+		if sys.stdin is None:
+			raise RuntimeError('MCP stdio transport requires stdin, but this process was launched without one.')
+
 		async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-			await self.server.run(
-				read_stream,
-				write_stream,
-				InitializationOptions(
-					server_name='browser-use',
-					server_version='0.1.0',
-					capabilities=self.server.get_capabilities(
-						notification_options=NotificationOptions(),
-						experimental_capabilities={},
+			try:
+				await self.server.run(
+					read_stream,
+					write_stream,
+					InitializationOptions(
+						server_name='browser-use',
+						server_version='0.1.0',
+						capabilities=self.server.get_capabilities(
+							notification_options=NotificationOptions(),
+							experimental_capabilities={},
+						),
 					),
-				),
-			)
+				)
+			except BrokenPipeError:
+				logger.warning('MCP client disconnected while writing to stdio; shutting down server cleanly.')
 
 
 async def main(session_timeout_minutes: int = 10):

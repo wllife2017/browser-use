@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 from typing import Generic, TypeVar
 
@@ -47,7 +48,6 @@ from browser_use.tools.views import (
 	InputTextAction,
 	NavigateAction,
 	NoParamsAction,
-	ReadContentAction,
 	SaveAsPdfAction,
 	ScreenshotAction,
 	ScrollAction,
@@ -73,6 +73,94 @@ UploadFileEvent.model_rebuild()
 Context = TypeVar('Context')
 
 T = TypeVar('T', bound=BaseModel)
+
+
+# Default header/footer templates for save_as_pdf, mirroring the metadata that
+# Chrome's own Print dialog renders by default: the date in the header and the
+# page URL + page numbers in the footer. Chrome injects values into elements
+# bearing the magic classes `date`, `title`, `url`, `pageNumber` and `totalPages`.
+# A font-size MUST be set explicitly — Chrome defaults header/footer text to 0px,
+# so omitting it renders an invisible (blank) header/footer.
+_DEFAULT_PDF_HEADER_TEMPLATE = (
+	'<div style="font-size:9px; color:#666; width:100%; padding:0 0.4in; '
+	'box-sizing:border-box; text-align:right;"><span class="date"></span></div>'
+)
+_DEFAULT_PDF_FOOTER_TEMPLATE = (
+	'<div style="font-size:9px; color:#666; width:100%; padding:0 0.4in; '
+	'box-sizing:border-box; display:flex; justify-content:space-between;">'
+	# A flex item defaults to min-width:auto and won't shrink below its content,
+	# so a long/unbroken URL would overflow and push the page count off-page.
+	# min-width:0 + ellipsis lets the URL truncate while page numbers stay put.
+	'<span class="url" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>'
+	'<span style="flex-shrink:0; padding-left:8px;"><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>'
+)
+
+
+# Global per-action timeout: last-resort guard against hung event handlers.
+# Individual CDP calls (Page.navigate etc.) have their own shorter timeouts,
+# but event-bus `await event` and `event_result()` calls have none — if a
+# watchdog handler blocks on a dead CDP WebSocket, the action can hang past
+# any agent-level watchdog. This cap ensures every action returns within a
+# bounded window with an ActionResult(error=...) instead of hanging silently.
+#
+# The default (180s) sits above the longest built-in inner timeout — the extract
+# action's page_extraction_llm.ainvoke at 120s — plus comfortable grace, so
+# slow-but-valid LLM-backed actions aren't truncated. Override per-call via
+# BROWSER_USE_ACTION_TIMEOUT_S env var or tools.act(action_timeout=...).
+_ACTION_TIMEOUT_FALLBACK_S = 180.0
+
+
+def _parse_env_action_timeout(raw: str | None) -> float:
+	"""Parse BROWSER_USE_ACTION_TIMEOUT_S defensively.
+
+	Accepts only finite positive values. Empty, non-numeric, inf, nan, or
+	non-positive values fall back to the hardcoded default with a warning
+	— these would otherwise make every action time out immediately (nan)
+	or disable the hang guard entirely (inf / negative / zero).
+	"""
+	if raw is None or raw == '':
+		return _ACTION_TIMEOUT_FALLBACK_S
+	try:
+		parsed = float(raw)
+	except ValueError:
+		logging.getLogger(__name__).warning(
+			'Invalid BROWSER_USE_ACTION_TIMEOUT_S=%r; falling back to %.0fs',
+			raw,
+			_ACTION_TIMEOUT_FALLBACK_S,
+		)
+		return _ACTION_TIMEOUT_FALLBACK_S
+	if not math.isfinite(parsed) or parsed <= 0:
+		logging.getLogger(__name__).warning(
+			'BROWSER_USE_ACTION_TIMEOUT_S=%r is not a finite positive number; falling back to %.0fs',
+			raw,
+			_ACTION_TIMEOUT_FALLBACK_S,
+		)
+		return _ACTION_TIMEOUT_FALLBACK_S
+	return parsed
+
+
+_DEFAULT_ACTION_TIMEOUT_S = _parse_env_action_timeout(os.getenv('BROWSER_USE_ACTION_TIMEOUT_S'))
+
+
+def _coerce_valid_action_timeout(value: float | None) -> float:
+	"""Normalize a caller-supplied action_timeout to a finite positive value.
+
+	Mirrors the env-var guard so the public `tools.act(action_timeout=...)`
+	override path has the same defenses: nan / inf / <=0 make actions either
+	time out immediately or never, which would silently defeat the hang
+	guard this module exists to provide. Fall back to the env-derived
+	default with a warning instead.
+	"""
+	if value is None:
+		return _DEFAULT_ACTION_TIMEOUT_S
+	if not math.isfinite(value) or value <= 0:
+		logging.getLogger(__name__).warning(
+			'action_timeout=%r is not a finite positive number; falling back to %.0fs',
+			value,
+			_DEFAULT_ACTION_TIMEOUT_S,
+		)
+		return _DEFAULT_ACTION_TIMEOUT_S
+	return float(value)
 
 
 def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
@@ -208,9 +296,16 @@ try {
 		if (ATTRIBUTES && ATTRIBUTES.length > 0) {
 			item.attrs = {};
 			for (var j = 0; j < ATTRIBUTES.length; j++) {
-				var val = el.getAttribute(ATTRIBUTES[j]);
+				var attrName = ATTRIBUTES[j];
+				var val;
+				// Use resolved DOM property for src/href to get absolute URLs
+				if ((attrName === 'src' || attrName === 'href') && typeof el[attrName] === 'string' && el[attrName] !== '') {
+					val = el[attrName];
+				} else {
+					val = el.getAttribute(attrName);
+				}
 				if (val !== null) {
-					item.attrs[ATTRIBUTES[j]] = val.length > 500 ? val.slice(0, 500) + '...' : val;
+					item.attrs[attrName] = val.length > 500 ? val.slice(0, 500) + '...' : val;
 				}
 			}
 		}
@@ -416,22 +511,37 @@ class Tools(Generic[Context]):
 				await event
 				await event.event_result(raise_if_any=True, raise_if_none=False)
 
-				# Health check: detect empty DOM for http/https pages and retry once
+				# Health check: detect empty DOM for http/https pages and retry once.
+				# Uses _root is None (truly blank) OR empty llm_representation() (no actionable
+				# content for the LLM, e.g. SPA not yet rendered, empty body).
+				# NOTE: llm_representation() returns a non-empty placeholder when _root is None,
+				# so we must check _root is None separately — not rely on the repr string alone.
+				def _page_appears_empty(s) -> bool:
+					return s.dom_state._root is None or not s.dom_state.llm_representation().strip()
+
 				if not params.new_tab:
 					state = await browser_session.get_browser_state_summary(include_screenshot=False)
 					url_is_http = state.url.lower().startswith(('http://', 'https://'))
-					if url_is_http and state.dom_state._root is None:
+					if url_is_http and _page_appears_empty(state):
 						browser_session.logger.warning(
 							f'⚠️ Empty DOM detected after navigation to {params.url}, waiting 3s and rechecking...'
 						)
 						await asyncio.sleep(3.0)
 						state = await browser_session.get_browser_state_summary(include_screenshot=False)
-						if state.url.lower().startswith(('http://', 'https://')) and state.dom_state._root is None:
-							return ActionResult(
-								error=f'Page loaded but returned empty content for {params.url}. '
-								f'The page may require JavaScript that failed to render, use anti-bot measures, '
-								f'or have a connection issue (e.g. tunnel/proxy error). Try a different URL or approach.'
-							)
+						if state.url.lower().startswith(('http://', 'https://')) and _page_appears_empty(state):
+							# Second attempt: reload the page and wait longer
+							browser_session.logger.warning(f'⚠️ Still empty after 3s, attempting page reload for {params.url}...')
+							reload_event = browser_session.event_bus.dispatch(NavigateToUrlEvent(url=params.url, new_tab=False))
+							await reload_event
+							await reload_event.event_result(raise_if_any=False, raise_if_none=False)
+							await asyncio.sleep(5.0)
+							state = await browser_session.get_browser_state_summary(include_screenshot=False)
+							if state.url.lower().startswith(('http://', 'https://')) and state.dom_state._root is None:
+								return ActionResult(
+									error=f'Page loaded but returned empty content for {params.url}. '
+									f'The page may require JavaScript that failed to render, use anti-bot measures, '
+									f'or have a connection issue (e.g. tunnel/proxy error). Try a different URL or approach.'
+								)
 
 				if params.new_tab:
 					memory = f'Opened new tab with URL {params.url}'
@@ -520,9 +630,7 @@ class Tools(Generic[Context]):
 			browser_session: BrowserSession,
 			tabs_before: set[str],
 		) -> str:
-			"""Detect if a click opened a new tab, and return a note for the agent.
-			Waits briefly for CDP events to propagate, then checks if any new tabs appeared.
-			"""
+			"""Detect if a click opened a new tab and automatically switch to it."""
 			try:
 				# Brief delay to allow CDP Target.attachedToTarget events to propagate
 				# and be processed by SessionManager._handle_target_attached
@@ -531,8 +639,16 @@ class Tools(Generic[Context]):
 				tabs_after = await browser_session.get_tabs()
 				new_tabs = [t for t in tabs_after if t.target_id not in tabs_before]
 				if new_tabs:
-					new_tab_id = new_tabs[0].target_id[-4:]
-					return f'. Note: This opened a new tab (tab_id: {new_tab_id}) - switch to it if you need to interact with the new page.'
+					new_tab = new_tabs[0]
+					new_tab_id = new_tab.target_id[-4:]
+					# Auto-switch to the new tab so the agent can immediately interact with it
+					try:
+						switch_event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=new_tab.target_id))
+						await switch_event
+						await switch_event.event_result(raise_if_any=False, raise_if_none=False)
+						return f'. Automatically switched to new tab (tab_id: {new_tab_id}).'
+					except Exception:
+						return f'. Note: This opened a new tab (tab_id: {new_tab_id}) - switch to it if you need to interact with the new page.'
 			except Exception:
 				pass
 			return ''
@@ -552,7 +668,11 @@ class Tools(Generic[Context]):
 				tabs_before = {t.target_id for t in await browser_session.get_tabs()}
 
 				# Highlight the coordinate being clicked (truly non-blocking)
-				asyncio.create_task(browser_session.highlight_coordinate_click(actual_x, actual_y))
+				create_task_with_error_handling(
+					browser_session.highlight_coordinate_click(actual_x, actual_y),
+					name='highlight_coordinate_click',
+					suppress_exceptions=True,
+				)
 
 				# Dispatch ClickCoordinateEvent - handler will check for safety and click
 				event = browser_session.event_bus.dispatch(
@@ -578,7 +698,7 @@ class Tools(Generic[Context]):
 			except BrowserError as e:
 				return handle_browser_error(e)
 			except Exception as e:
-				error_msg = f'Failed to click at coordinates ({params.coordinate_x}, {params.coordinate_y}).'
+				error_msg = f'Failed to click at coordinates ({params.coordinate_x}, {params.coordinate_y}): {e}'
 				return ActionResult(error=error_msg)
 
 		async def _click_by_index(
@@ -652,7 +772,7 @@ class Tools(Generic[Context]):
 		self._register_click_action()
 
 		@self.registry.action(
-			'Input text into element by index.',
+			'Input text into element by index. Clears existing text by default; pass text="" to clear only, or clear=False to append.',
 			param_model=InputTextAction,
 		)
 		async def input(
@@ -750,23 +870,37 @@ class Tools(Generic[Context]):
 				# Also check if it's a recently downloaded file that might not be in available_file_paths yet
 				downloaded_files = browser_session.downloaded_files
 				if params.path not in downloaded_files:
-					# Finally, check if it's a file in the FileSystem service
-					if file_system and file_system.get_dir():
+					# Finally, check if it's a file in the FileSystem service.
+					# Only rewrite to the local FileSystem path on local sessions —
+					# on remote sessions, params.path is meant to address a file on
+					# the remote machine, and a coincidental basename collision with
+					# a local managed file (e.g. `/tmp/note.md` colliding with a
+					# local `note.md`) must not silently upload the local file.
+					if browser_session.is_local and file_system and file_system.get_dir():
 						# Check if the file is actually managed by the FileSystem service
 						# The path should be just the filename for FileSystem files
 						file_obj = file_system.get_file(params.path)
 						if file_obj:
-							# File is managed by FileSystem, construct the full path
-							file_system_path = str(file_system.get_dir() / params.path)
-							params = UploadFileAction(index=params.index, path=file_system_path)
-						else:
-							# If browser is remote, allow passing a remote-accessible absolute path
-							if not browser_session.is_local:
-								pass
-							else:
-								msg = f'File path {params.path} is not available. To fix: The user must add this file path to the available_file_paths parameter when creating the Agent. Example: Agent(task="...", llm=llm, browser=browser, available_file_paths=["{params.path}"])'
+							# Construct the upload path from the FileSystem-owned basename
+							# (file_obj.full_name), NOT from params.path. The agent-controlled
+							# params.path may contain '..' traversal sequences that escape
+							# data_dir when naively joined — get_file() matches by basename
+							# so a path like '../../../note.md' would otherwise resolve to a
+							# sibling file outside the FileSystem directory.
+							# GHSA-j9hj-92j8-jv9h.
+							file_system_path = str(file_system.get_dir() / file_obj.full_name)
+							# Defense in depth: refuse any path that resolves outside data_dir.
+							real_path = os.path.realpath(file_system_path)
+							real_dir = os.path.realpath(str(file_system.get_dir()))
+							if not (real_path == real_dir or real_path.startswith(real_dir + os.sep)):
+								msg = f'Upload of {params.path!r} escapes FileSystem directory; refusing.'
 								logger.error(f'❌ {msg}')
 								return ActionResult(error=msg)
+							params = UploadFileAction(index=params.index, path=file_system_path)
+						else:
+							msg = f'File path {params.path} is not available. To fix: The user must add this file path to the available_file_paths parameter when creating the Agent. Example: Agent(task="...", llm=llm, browser=browser, available_file_paths=["{params.path}"])'
+							logger.error(f'❌ {msg}')
+							return ActionResult(error=msg)
 					else:
 						# If browser is remote, allow passing a remote-accessible absolute path
 						if not browser_session.is_local:
@@ -793,49 +927,8 @@ class Tools(Generic[Context]):
 
 			node = selector_map[params.index]
 
-			# Helper function to find file input near the selected element
-			def find_file_input_near_element(
-				node: EnhancedDOMTreeNode, max_height: int = 3, max_descendant_depth: int = 3
-			) -> EnhancedDOMTreeNode | None:
-				"""Find the closest file input to the selected element."""
-
-				def find_file_input_in_descendants(n: EnhancedDOMTreeNode, depth: int) -> EnhancedDOMTreeNode | None:
-					if depth < 0:
-						return None
-					if browser_session.is_file_input(n):
-						return n
-					for child in n.children_nodes or []:
-						result = find_file_input_in_descendants(child, depth - 1)
-						if result:
-							return result
-					return None
-
-				current = node
-				for _ in range(max_height + 1):
-					# Check the current node itself
-					if browser_session.is_file_input(current):
-						return current
-					# Check all descendants of the current node
-					result = find_file_input_in_descendants(current, max_descendant_depth)
-					if result:
-						return result
-					# Check all siblings and their descendants
-					if current.parent_node:
-						for sibling in current.parent_node.children_nodes or []:
-							if sibling is current:
-								continue
-							if browser_session.is_file_input(sibling):
-								return sibling
-							result = find_file_input_in_descendants(sibling, max_descendant_depth)
-							if result:
-								return result
-					current = current.parent_node
-					if not current:
-						break
-				return None
-
 			# Try to find a file input element near the selected element
-			file_input_node = find_file_input_near_element(node)
+			file_input_node = browser_session.find_file_input_near_element(node)
 
 			# Highlight the file input element if found (truly non-blocking)
 			if file_input_node:
@@ -920,19 +1013,27 @@ class Tools(Generic[Context]):
 
 				event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 				await event
-				new_target_id = await event.event_result(raise_if_any=False, raise_if_none=False)  # Don't raise on errors
-
-				if new_target_id:
-					memory = f'Switched to tab #{new_target_id[-4:]}'
-				else:
-					memory = f'Switched to tab #{params.tab_id}'
-
-				logger.info(f'🔄  {memory}')
-				return ActionResult(extracted_content=memory, long_term_memory=memory)
+				# raise_if_any=True so a handler failure surfaces its real cause here instead
+				# of silently becoming a "produced no result" below.
+				new_target_id = await event.event_result(raise_if_any=True, raise_if_none=False)
 			except Exception as e:
-				logger.warning(f'Tab switch may have failed: {e}')
-				memory = f'Attempted to switch to tab #{params.tab_id}'
-				return ActionResult(extracted_content=memory, long_term_memory=memory)
+				logger.warning(f'Tab switch failed: {e}')
+				# Preserve the concrete cause (e.g. a stale tab_id) instead of a generic
+				# message, so the agent gets actionable failure info in both memories.
+				memory = f'Failed to switch to tab #{params.tab_id}: {e}'
+				raise BrowserError(memory, short_term_memory=memory, long_term_memory=memory)
+
+			# on_SwitchTabEvent returns the newly focused TargetID on every success path, so a
+			# missing result (with no exception raised) means the handler still failed rather
+			# than having quietly succeeded.
+			if not new_target_id:
+				memory = f'Failed to switch to tab #{params.tab_id}: tab switch produced no result'
+				logger.warning(memory)
+				raise BrowserError(memory, short_term_memory=memory, long_term_memory=memory)
+
+			memory = f'Switched to tab #{new_target_id[-4:]}'
+			logger.info(f'🔄  {memory}')
+			return ActionResult(extracted_content=memory, long_term_memory=memory)
 
 		@self.registry.action(
 			'Close a tab by tab_id. Tab IDs are shown in browser state tabs list (last 4 chars of target_id). Use to clean up tabs you no longer need.',
@@ -964,7 +1065,7 @@ class Tools(Generic[Context]):
 				)
 
 		@self.registry.action(
-			"""LLM extracts structured data from page markdown. Use when: on right page, know what to extract, haven't called before on same page+query. Can't get interactive elements. Set extract_links=True for URLs. Use start_from_char if previous extraction was truncated to extract data further down the page. When paginating across pages, pass already_collected with item identifiers (names/URLs) from prior pages to avoid duplicates.""",
+			"""LLM extracts structured data from page markdown. Use when: on right page, know what to extract, haven't called before on same page+query. Can't get interactive elements. Set extract_links=True for URLs. Set extract_images=True for image src URLs. Use start_from_char if previous extraction was truncated to extract data further down the page. When paginating across pages, pass already_collected with item identifiers (names/URLs) from prior pages to avoid duplicates.""",
 			param_model=ExtractAction,
 		)
 		async def extract(
@@ -978,11 +1079,17 @@ class Tools(Generic[Context]):
 			MAX_CHAR_LIMIT = 100000
 			query = params['query'] if isinstance(params, dict) else params.query
 			extract_links = params['extract_links'] if isinstance(params, dict) else params.extract_links
+			extract_images = params.get('extract_images', False) if isinstance(params, dict) else params.extract_images
 			start_from_char = params['start_from_char'] if isinstance(params, dict) else params.start_from_char
 			output_schema: dict | None = params.get('output_schema') if isinstance(params, dict) else params.output_schema
 			already_collected: list[str] = (
 				params.get('already_collected', []) if isinstance(params, dict) else params.already_collected
 			)
+
+			# Auto-enable extract_images if query contains image-related keywords
+			_IMAGE_KEYWORDS = ['image', 'photo', 'picture', 'thumbnail', 'img url', 'image url', 'photo url', 'product image']
+			if not extract_images and any(kw in query.lower() for kw in _IMAGE_KEYWORDS):
+				extract_images = True
 
 			# If the LLM didn't provide an output_schema, use the agent-injected extraction_schema
 			if output_schema is None and extraction_schema is not None:
@@ -1004,7 +1111,7 @@ class Tools(Generic[Context]):
 				from browser_use.dom.markdown_extractor import extract_clean_markdown
 
 				content, content_stats = await extract_clean_markdown(
-					browser_session=browser_session, extract_links=extract_links
+					browser_session=browser_session, extract_links=extract_links, extract_images=extract_images
 				)
 			except Exception as e:
 				raise RuntimeError(f'Could not extract clean markdown: {type(e).__name__}')
@@ -1484,16 +1591,41 @@ You will be given a query and the markdown of a webpage that has been filtered t
 
 			cdp_session = await browser_session.get_or_create_cdp_session(focus=True)
 
+			from cdp_use.cdp.page import PrintToPDFParameters
+
+			pdf_params: PrintToPDFParameters = {
+				'printBackground': params.print_background,
+				'landscape': params.landscape,
+				'scale': params.scale,
+				'paperWidth': paper_width,
+				'paperHeight': paper_height,
+				'preferCSSPageSize': True,
+			}
+
+			if params.display_header_footer:
+				# Chrome clips the header/footer unless the page leaves vertical room for
+				# them, so set explicit margins. preferCSSPageSize only governs page size,
+				# not margins, so these still apply. The horizontal margins keep the body
+				# aligned with the header/footer content (which is padded to match).
+				pdf_params.update(
+					{
+						'displayHeaderFooter': True,
+						'headerTemplate': params.header_template
+						if params.header_template is not None
+						else _DEFAULT_PDF_HEADER_TEMPLATE,
+						'footerTemplate': params.footer_template
+						if params.footer_template is not None
+						else _DEFAULT_PDF_FOOTER_TEMPLATE,
+						'marginTop': 0.5,
+						'marginBottom': 0.5,
+						'marginLeft': 0.4,
+						'marginRight': 0.4,
+					}
+				)
+
 			result = await asyncio.wait_for(
 				cdp_session.cdp_client.send.Page.printToPDF(
-					params={
-						'printBackground': params.print_background,
-						'landscape': params.landscape,
-						'scale': params.scale,
-						'paperWidth': paper_width,
-						'paperHeight': paper_height,
-						'preferCSSPageSize': True,
-					},
+					params=pdf_params,
 					session_id=cdp_session.session_id,
 				),
 				timeout=30.0,
@@ -1695,275 +1827,6 @@ You will be given a query and the markdown of a webpage that has been filtered t
 				images=images,
 				include_extracted_content_only_once=True,
 			)
-
-		# Intelligent content reading
-
-		@self.registry.action(
-			'Intelligently read long content to find specific information. Works on current page (source="page") or files. For large content, uses search to identify relevant sections. Best for long articles, documents, or any content where you know what you are looking for.',
-			param_model=ReadContentAction,
-		)
-		async def read_long_content(
-			params: ReadContentAction,
-			browser_session: BrowserSession,
-			page_extraction_llm: BaseChatModel,
-			available_file_paths: list[str],
-		):
-			import re
-
-			from browser_use.llm.messages import UserMessage
-
-			goal = params.goal
-			context = params.context
-			source = params.source
-			max_chars = 50000
-
-			async def extract_search_terms(goal: str, context: str) -> list[str]:
-				"""Use LLM to extract search terms from goal."""
-				prompt = f"""Extract 3-5 key search terms from this goal that would help find relevant sections.
-Return only the terms, one per line, no numbering or bullets.
-
-Goal: {goal}
-
-Context: {context}"""
-				response = await page_extraction_llm.ainvoke([UserMessage(content=prompt)])
-				return [term.strip() for term in response.completion.strip().split('\n') if term.strip()][:5]
-
-			def search_text(content: str, pattern: str, context_chars: int = 100) -> list[dict]:
-				"""Search content for pattern, return matches with positions."""
-				try:
-					regex = re.compile(pattern, re.IGNORECASE)
-				except re.error:
-					regex = re.compile(re.escape(pattern), re.IGNORECASE)
-
-				matches = []
-				for match in regex.finditer(content):
-					start = max(0, match.start() - context_chars)
-					end = min(len(content), match.end() + context_chars)
-					matches.append(
-						{
-							'position': match.start(),
-							'snippet': content[start:end],
-						}
-					)
-				return matches
-
-			def chunk_content(content: str, chunk_size: int = 2000) -> list[dict]:
-				"""Split content into chunks with positions."""
-				chunks = []
-				for i in range(0, len(content), chunk_size):
-					chunks.append(
-						{
-							'start': i,
-							'end': min(i + chunk_size, len(content)),
-							'text': content[i : i + chunk_size],
-						}
-					)
-				return chunks
-
-			try:
-				if source.lower() == 'page':
-					# Read from current webpage
-					from browser_use.dom.markdown_extractor import extract_clean_markdown
-
-					# Clear DOM cache and wait for page to settle before extracting
-					if browser_session._dom_watchdog:
-						browser_session._dom_watchdog.clear_cache()
-
-					wait_time = browser_session.browser_profile.wait_for_network_idle_page_load_time
-					await asyncio.sleep(wait_time)
-
-					content, _ = await extract_clean_markdown(browser_session=browser_session, extract_links=False)
-					source_name = 'current page'
-
-					if not content:
-						return ActionResult(
-							extracted_content='Error: No page content available',
-							long_term_memory='Failed to read page: no content',
-						)
-
-				else:
-					# Read from file
-					file_path = source
-
-					# Validate file path against whitelist (available_file_paths + downloaded files)
-					allowed_paths = set(available_file_paths or [])
-					allowed_paths.update(browser_session.downloaded_files)
-					if file_path not in allowed_paths:
-						return ActionResult(
-							extracted_content=f'Error: File path not in available_file_paths: {file_path}. '
-							f'The user must add this path to available_file_paths when creating the Agent.',
-							long_term_memory=f'Failed to read: file path not allowed: {file_path}',
-						)
-
-					if not os.path.exists(file_path):
-						return ActionResult(
-							extracted_content=f'Error: File not found: {file_path}',
-							long_term_memory='Failed to read: file not found',
-						)
-
-					ext = os.path.splitext(file_path)[1].lower()
-					source_name = os.path.basename(file_path)
-
-					if ext == '.pdf':
-						# Read PDF directly using pypdf
-						import pypdf
-
-						reader = pypdf.PdfReader(file_path)
-						num_pages = len(reader.pages)
-
-						# Extract all page text
-						page_texts: list[str] = []
-						total_chars = 0
-						for page in reader.pages:
-							text = page.extract_text() or ''
-							page_texts.append(text)
-							total_chars += len(text)
-
-						# If PDF is small enough, return it all
-						if total_chars <= max_chars:
-							content_parts = []
-							for i, text in enumerate(page_texts, 1):
-								if text.strip():
-									content_parts.append(f'--- Page {i} ---\n{text}')
-							content = '\n\n'.join(content_parts)
-
-							memory = f'Read {source_name} ({num_pages} pages, {total_chars:,} chars) for goal: {goal[:50]}'
-							logger.info(f'📄 {memory}')
-							return ActionResult(
-								extracted_content=f'PDF: {source_name} ({num_pages} pages)\n\n{content}',
-								long_term_memory=memory,
-								include_extracted_content_only_once=True,
-							)
-
-						# PDF too large - use intelligent extraction
-						logger.info(f'PDF has {total_chars:,} chars across {num_pages} pages, using intelligent extraction')
-
-						# Extract search terms from goal
-						search_terms = await extract_search_terms(goal, context)
-
-						# Search and score pages by relevance
-						page_scores: dict[int, int] = {}  # 1-indexed page -> score
-						for term in search_terms:
-							try:
-								term_pattern = re.compile(re.escape(term), re.IGNORECASE)
-							except re.error:
-								continue
-							for i, text in enumerate(page_texts, 1):
-								if term_pattern.search(text):
-									page_scores[i] = page_scores.get(i, 0) + 1
-
-						# Select pages: always include page 1, then most relevant
-						pages_to_read = [1]
-						sorted_pages = sorted(page_scores.items(), key=lambda x: -x[1])
-						for page_num, _ in sorted_pages:
-							if page_num not in pages_to_read:
-								pages_to_read.append(page_num)
-
-						# Build result respecting char limit, truncating pages if needed
-						content_parts = []
-						chars_used = 0
-						pages_included = []
-						for page_num in sorted(set(pages_to_read)):
-							text = page_texts[page_num - 1]
-							page_header = f'--- Page {page_num} ---\n'
-							remaining = max_chars - chars_used
-							if remaining < len(page_header) + 50:
-								break  # no room for meaningful content
-							page_content = page_header + text
-							if len(page_content) > remaining:
-								page_content = page_content[: remaining - len('\n[...truncated]')] + '\n[...truncated]'
-							content_parts.append(page_content)
-							chars_used += len(page_content)
-							pages_included.append(page_num)
-
-						content = '\n\n'.join(content_parts)
-						memory = f'Read {source_name} ({len(pages_included)} relevant pages of {num_pages}) for goal: {goal[:50]}'
-						logger.info(f'📄 {memory}')
-						return ActionResult(
-							extracted_content=f'PDF: {source_name} ({num_pages} pages, showing {len(pages_included)} relevant)\n\n{content}',
-							long_term_memory=memory,
-							include_extracted_content_only_once=True,
-						)
-
-					else:
-						# Text file
-						async with await anyio.open_file(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-							content = await f.read()
-
-				# Check if content fits in budget
-				if len(content) <= max_chars:
-					memory = f'Read {source_name} ({len(content):,} chars) for goal: {goal[:50]}'
-					logger.info(f'📄 {memory}')
-					return ActionResult(
-						extracted_content=f'Content from {source_name} ({len(content):,} chars):\n\n{content}',
-						long_term_memory=memory,
-						include_extracted_content_only_once=True,
-					)
-
-				# Content too large - use intelligent extraction
-				logger.info(f'Content has {len(content):,} chars, using intelligent extraction')
-
-				# Extract search terms from goal
-				search_terms = await extract_search_terms(goal, context)
-
-				# Search for each term and score chunks
-				chunks = chunk_content(content, chunk_size=2000)
-				chunk_scores: dict[int, int] = {}  # chunk index -> relevance score
-
-				for term in search_terms:
-					matches = search_text(content, term)
-					for match in matches:
-						# Find which chunk this match belongs to
-						for i, chunk in enumerate(chunks):
-							if chunk['start'] <= match['position'] < chunk['end']:
-								chunk_scores[i] = chunk_scores.get(i, 0) + 1
-								break
-
-				if not chunk_scores:
-					# No matches - return first max_chars
-					truncated = content[:max_chars]
-					memory = f'Read {source_name} (truncated to {max_chars:,} chars, no matches for search terms)'
-					logger.info(f'📄 {memory}')
-					return ActionResult(
-						extracted_content=f'Content from {source_name} (first {max_chars:,} of {len(content):,} chars):\n\n{truncated}',
-						long_term_memory=memory,
-						include_extracted_content_only_once=True,
-					)
-
-				# Sort chunks by relevance and collect most relevant ones
-				sorted_chunks = sorted(chunk_scores.items(), key=lambda x: -x[1])
-
-				# Always include first chunk for context
-				selected_indices = {0}  # Start with first chunk
-				for chunk_idx, _ in sorted_chunks:
-					selected_indices.add(chunk_idx)
-
-				# Build result from selected chunks in order
-				result_parts = []
-				total_chars = 0
-				for i in sorted(selected_indices):
-					chunk = chunks[i]
-					if total_chars + len(chunk['text']) > max_chars:
-						break
-					if i > 0 and (i - 1) not in selected_indices:
-						result_parts.append('\n[...]\n')  # Indicate gap
-					result_parts.append(chunk['text'])
-					total_chars += len(chunk['text'])
-
-				result_content = ''.join(result_parts)
-				memory = f'Read {source_name} ({len(selected_indices)} relevant sections of {len(chunks)}) for goal: {goal[:50]}'
-				logger.info(f'📄 {memory}')
-
-				return ActionResult(
-					extracted_content=f'Content from {source_name} (relevant sections, {total_chars:,} of {len(content):,} chars):\n\n{result_content}',
-					long_term_memory=memory,
-					include_extracted_content_only_once=True,
-				)
-
-			except Exception as e:
-				error_msg = f'Error reading content: {str(e)}'
-				logger.error(error_msg)
-				return ActionResult(extracted_content=error_msg, long_term_memory=error_msg)
 
 		@self.registry.action(
 			"""Execute browser JavaScript. Best practice: wrap in IIFE (function(){...})() with try-catch for safety. Use ONLY browser APIs (document, window, DOM). NO Node.js APIs (fs, require, process). Example: (function(){try{const el=document.querySelector('#id');return el?el.value:'not found'}catch(e){return 'Error: '+e.message}})() Avoid comments. Use for hover, drag, zoom, custom selectors, extract/filter links, or analysing page structure. IMPORTANT: Shadow DOM elements with [index] markers can be clicked directly with click(index) — do NOT use evaluate() to click them. Only use evaluate for shadow DOM elements that are NOT indexed. Limit output size.""",
@@ -2182,7 +2045,7 @@ Validated Code (after quote fixing):
 		else:
 
 			@self.registry.action(
-				'Complete task.',
+				'Complete task. Only report actions you performed and data you extracted in this session.',
 				param_model=DoneAction,
 			)
 			async def done(params: DoneAction, file_system: FileSystem):
@@ -2293,6 +2156,7 @@ Validated Code (after quote fixing):
 		This is automatically enabled for models that support coordinate clicking:
 		- claude-sonnet-4-5
 		- claude-opus-4-5
+		- claude-fable-5
 		- gemini-3-pro
 		- browser-use/* models
 
@@ -2318,8 +2182,18 @@ Validated Code (after quote fixing):
 		available_file_paths: list[str] | None = None,
 		file_system: FileSystem | None = None,
 		extraction_schema: dict | None = None,
+		action_timeout: float | None = None,
 	) -> ActionResult:
-		"""Execute an action"""
+		"""Execute an action.
+
+		action_timeout: per-action wall-clock cap (seconds). Prevents actions from hanging
+		indefinitely when a CDP WebSocket goes silent — a common failure mode with remote
+		browsers where internal CDP calls (tab switches, lifecycle waits) have no timeouts.
+		Defaults to BROWSER_USE_ACTION_TIMEOUT_S env var or 180s (above the 120s
+		page_extraction_llm cap used by the `extract` action).
+		"""
+
+		timeout_s = _coerce_valid_action_timeout(action_timeout)
 
 		for action_name, params in action.model_dump(exclude_unset=True).items():
 			if params is not None:
@@ -2341,22 +2215,36 @@ Validated Code (after quote fixing):
 
 				with span_context:
 					try:
-						result = await self.registry.execute_action(
-							action_name=action_name,
-							params=params,
-							browser_session=browser_session,
-							page_extraction_llm=page_extraction_llm,
-							file_system=file_system,
-							sensitive_data=sensitive_data,
-							available_file_paths=available_file_paths,
-							extraction_schema=extraction_schema,
+						result = await asyncio.wait_for(
+							self.registry.execute_action(
+								action_name=action_name,
+								params=params,
+								browser_session=browser_session,
+								page_extraction_llm=page_extraction_llm,
+								file_system=file_system,
+								sensitive_data=sensitive_data,
+								available_file_paths=available_file_paths,
+								extraction_schema=extraction_schema,
+							),
+							timeout=timeout_s,
 						)
 					except BrowserError as e:
 						logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
 						result = handle_browser_error(e)
-					except TimeoutError as e:
-						logger.error(f'❌ Action {action_name} failed with TimeoutError: {str(e)}')
-						result = ActionResult(error=f'{action_name} was not executed due to timeout.')
+					except TimeoutError:
+						# Covers both the per-action asyncio.wait_for cap and any inner
+						# TimeoutError that bubbled out of the handler.
+						logger.error(
+							f'❌ Action {action_name} hit the per-action timeout ({timeout_s:.0f}s) '
+							f'— likely an unresponsive CDP connection. Returning error so the agent can recover.'
+						)
+						result = ActionResult(
+							error=(
+								f'Action {action_name} timed out after {timeout_s:.0f}s. '
+								f'The browser may be unresponsive (dead CDP WebSocket). '
+								f'Try again or a different approach.'
+							)
+						)
 					except Exception as e:
 						# Log the original exception with traceback for observability
 						logger.error(f"Action '{action_name}' failed with error: {str(e)}")
@@ -2435,306 +2323,3 @@ Validated Code (after quote fixing):
 
 # Alias for backwards compatibility
 Controller = Tools
-
-
-class CodeAgentTools(Tools[Context]):
-	"""Specialized Tools for CodeAgent agent optimized for Python-based browser automation.
-
-	Includes:
-	- All browser interaction tools (click, input, scroll, navigate, etc.)
-	- JavaScript evaluation
-	- Tab management (switch, close)
-	- Navigation actions (go_back)
-	- Upload file support
-	- Dropdown interactions
-
-	Excludes (optimized for code-use mode):
-	- extract: Use Python + evaluate() instead
-	- find_text: Use Python string operations
-	- screenshot: Not needed in code-use mode
-	- search: Use navigate() directly
-	- File system actions (write_file, read_file, replace_file): Use Python file operations instead
-	"""
-
-	def __init__(
-		self,
-		exclude_actions: list[str] | None = None,
-		output_model: type[T] | None = None,
-		display_files_in_done_text: bool = True,
-	):
-		# Default exclusions for CodeAgent agent
-		if exclude_actions is None:
-			exclude_actions = [
-				# 'scroll',  # Keep for code-use
-				'extract',  # Exclude - use Python + evaluate()
-				'find_text',  # Exclude - use Python string ops
-				# 'select_dropdown',  # Keep for code-use
-				# 'dropdown_options',  # Keep for code-use
-				'screenshot',  # Exclude - not needed
-				'search',  # Exclude - use navigate() directly
-				# 'click',  # Keep for code-use
-				# 'input',  # Keep for code-use
-				# 'switch',  # Keep for code-use
-				# 'send_keys',  # Keep for code-use
-				# 'close',  # Keep for code-use
-				# 'go_back',  # Keep for code-use
-				# 'upload_file',  # Keep for code-use
-				# Exclude file system actions - CodeAgent should use Python file operations
-				'write_file',
-				'read_file',
-				'replace_file',
-			]
-
-		super().__init__(
-			exclude_actions=exclude_actions,
-			output_model=output_model,
-			display_files_in_done_text=display_files_in_done_text,
-		)
-
-		# Override done action for CodeAgent with enhanced file handling
-		self._register_code_use_done_action(output_model, display_files_in_done_text)
-
-	def _register_code_use_done_action(self, output_model: type[T] | None, display_files_in_done_text: bool = True):
-		"""Register enhanced done action for CodeAgent that can read files from disk."""
-		if output_model is not None:
-			# Structured output done - use parent's implementation
-			return
-
-		# Override the done action with enhanced version
-		@self.registry.action(
-			'Complete task.',
-			param_model=DoneAction,
-		)
-		async def done(params: DoneAction, file_system: FileSystem):
-			user_message = params.text
-
-			len_text = len(params.text)
-			len_max_memory = 100
-			memory = f'Task completed: {params.success} - {params.text[:len_max_memory]}'
-			if len_text > len_max_memory:
-				memory += f' - {len_text - len_max_memory} more characters'
-
-			attachments = []
-			if params.files_to_display:
-				if self.display_files_in_done_text:
-					file_msg = ''
-					for file_name in params.files_to_display:
-						file_content = file_system.display_file(file_name)
-						if file_content:
-							file_msg += f'\n\n{file_name}:\n{file_content}'
-							attachments.append(file_name)
-						elif os.path.exists(file_name):
-							# File exists on disk but not in FileSystem - just add to attachments
-							attachments.append(file_name)
-					if file_msg:
-						user_message += '\n\nAttachments:'
-						user_message += file_msg
-					else:
-						logger.warning('Agent wanted to display files but none were found')
-				else:
-					for file_name in params.files_to_display:
-						file_content = file_system.display_file(file_name)
-						if file_content:
-							attachments.append(file_name)
-						elif os.path.exists(file_name):
-							attachments.append(file_name)
-
-			# Convert relative paths to absolute paths - handle both FileSystem-managed and regular files
-			resolved_attachments = []
-			for file_name in attachments:
-				if os.path.isabs(file_name):
-					# Already absolute
-					resolved_attachments.append(file_name)
-				elif file_system.get_file(file_name):
-					# Managed by FileSystem
-					resolved_attachments.append(str(file_system.get_dir() / file_name))
-				elif os.path.exists(file_name):
-					# Regular file in current directory
-					resolved_attachments.append(os.path.abspath(file_name))
-				else:
-					# File doesn't exist, but include the path anyway for error visibility
-					resolved_attachments.append(str(file_system.get_dir() / file_name))
-			attachments = resolved_attachments
-
-			return ActionResult(
-				is_done=True,
-				success=params.success,
-				extracted_content=user_message,
-				long_term_memory=memory,
-				attachments=attachments,
-			)
-
-		# Override upload_file for code agent with relaxed path validation
-		@self.registry.action(
-			'Upload a file to a file input element. For code-use mode, any file accessible from the current directory can be uploaded.',
-			param_model=UploadFileAction,
-		)
-		async def upload_file(
-			params: UploadFileAction,
-			browser_session: BrowserSession,
-			available_file_paths: list[str],
-			file_system: FileSystem,
-		):
-			# Path validation logic for code-use mode:
-			# 1. If available_file_paths provided (security mode), enforce it as a whitelist
-			# 2. If no whitelist, for local browsers just check file exists
-			# 3. For remote browsers, allow any path (assume it exists remotely)
-
-			# If whitelist provided, validate path is in it
-			if available_file_paths:
-				if params.path not in available_file_paths:
-					# Also check if it's a recently downloaded file
-					downloaded_files = browser_session.downloaded_files
-					if params.path not in downloaded_files:
-						# Finally, check if it's a file in the FileSystem service (if provided)
-						if file_system is not None and file_system.get_dir():
-							# Check if the file is actually managed by the FileSystem service
-							# The path should be just the filename for FileSystem files
-							file_obj = file_system.get_file(params.path)
-							if file_obj:
-								# File is managed by FileSystem, construct the full path
-								file_system_path = str(file_system.get_dir() / params.path)
-								params = UploadFileAction(index=params.index, path=file_system_path)
-							else:
-								# If browser is remote, allow passing a remote-accessible absolute path
-								if not browser_session.is_local:
-									pass
-								else:
-									msg = f'File path {params.path} is not available. To fix: add this file path to the available_file_paths parameter when creating the Agent. Example: Agent(task="...", llm=llm, browser=browser, available_file_paths=["{params.path}"])'
-									logger.error(f'❌ {msg}')
-									return ActionResult(error=msg)
-						else:
-							# If browser is remote, allow passing a remote-accessible absolute path
-							if not browser_session.is_local:
-								pass
-							else:
-								msg = f'File path {params.path} is not available. To fix: add this file path to the available_file_paths parameter when creating the Agent. Example: Agent(task="...", llm=llm, browser=browser, available_file_paths=["{params.path}"])'
-								logger.error(f'❌ {msg}')
-								return ActionResult(error=msg)
-
-			# For local browsers, ensure the file exists on the local filesystem
-			if browser_session.is_local:
-				if not os.path.exists(params.path):
-					msg = f'File {params.path} does not exist'
-					return ActionResult(error=msg)
-
-			# Get the selector map to find the node
-			selector_map = await browser_session.get_selector_map()
-			if params.index not in selector_map:
-				msg = f'Element with index {params.index} does not exist.'
-				return ActionResult(error=msg)
-
-			node = selector_map[params.index]
-
-			# Helper function to find file input near the selected element
-			def find_file_input_near_element(
-				node: EnhancedDOMTreeNode, max_height: int = 3, max_descendant_depth: int = 3
-			) -> EnhancedDOMTreeNode | None:
-				"""Find the closest file input to the selected element."""
-
-				def find_file_input_in_descendants(n: EnhancedDOMTreeNode, depth: int) -> EnhancedDOMTreeNode | None:
-					if depth < 0:
-						return None
-					if browser_session.is_file_input(n):
-						return n
-					for child in n.children_nodes or []:
-						result = find_file_input_in_descendants(child, depth - 1)
-						if result:
-							return result
-					return None
-
-				current = node
-				for _ in range(max_height + 1):
-					# Check the current node itself
-					if browser_session.is_file_input(current):
-						return current
-					# Check all descendants of the current node
-					result = find_file_input_in_descendants(current, max_descendant_depth)
-					if result:
-						return result
-					# Check all siblings and their descendants
-					if current.parent_node:
-						for sibling in current.parent_node.children_nodes or []:
-							if sibling is current:
-								continue
-							if browser_session.is_file_input(sibling):
-								return sibling
-							result = find_file_input_in_descendants(sibling, max_descendant_depth)
-							if result:
-								return result
-					current = current.parent_node
-					if not current:
-						break
-				return None
-
-			# Try to find a file input element near the selected element
-			file_input_node = find_file_input_near_element(node)
-
-			# Highlight the file input element if found (truly non-blocking)
-			if file_input_node:
-				create_task_with_error_handling(
-					browser_session.highlight_interaction_element(file_input_node),
-					name='highlight_file_input',
-					suppress_exceptions=True,
-				)
-
-			# If not found near the selected element, fallback to finding the closest file input to current scroll position
-			if file_input_node is None:
-				logger.info(
-					f'No file upload element found near index {params.index}, searching for closest file input to scroll position'
-				)
-
-				# Get current scroll position
-				cdp_session = await browser_session.get_or_create_cdp_session()
-				try:
-					scroll_info = await cdp_session.cdp_client.send.Runtime.evaluate(
-						params={'expression': 'window.scrollY || window.pageYOffset || 0'}, session_id=cdp_session.session_id
-					)
-					current_scroll_y = scroll_info.get('result', {}).get('value', 0)
-				except Exception:
-					current_scroll_y = 0
-
-				# Find all file inputs in the selector map and pick the closest one to scroll position
-				closest_file_input = None
-				min_distance = float('inf')
-
-				for idx, element in selector_map.items():
-					if browser_session.is_file_input(element):
-						# Get element's Y position
-						if element.absolute_position:
-							element_y = element.absolute_position.y
-							distance = abs(element_y - current_scroll_y)
-							if distance < min_distance:
-								min_distance = distance
-								closest_file_input = element
-
-				if closest_file_input:
-					file_input_node = closest_file_input
-					logger.info(f'Found file input closest to scroll position (distance: {min_distance}px)')
-
-					# Highlight the fallback file input element (truly non-blocking)
-					create_task_with_error_handling(
-						browser_session.highlight_interaction_element(file_input_node),
-						name='highlight_file_input_fallback',
-						suppress_exceptions=True,
-					)
-				else:
-					msg = 'No file upload element found on the page'
-					logger.error(msg)
-					raise BrowserError(msg)
-					# TODO: figure out why this fails sometimes + add fallback hail mary, just look for any file input on page
-
-			# Dispatch upload file event with the file input node
-			try:
-				event = browser_session.event_bus.dispatch(UploadFileEvent(node=file_input_node, file_path=params.path))
-				await event
-				await event.event_result(raise_if_any=True, raise_if_none=False)
-				msg = f'Successfully uploaded file to index {params.index}'
-				logger.info(f'📁 {msg}')
-				return ActionResult(
-					extracted_content=msg,
-					long_term_memory=f'Uploaded file {params.path} to element {params.index}',
-				)
-			except Exception as e:
-				logger.error(f'Failed to upload file: {e}')
-				raise BrowserError(f'Failed to upload file: {e}')

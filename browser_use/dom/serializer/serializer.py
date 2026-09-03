@@ -55,6 +55,8 @@ class DOMTreeSerializer:
 		# {'tag': 'span', 'role': 'link'},    # <span role="link">
 	]
 	DEFAULT_CONTAINMENT_THRESHOLD = 0.99  # 99% containment by default
+	MAX_CHILD_IMAGE_CONTEXTS = 3
+	MAX_CHILD_IMAGE_DESCENDANTS = 100
 
 	def __init__(
 		self,
@@ -69,10 +71,20 @@ class DOMTreeSerializer:
 		self._interactive_counter = 1
 		self._selector_map: DOMSelectorMap = {}
 		self._previous_cached_selector_map = previous_cached_state.selector_map if previous_cached_state else None
+		self._previous_node_ids = (
+			{
+				(str(previous_node.session_id), previous_node.backend_node_id)
+				for previous_node in self._previous_cached_selector_map.values()
+			}
+			if self._previous_cached_selector_map
+			else set()
+		)
 		# Add timing tracking
 		self.timing_info: dict[str, float] = {}
 		# Cache for clickable element detection to avoid redundant calls
-		self._clickable_cache: dict[int, bool] = {}
+		self._clickable_cache: dict[tuple[str | None, int], bool] = {}
+		self._reserved_backend_node_ids: set[int] = set()
+		self._next_synthetic_index = 1
 		# Bounding box filtering configuration
 		self.enable_bbox_filtering = enable_bbox_filtering
 		self.containment_threshold = containment_threshold or self.DEFAULT_CONTAINMENT_THRESHOLD
@@ -107,6 +119,8 @@ class DOMTreeSerializer:
 		self._selector_map = {}
 		self._semantic_groups = []
 		self._clickable_cache = {}  # Clear cache for new serialization
+		self._reserved_backend_node_ids = set()
+		self._next_synthetic_index = 1
 
 		# Step 1: Create simplified tree (includes clickable element detection)
 		start_step1 = time.time()
@@ -138,6 +152,7 @@ class DOMTreeSerializer:
 
 		# Step 4: Assign interactive indices to clickable elements
 		start_step4 = time.time()
+		self._reserve_backend_node_ids(filtered_tree)
 		self._assign_interactive_indices_and_mark_new_nodes(filtered_tree)
 		end_step4 = time.time()
 		self.timing_info['assign_interactive_indices'] = end_step4 - start_step4
@@ -417,7 +432,10 @@ class DOMTreeSerializer:
 	def _is_interactive_cached(self, node: EnhancedDOMTreeNode) -> bool:
 		"""Cached version of clickable element detection to avoid redundant calls."""
 
-		if node.node_id not in self._clickable_cache:
+		# CDP node IDs are scoped to a session and can be reused by unrelated
+		# elements in cross-origin iframe targets.
+		cache_key = (str(node.session_id) if node.session_id is not None else None, node.node_id)
+		if cache_key not in self._clickable_cache:
 			import time
 
 			start_time = time.time()
@@ -428,9 +446,9 @@ class DOMTreeSerializer:
 				self.timing_info['clickable_detection_time'] = 0
 			self.timing_info['clickable_detection_time'] += end_time - start_time
 
-			self._clickable_cache[node.node_id] = result
+			self._clickable_cache[cache_key] = result
 
-		return self._clickable_cache[node.node_id]
+		return self._clickable_cache[cache_key]
 
 	def _create_simplified_tree(self, node: EnhancedDOMTreeNode, depth: int = 0) -> SimplifiedNode | None:
 		"""Step 1: Create a simplified tree with enhanced element detection."""
@@ -614,6 +632,29 @@ class DOMTreeSerializer:
 			current = current.parent_node
 		return False
 
+	def _reserve_backend_node_ids(self, root: SimplifiedNode | None) -> None:
+		"""Reserve every CDP backend ID in one linear traversal."""
+		if root is None:
+			return
+
+		stack = [root]
+		while stack:
+			node = stack.pop()
+			self._reserved_backend_node_ids.add(node.original_node.backend_node_id)
+			stack.extend(node.children)
+		self._next_synthetic_index = max(self._reserved_backend_node_ids, default=0) + 1
+
+	def _allocate_selector_index(self, backend_node_id: int) -> int:
+		"""Preserve unique backend IDs and allocate a collision-free model index otherwise."""
+		if backend_node_id not in self._selector_map:
+			return backend_node_id
+
+		while self._next_synthetic_index in self._reserved_backend_node_ids:
+			self._next_synthetic_index += 1
+		selector_index = self._next_synthetic_index
+		self._next_synthetic_index += 1
+		return selector_index
+
 	def _assign_interactive_indices_and_mark_new_nodes(self, node: SimplifiedNode | None) -> None:
 		"""Assign interactive indices to clickable elements that are also visible."""
 		if not node:
@@ -709,17 +750,17 @@ class DOMTreeSerializer:
 			if should_make_interactive:
 				# Mark node as interactive
 				node.is_interactive = True
-				# Store backend_node_id in selector map (model outputs backend_node_id)
-				self._selector_map[node.original_node.backend_node_id] = node.original_node
+				node.selector_index = self._allocate_selector_index(node.original_node.backend_node_id)
+				self._selector_map[node.selector_index] = node.original_node
 				self._interactive_counter += 1
 
 				# Mark compound components as new for visibility
 				if node.is_compound_component:
 					node.is_new = True
-				elif self._previous_cached_selector_map:
+				elif self._previous_node_ids:
 					# Check if node is new for regular elements
-					previous_backend_node_ids = {node.backend_node_id for node in self._previous_cached_selector_map.values()}
-					if node.original_node.backend_node_id not in previous_backend_node_ids:
+					current_node_id = (str(node.original_node.session_id), node.original_node.backend_node_id)
+					if current_node_id not in self._previous_node_ids:
 						node.is_new = True
 
 		# Process children
@@ -880,6 +921,58 @@ class DOMTreeSerializer:
 		return False
 
 	@staticmethod
+	def _get_child_image_context(node: SimplifiedNode) -> str:
+		"""Extract compact context from image descendants of an interactive element."""
+
+		image_context: list[str] = []
+
+		def normalize_src(src: str) -> str:
+			clean_src = src.strip()
+			if clean_src.lower().startswith('data:'):
+				return ''
+			path_without_query = clean_src.split('?', 1)[0].split('#', 1)[0].rstrip('/')
+			return path_without_query.rsplit('/', 1)[-1]
+
+		child_iterators = [iter(node.children)]
+		visited_descendants = 0
+		while (
+			child_iterators
+			and visited_descendants < DOMTreeSerializer.MAX_CHILD_IMAGE_DESCENDANTS
+			and len(image_context) < DOMTreeSerializer.MAX_CHILD_IMAGE_CONTEXTS
+		):
+			try:
+				current = next(child_iterators[-1])
+			except StopIteration:
+				child_iterators.pop()
+				continue
+			visited_descendants += 1
+			original_node = current.original_node
+			if original_node.node_type == NodeType.ELEMENT_NODE and original_node.tag_name == 'img':
+				attributes = original_node.attributes or {}
+				parts = []
+
+				for attr_name, output_name in (
+					('alt', 'image_alt'),
+					('title', 'image_title'),
+					('aria-label', 'image_label'),
+				):
+					attr_value = str(attributes.get(attr_name) or '').strip()
+					if attr_value:
+						parts.append(f'{output_name}={cap_text_length(attr_value, 100)}')
+
+				src = normalize_src(str(attributes.get('src') or ''))
+				if src:
+					parts.append(f'image_src={cap_text_length(src, 100)}')
+
+				if parts:
+					image_context.append(' '.join(parts))
+
+			if current.children:
+				child_iterators.append(iter(current.children))
+
+		return ' '.join(image_context)
+
+	@staticmethod
 	def serialize_tree(node: SimplifiedNode | None, include_attributes: list[str], depth: int = 0) -> str:
 		"""Serialize the optimized tree to string format."""
 		if not node:
@@ -922,8 +1015,9 @@ class DOMTreeSerializer:
 				line = f'{depth_str}{shadow_prefix}'
 				# Add interactive marker if clickable
 				if node.is_interactive:
+					assert node.selector_index is not None
 					new_prefix = '*' if node.is_new else ''
-					line += f'{new_prefix}[{node.original_node.backend_node_id}]'
+					line += f'{new_prefix}[{node.selector_index}]'
 				line += '<svg'
 				attributes_html_str = DOMTreeSerializer._build_attributes_string(node.original_node, include_attributes, '')
 				if attributes_html_str:
@@ -949,6 +1043,13 @@ class DOMTreeSerializer:
 				attributes_html_str = DOMTreeSerializer._build_attributes_string(
 					node.original_node, include_attributes, text_content
 				)
+				if node.is_interactive:
+					image_context = DOMTreeSerializer._get_child_image_context(node)
+					if image_context:
+						if attributes_html_str:
+							attributes_html_str += f' {image_context}'
+						else:
+							attributes_html_str = image_context
 
 				# Add compound component information to attributes if present
 				if node.original_node._compound_children:
@@ -1001,10 +1102,10 @@ class DOMTreeSerializer:
 					# Scrollable container but not clickable
 					line = f'{depth_str}{shadow_prefix}|scroll element|<{node.original_node.tag_name}'
 				elif node.is_interactive:
-					# Clickable (and possibly scrollable) - show backend_node_id
+					assert node.selector_index is not None
 					new_prefix = '*' if node.is_new else ''
 					scroll_prefix = '|scroll element[' if should_show_scroll else '['
-					line = f'{depth_str}{shadow_prefix}{new_prefix}{scroll_prefix}{node.original_node.backend_node_id}]<{node.original_node.tag_name}'
+					line = f'{depth_str}{shadow_prefix}{new_prefix}{scroll_prefix}{node.selector_index}]<{node.original_node.tag_name}'
 				elif node.original_node.tag_name.upper() == 'IFRAME':
 					# Iframe element (not interactive)
 					line = f'{depth_str}{shadow_prefix}|IFRAME|<{node.original_node.tag_name}'
@@ -1047,10 +1148,12 @@ class DOMTreeSerializer:
 				formatted_text.append(f'{depth_str}Shadow End')
 
 		elif node.original_node.node_type == NodeType.TEXT_NODE:
-			# Include visible text
+			# Include visible text that isn't fully covered by another element
+			# painted on top of it (e.g. text underneath an open modal/dropdown).
 			is_visible = node.original_node.snapshot_node and node.original_node.is_visible
 			if (
 				is_visible
+				and not node.ignored_by_paint_order
 				and node.original_node.node_value
 				and node.original_node.node_value.strip()
 				and len(node.original_node.node_value.strip()) > 1
@@ -1175,11 +1278,24 @@ class DOMTreeSerializer:
 							attributes_to_include['placeholder'] = 'mm/dd/yyyy'
 							attributes_to_include['format'] = 'mm/dd/yyyy'
 
+		# Never include values from password fields - they contain secrets that must not
+		# leak into DOM snapshots sent to the LLM, where prompt injection could exfiltrate them.
+		is_password_field = (
+			node.tag_name
+			and node.tag_name.lower() == 'input'
+			and node.attributes
+			and node.attributes.get('type', '').lower() == 'password'
+		)
+
 		# Include accessibility properties
 		if node.ax_node and node.ax_node.properties:
+			# Properties that carry field values - must be excluded for password fields
+			value_properties = {'value', 'valuetext'}
 			for prop in node.ax_node.properties:
 				try:
 					if prop.name in include_attributes and prop.value is not None:
+						if is_password_field and prop.name in value_properties:
+							continue
 						# Convert boolean to lowercase string, keep others as-is
 						if isinstance(prop.value, bool):
 							attributes_to_include[prop.name] = str(prop.value).lower()
@@ -1193,8 +1309,10 @@ class DOMTreeSerializer:
 		# Special handling for form elements - ensure current value is shown
 		# For text inputs, textareas, and selects, prioritize showing the current value from AX tree
 		if node.tag_name and node.tag_name.lower() in ['input', 'textarea', 'select']:
+			if is_password_field:
+				attributes_to_include.pop('value', None)
 			# ALWAYS check AX tree - it reflects actual typed value, DOM attribute may not update
-			if node.ax_node and node.ax_node.properties:
+			elif node.ax_node and node.ax_node.properties:
 				for prop in node.ax_node.properties:
 					# Try valuetext first (human-readable display value)
 					if prop.name == 'valuetext' and prop.value:

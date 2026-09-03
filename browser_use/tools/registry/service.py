@@ -12,6 +12,7 @@ import pyotp
 from pydantic import BaseModel, Field, RootModel, create_model
 
 from browser_use.browser import BrowserSession
+from browser_use.browser.views import BrowserError
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.observability import observe_debug
@@ -395,6 +396,15 @@ class Registry(Generic[Context]):
 			except Exception as e:
 				raise
 
+		except BrowserError as e:
+			# BrowserError can carry structured short/long-term memory for the LLM
+			# (e.g. available dropdown options) — let Tools.act format it instead of
+			# flattening it into a generic RuntimeError string. Only errors with
+			# long_term_memory bypass: handle_browser_error re-raises without it,
+			# which would escape Tools.act instead of returning an ActionResult.
+			if e.long_term_memory is not None:
+				raise
+			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 		except ValueError as e:
 			# Preserve ValueError messages from validation
 			if 'requires browser_session but none provided' in str(e) or 'requires page_extraction_llm but none provided' in str(
@@ -454,7 +464,7 @@ class Registry(Generic[Context]):
 		# Filter out empty values
 		applicable_secrets = {k: v for k, v in applicable_secrets.items() if v}
 
-		def recursively_replace_secrets(value: str | dict | list) -> str | dict | list:
+		def recursively_replace_secrets(value: str | dict | list | tuple) -> str | dict | list | tuple:
 			if isinstance(value, str):
 				# 1. Handle tagged secrets: <secret>label</secret>
 				matches = secret_pattern.findall(value)
@@ -489,6 +499,8 @@ class Registry(Generic[Context]):
 				return {k: recursively_replace_secrets(v) for k, v in value.items()}
 			elif isinstance(value, list):
 				return [recursively_replace_secrets(v) for v in value]
+			elif isinstance(value, tuple):
+				return tuple(recursively_replace_secrets(v) for v in value)
 			return value
 
 		params_dump = params.model_dump()

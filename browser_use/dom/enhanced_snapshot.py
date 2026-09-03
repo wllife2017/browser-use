@@ -9,7 +9,6 @@ from cdp_use.cdp.domsnapshot.commands import CaptureSnapshotReturns
 from cdp_use.cdp.domsnapshot.types import (
 	LayoutTreeSnapshot,
 	NodeTreeSnapshot,
-	RareBooleanData,
 )
 
 from browser_use.dom.views import DOMRect, EnhancedSnapshotNode
@@ -30,9 +29,9 @@ REQUIRED_COMPUTED_STYLES = [
 ]
 
 
-def _parse_rare_boolean_data(rare_data: RareBooleanData, index: int) -> bool | None:
-	"""Parse rare boolean data from snapshot - returns True if index is in the rare data."""
-	return index in rare_data['index']
+def _parse_rare_boolean_data(rare_data_set: set[int], index: int) -> bool | None:
+	"""Parse rare boolean data from snapshot - returns True if index is in the rare data set."""
+	return index in rare_data_set
 
 
 def _parse_computed_styles(strings: list[str], style_indices: list[int]) -> dict[str, str]:
@@ -42,6 +41,30 @@ def _parse_computed_styles(strings: list[str], style_indices: list[int]) -> dict
 		if i < len(REQUIRED_COMPUTED_STYLES) and 0 <= style_index < len(strings):
 			styles[REQUIRED_COMPUTED_STYLES[i]] = strings[style_index]
 	return styles
+
+
+# Live values of these fields never leave the snapshot: they would otherwise be
+# serialized by EnhancedDOMTreeNode.__json__ and could reach logs or the LLM.
+_SENSITIVE_INPUT_TYPES = frozenset({'password', 'file', 'hidden'})
+_SENSITIVE_AUTOCOMPLETE_PREFIXES = ('cc-', 'one-time-code')
+
+
+def _is_sensitive_input(strings: list[str], nodes: NodeTreeSnapshot, snapshot_index: int) -> bool:
+	"""True for password/file/hidden inputs and payment or one-time-code autocomplete fields."""
+	attribute_lists = nodes.get('attributes')
+	if not attribute_lists or snapshot_index >= len(attribute_lists):
+		return False
+	indices = attribute_lists[snapshot_index]
+	for name_index, value_index in zip(indices[0::2], indices[1::2]):
+		if not (0 <= name_index < len(strings) and 0 <= value_index < len(strings)):
+			continue
+		name = strings[name_index].lower()
+		value = strings[value_index].lower()
+		if name == 'type' and value in _SENSITIVE_INPUT_TYPES:
+			return True
+		if name == 'autocomplete' and value.startswith(_SENSITIVE_AUTOCOMPLETE_PREFIXES):
+			return True
+	return False
 
 
 def build_snapshot_lookup(
@@ -85,11 +108,30 @@ def build_snapshot_lookup(
 				if node_index not in layout_index_map:  # Only store first occurrence
 					layout_index_map[node_index] = layout_idx
 
+		# Pre-convert rare boolean data from list to set for O(1) lookups.
+		# The raw CDP data uses List[int] which makes `index in list` O(n).
+		# Called once per node, this was O(n²) total — the #1 bottleneck.
+		# At 20k elements: 5,925ms (list) → 2ms (set) = 3,000x speedup.
+		has_clickable_data = 'isClickable' in nodes
+		is_clickable_set: set[int] = set(nodes['isClickable']['index']) if has_clickable_data else set()
+
+		# Live form values live in the snapshot, not in the DOM attributes. Map
+		# snapshot index -> string once so each node lookup stays O(1).
+		input_value_by_index: dict[int, str] = {}
+		for key in ('inputValue', 'textValue'):
+			rare = nodes.get(key)
+			if rare:
+				for idx, string_index in zip(rare.get('index', []), rare.get('value', [])):
+					if 0 <= string_index < len(strings) and not _is_sensitive_input(strings, nodes, idx):
+						input_value_by_index[idx] = strings[string_index]
+		input_checked_set: set[int] = set(nodes['inputChecked']['index']) if 'inputChecked' in nodes else set()
+		has_checked_data = 'inputChecked' in nodes
+
 		# Build snapshot lookup for each backend node id
 		for backend_node_id, snapshot_index in backend_node_to_snapshot_index.items():
 			is_clickable = None
-			if 'isClickable' in nodes:
-				is_clickable = _parse_rare_boolean_data(nodes['isClickable'], snapshot_index)
+			if has_clickable_data:
+				is_clickable = _parse_rare_boolean_data(is_clickable_set, snapshot_index)
 
 			# Find corresponding layout node
 			cursor_style = None
@@ -155,7 +197,7 @@ def build_snapshot_lookup(
 							)
 
 					# Extract stacking contexts if available
-					if layout_idx < len(layout.get('stackingContexts', [])):
+					if layout_idx < len(layout.get('stackingContexts', {}).get('index', [])):
 						stacking_contexts = layout.get('stackingContexts', {}).get('index', [])[layout_idx]
 
 			snapshot_lookup[backend_node_id] = EnhancedSnapshotNode(
@@ -167,6 +209,8 @@ def build_snapshot_lookup(
 				computed_styles=computed_styles if computed_styles else None,
 				paint_order=paint_order,
 				stacking_contexts=stacking_contexts,
+				input_value=input_value_by_index.get(snapshot_index),
+				input_checked=(snapshot_index in input_checked_set) if has_checked_data else None,
 			)
 
 	# Count how many have bounds (are actually visible/laid out)
