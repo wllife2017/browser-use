@@ -580,7 +580,7 @@ class BrowserUseServer:
 			elif tool_name == 'browser_close_tab':
 				return await self._close_tab(arguments['tab_id'])
 
-		return f'Unknown tool: {tool_name}'
+		raise ValueError(f'Unknown tool: {tool_name}')
 
 	async def _init_browser_session(self, allowed_domains: list[str] | None = None, **kwargs):
 		"""Initialize browser session using config"""

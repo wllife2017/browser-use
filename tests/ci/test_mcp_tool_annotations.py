@@ -72,3 +72,20 @@ async def test_mutating_tools_never_advertise_read_only_hint(server: BrowserUseS
 
 	mislabeled = sorted(tool.name for tool in tools if tool.name not in EXPECTED_READ_ONLY_TOOLS and _is_read_only(tool))
 	assert not mislabeled, f'state-changing tools wrongly advertise readOnlyHint=True: {mislabeled}'
+
+
+async def test_unknown_tool_is_reported_as_mcp_error(server: BrowserUseServer) -> None:
+	"""Unknown tool calls must not be returned as successful MCP results."""
+	handler = server.server.get_request_handler('tools/call')
+	assert handler is not None, 'tools/call handler is not registered'
+
+	result = await handler.handler(  # type: ignore[arg-type]
+		None,
+		types.CallToolRequestParams(name='does_not_exist', arguments={}),
+	)
+
+	assert isinstance(result, types.CallToolResult)
+	assert result.is_error is True
+	assert len(result.content) == 1
+	assert isinstance(result.content[0], types.TextContent)
+	assert 'Unknown tool: does_not_exist' in result.content[0].text
