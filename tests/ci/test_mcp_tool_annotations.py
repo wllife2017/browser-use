@@ -79,8 +79,8 @@ async def test_unknown_tool_is_reported_as_mcp_error(server: BrowserUseServer) -
 	handler = server.server.get_request_handler('tools/call')
 	assert handler is not None, 'tools/call handler is not registered'
 
-	result = await handler.handler(  # type: ignore[arg-type]
-		None,
+	result = await handler.handler(
+		None,  # type: ignore[arg-type]
 		types.CallToolRequestParams(name='does_not_exist', arguments={}),
 	)
 
